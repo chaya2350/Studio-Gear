@@ -223,7 +223,6 @@ export class EquipmentListComponent implements OnInit {
   selectedCategory = signal<string | null>(null);
   selectedSubcategory = signal<string | null>(null);
   search = '';
-  // tracks what "back" should do from items view
   private itemsSource: 'categories' | 'subcategories' = 'categories';
 
   readonly today = new Date().toISOString().split('T')[0];
