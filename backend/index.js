@@ -64,6 +64,8 @@ const newLoanCols = [
   ['card_expiry', "ALTER TABLE loans ADD COLUMN card_expiry TEXT"],
   ['card_holder', "ALTER TABLE loans ADD COLUMN card_holder TEXT"],
   ['payment_status', "ALTER TABLE loans ADD COLUMN payment_status TEXT DEFAULT 'pending'"],
+  ['track', "ALTER TABLE loans ADD COLUMN track TEXT"],
+  ['location', "ALTER TABLE loans ADD COLUMN location TEXT"],
 ];
 newLoanCols.forEach(([col, sql]) => { if (!loanCols.includes(col)) db.exec(sql); });
 
@@ -230,7 +232,7 @@ app.get('/api/loans/equipment/:equipmentId', (req, res) => {
 
 app.post('/api/loans', (req, res) => {
   const { equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
-          loan_type, price_per_day, card_last4, card_expiry, card_holder } = req.body;
+          loan_type, price_per_day, card_last4, card_expiry, card_holder, track, location } = req.body;
   const today = new Date().toISOString().split('T')[0];
 
   if (!loan_date || !expected_return) return res.status(400).json({ error: 'תאריכים חסרים' });
@@ -242,8 +244,21 @@ app.post('/api/loans', (req, res) => {
   const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
   if (days > 14) return res.status(400).json({ error: 'לא ניתן להשאיל/להשכיר ליותר מ-14 יום' });
 
-  // Credit card required
-  if (!card_last4 || !card_expiry || !card_holder) return res.status(400).json({ error: 'פרטי אשראי חובה' });
+  // Credit card required (not for laptops)
+  const eq = db.prepare('SELECT category FROM equipment WHERE id=?').get(equipment_id);
+  const isLaptop = eq && eq.category === 'מחשב נייד';
+  if (!isLaptop && (!card_last4 || !card_expiry || !card_holder)) return res.status(400).json({ error: 'פרטי אשראי חובה' });
+
+  // Laptop: same-day only, no overlap check needed beyond active loan
+  if (isLaptop) {
+    const active = db.prepare('SELECT id FROM loans WHERE equipment_id=? AND actual_return IS NULL').get(equipment_id);
+    if (active) return res.status(400).json({ error: 'המחשב כבר מושאל' });
+    const result = db.prepare(
+      `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes, loan_type, payment_status, track, location)
+       VALUES (?, ?, ?, ?, ?, ?, 'loan', 'none', ?, ?)`
+    ).run(equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes, track || null, location || null);
+    return res.json({ id: result.lastInsertRowid });
+  }
 
   const overlap = db.prepare(`
     SELECT id FROM loans
@@ -256,10 +271,10 @@ app.post('/api/loans', (req, res) => {
 
   const result = db.prepare(
     `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
-      loan_type, price_per_day, card_last4, card_expiry, card_holder, payment_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      loan_type, price_per_day, card_last4, card_expiry, card_holder, payment_status, track, location)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
-        loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, 'pending');
+        loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, 'pending', track || null, location || null);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -304,6 +319,21 @@ app.put('/api/loans/:id/charge', (req, res) => {
 app.delete('/api/loans/:id', (req, res) => {
   db.prepare('DELETE FROM loans WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ── Laptop overdue ────────────────────────────────────────
+
+function getLaptopOverdue() {
+  return db.prepare(`
+    SELECT l.*, e.name as equipment_name, e.category
+    FROM loans l JOIN equipment e ON e.id = l.equipment_id
+    WHERE e.category = 'מחשב נייד'
+      AND l.actual_return IS NULL
+  `).all();
+}
+
+app.get('/api/laptops/overdue', (req, res) => {
+  res.json(getLaptopOverdue());
 });
 
 app.listen(3000, () => console.log('Backend running on http://localhost:3000'));

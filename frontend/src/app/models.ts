@@ -38,6 +38,7 @@ export interface Loan {
   card_expiry?: string;
   card_holder?: string;
   payment_status?: string;
+  track?: string;
 }
 
 export interface Category {

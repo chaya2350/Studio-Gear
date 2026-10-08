@@ -84,11 +84,16 @@ type View = 'categories' | 'subcategories' | 'items';
         <div style="display:flex; align-items:center; gap:16px;">
           <button class="back-btn" (click)="view.set('categories')">→</button>
           <div>
-            <h1>{{ getCategoryIcon(selectedCategory()!) }} {{ selectedCategory() }}</h1>
+            <h1>{{ selectedCategory() }}</h1>
             <p class="subtitle">{{ countByCategory(selectedCategory()!) }} פריטים</p>
           </div>
         </div>
-        <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+        <div style="display:flex; gap:8px;">
+          <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
+            🖨️ הדפס מחשבים שלא חזרו
+          </button>
+          <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+        </div>
       </div>
 
       <div class="cat-grid">
@@ -128,7 +133,12 @@ type View = 'categories' | 'subcategories' | 'items';
             <p class="subtitle">{{ filtered().length }} פריטים</p>
           </div>
         </div>
-        <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+        <div style="display:flex; gap:8px;">
+          <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
+            🖨️ הדפס מחשבים שלא חזרו
+          </button>
+          <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+        </div>
       </div>
 
       <div class="search-bar">
@@ -139,7 +149,6 @@ type View = 'categories' | 'subcategories' | 'items';
       <div class="grid">
         <a *ngFor="let item of filtered()" [routerLink]="['/equipment', item.id]" class="equipment-card">
           <div class="eq-top">
-            <div class="eq-icon">{{ getCategoryIcon(item.category) }}</div>
             <span class="badge" [class]="getStatusClass(item)">
               {{ item.is_loaned ? (isOverdue(item) ? '⚠ איחור' : 'מושאל') : '✓ פנוי' }}
             </span>
@@ -288,6 +297,43 @@ export class EquipmentListComponent implements OnInit {
 
   goOverdue() { this.router.navigate(['/loans'], { queryParams: { filter: 'overdue' } }); }
 
+  printLaptopOverdue() {
+    this.api.getLaptopOverdue().subscribe(loans => {
+      if (!loans.length) { alert('אין מחשבים שלא חזרו'); return; }
+      const date = new Date().toLocaleDateString('he-IL');
+      const rows = loans.map(l => `
+        <tr>
+          <td>${l.equipment_name}</td>
+          <td>${l.borrower_name}</td>
+          <td>${l.borrower_phone || '—'}</td>
+          <td>${l.track || '—'}</td>
+          <td>${l.location || '—'}</td>
+          <td>${l.loan_date}</td>
+        </tr>`).join('');
+      const win = window.open('', '_blank', 'width=800,height=600')!;
+      win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
+        <title>מחשבים שלא חזרו</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 24px; }
+          h2 { margin-bottom: 6px; } .date { color: #666; margin-bottom: 20px; font-size: 0.9rem; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: right; }
+          th { background: #f0eeff; font-weight: 700; }
+          tr:nth-child(even) td { background: #fafafa; }
+          @media print { @page { margin: 15mm; } }
+        </style></head><body>
+        <h2>💻 מחשבים שלא הוחזרו</h2>
+        <div class="date">הופק ב: ${date} &nbsp;|סה"כ: ${loans.length} מחשבים</div>
+        <table>
+          <thead><tr><th>מחשב</th><th>שואל</th><th>טלפון</th><th>מסלול</th><th>לאן לקחו</th><th>תאריך השאלה</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <script>window.onload = () => { window.print(); }<\/script>
+        </body></html>`);
+      win.document.close();
+    });
+  }
+
   applySearch() {
     const base = this.filtered();
     // re-filter from current base list stored before search
@@ -302,12 +348,12 @@ export class EquipmentListComponent implements OnInit {
   itemsTitle(): string {
     const sub = this.selectedSubcategory();
     const cat = this.selectedCategory();
-    if (sub && sub !== '__none__' && this.view() === 'items' && this.itemsSource === 'subcategories') return `📁 ${sub}`;
-    if (sub === '__none__') return `📦 ללא תת-קטגוריה`;
-    if (cat && this.itemsSource === 'subcategories') return `${this.getCategoryIcon(cat)} כל ${cat}`;
+    if (sub && sub !== '__none__' && this.view() === 'items' && this.itemsSource === 'subcategories') return sub;
+    if (sub === '__none__') return 'ללא תת-קטגוריה';
+    if (cat && this.itemsSource === 'subcategories') return `כל ${cat}`;
     const f = this.filtered();
-    if (f.length && f[0].category && this.itemsSource === 'categories') return `${this.getCategoryIcon(f[0].category)} ${f[0].category}`;
-    return '📦 ציוד';
+    if (f.length && f[0].category && this.itemsSource === 'categories') return f[0].category;
+    return 'ציוד';
   }
 
   isOverdue(item: Equipment) { return item.expected_return && item.expected_return < this.today; }

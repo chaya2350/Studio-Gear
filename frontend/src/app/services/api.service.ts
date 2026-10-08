@@ -30,4 +30,6 @@ export class ApiService {
   createCategory(data: { name: string; icon: string }) { return this.http.post<Category>(`${this.base}/categories`, data); }
   deleteCategory(id: number) { return this.http.delete(`${this.base}/categories/${id}`); }
   getSubcategories(category: string) { return this.http.get<string[]>(`${this.base}/subcategories/${encodeURIComponent(category)}`); }
+
+  getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 }
