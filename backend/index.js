@@ -113,7 +113,7 @@ function equipmentQuery(whereClause = '') {
   return `
     SELECT e.*,
       CASE WHEN active.id IS NOT NULL THEN 1 ELSE 0 END as is_loaned,
-      active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes,
+      active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
     FROM equipment e
     LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL AND active.loan_date <= date('now')

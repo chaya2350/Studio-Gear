@@ -159,7 +159,7 @@ type View = 'categories' | 'subcategories' | 'items';
           </p>
           <div class="eq-barcode">🔖 {{ item.barcode }}</div>
           <div *ngIf="item.is_loaned" class="eq-borrower">
-            <span>👤 {{ item.borrower_name }}</span>
+            <span>👤 {{ item.borrower_name }}{{ item.track ? ' — ' + item.track : '' }}</span>
             <span class="eq-return" [style.color]="isOverdue(item) ? 'var(--danger)' : 'var(--text-muted)'">
               {{ item.expected_return }}
             </span>
@@ -299,35 +299,102 @@ export class EquipmentListComponent implements OnInit {
 
   printLaptopOverdue() {
     this.api.getLaptopOverdue().subscribe(loans => {
-      if (!loans.length) { alert('אין מחשבים שלא חזרו'); return; }
       const date = new Date().toLocaleDateString('he-IL');
-      const rows = loans.map(l => `
-        <tr>
-          <td>${l.equipment_name}</td>
-          <td>${l.borrower_name}</td>
-          <td>${l.borrower_phone || '—'}</td>
-          <td>${l.track || '—'}</td>
-          <td>${l.location || '—'}</td>
-          <td>${l.loan_date}</td>
-        </tr>`).join('');
-      const win = window.open('', '_blank', 'width=800,height=600')!;
+      const loanMap: Record<string, any[]> = {};
+      loans.forEach(l => { const k = l.location || ''; if (!loanMap[k]) loanMap[k] = []; loanMap[k].push(l); });
+
+      const room = (num: string, name: string) => {
+        const key = `${num} — ${name}`;
+        const occ = loanMap[key] || [];
+        const info = occ.map(l => `<span class="bor">💻 ${l.equipment_name} — <span>${l.borrower_name}</span></span>`).join(' ');
+        return `<div class="room ${occ.length ? 'occ' : ''}">
+          <span class="rnum">${num}</span><span class="rname">${name}</span>${info}</div>`;
+      };
+      const empty = () => `<div class="room empty"></div>`;
+
+      const floors = [
+        { label: 'קומה 4', corridor: 'לבורנטיות / 400',
+          right: [['406','גרפיקה א\''],['404','שרתים'],['402','אדריכלות ב\'']],
+          left:  [['407','אולפן'],['405','גרפיקה ב\''],['403','יועצת'],['401','הנדסאים ב\'']] },
+        { label: 'קומה 3', corridor: 'מסדרון',
+          right: [['312','ו\'4'],['310','ו\'5'],['308','בימוי והפקה'],['306','הקבצה 1'],['304','הנדסת אנרגיה'],['302','ספרייה']],
+          left:  [['311','ו\'3'],['309','טכנולוגי 1'],['307','פאנות 1'],['305','הקבצה 2'],['303','אדריכלות א\''],['301','מעבדה']] },
+        { label: 'קומה 2', corridor: 'אולם / 200',
+          right: [['210','ד\'1'],['208','ד\'2'],['206','ד\'3'],['204','ו\'1'],['202','פעילות']],
+          left:  [['209','ה\'2'],['207','ה\'3'],['205','בנות פערל'],['203','ה\'1'],['201','ו\'2']] },
+        { label: 'קומה 1 (כניסה)', corridor: 'לובי / 100',
+          right: [['110','ב\'2'],['108','א\'1'],['106','א\'2'],['104','א\'3'],['102','ב\'1']],
+          left:  [['109','ב\'3'],['107','ג\'1'],['105','ג\'2'],['103','ג\'3'],['101','חדר מורות']] },
+        { label: 'קומה 0', corridor: 'מסדרון',
+          right: [],
+          left:  [['011','הקבצה 4'],['009','הקבצה 5'],['007','הקבצה 6'],['005','חדר חסד'],['003','סטודיו פנימי'],['001','סטודיו']] }
+      ];
+
+      const floorsHtml = floors.map(f => {
+        const maxRows = Math.max(f.right.length, f.left.length);
+        const rightCells = Array.from({length: maxRows}, (_, i) =>
+          f.right[i] ? room(f.right[i][0], f.right[i][1]) : empty()).join('');
+        const leftCells = Array.from({length: maxRows}, (_, i) =>
+          f.left[i] ? room(f.left[i][0], f.left[i][1]) : empty()).join('');
+        return `<div class="floor">
+          <div class="floor-label">${f.label}</div>
+          <div class="floor-row">
+            <div class="side right">${rightCells}</div>
+            <div class="corridor">${f.corridor}</div>
+            <div class="side left">${leftCells}</div>
+          </div>
+        </div>`;
+      }).join('');
+
+      const win = window.open('', '_blank', 'width=1100,height=900')!;
       win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
-        <title>מחשבים שלא חזרו</title>
+        <title>מפת מחשבים</title>
         <style>
-          body { font-family: Arial, sans-serif; padding: 24px; }
-          h2 { margin-bottom: 6px; } .date { color: #666; margin-bottom: 20px; font-size: 0.9rem; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: right; }
-          th { background: #f0eeff; font-weight: 700; }
-          tr:nth-child(even) td { background: #fafafa; }
-          @media print { @page { margin: 15mm; } }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; padding: 6px 8px; color: #1e1e2e; font-size: 8px; }
+          .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px; border-bottom: 1.5px solid #6c63ff; padding-bottom: 4px; }
+          .header h2 { font-size: 0.78rem; color: #6c63ff; }
+          .header .meta { font-size: 0.6rem; color: #666; }
+          .legend { display: flex; gap: 10px; margin-bottom: 5px; font-size: 0.6rem; align-items: center; }
+          .lb { width: 9px; height: 9px; border-radius: 2px; border: 1px solid; display:inline-block; }
+          .lb.free { background: #f5f5f5; border-color: #ccc; }
+          .lb.occ { background: #fef08a; border-color: #f59e0b; }
+          .floors-grid { display: flex; flex-direction: column; gap: 5px; }
+          .floor { width: 100%; }
+          .floor-label { font-size: 0.6rem; font-weight: 700; color: #6c63ff; background: #ede9ff; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-bottom: 3px; }
+          .floor-row { display: flex; align-items: stretch; width: 100%; }
+          .side { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+          .side.right { align-items: flex-end; }
+          .side.left  { align-items: flex-start; }
+          .corridor {
+            width: 44px; min-width: 44px; background: #ede9ff; border: 1px solid #c4b5fd;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.48rem; font-weight: 700; color: #6c63ff; text-align: center;
+            padding: 2px; writing-mode: vertical-rl; letter-spacing: 0.3px; flex-shrink: 0;
+          }
+          .room {
+            width: 160px; height: 16px;
+            border: 1px solid #d1cfe8; border-radius: 3px;
+            padding: 1px 5px; background: #fafafa;
+            display: flex; flex-direction: row; align-items: center; gap: 4px; flex-shrink: 0;
+          }
+          .room.occ { background: #fef08a; border-color: #f59e0b; border-width: 1.5px; }
+          .room.empty { background: transparent; border: none; height: 16px; width: 160px; flex-shrink: 0; }
+          .rnum { font-size: 0.58rem; font-weight: 700; white-space: nowrap; min-width: 22px; }
+          .rname { font-size: 0.5rem; color: #555; white-space: nowrap; }
+          .bor { font-size: 0.48rem; color: #92400e; font-weight: 600; white-space: nowrap; margin-right: 3px; }
+          .bor span { font-weight: 400; }
+          @media print { @page { margin: 4mm; size: A4 portrait; } body { padding: 0; } }
         </style></head><body>
-        <h2>💻 מחשבים שלא הוחזרו</h2>
-        <div class="date">הופק ב: ${date} &nbsp;|סה"כ: ${loans.length} מחשבים</div>
-        <table>
-          <thead><tr><th>מחשב</th><th>שואל</th><th>טלפון</th><th>מסלול</th><th>לאן לקחו</th><th>תאריך השאלה</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        <div class="header">
+          <h2>🏗️ מפת מחשבים שלא חזרו — סמינר גור ירושלים</h2>
+          <div class="meta">הופק ב: ${date} | סה&quot;כ: ${loans.length} מחשבים</div>
+        </div>
+        <div class="legend">
+          <div style="display:flex;align-items:center;gap:5px"><div class="lb free"></div> חדר פנוי</div>
+          <div style="display:flex;align-items:center;gap:5px"><div class="lb occ"></div> יש מחשב שלא חזר</div>
+        </div>
+        <div class="floors-grid">${floorsHtml}</div>
         <script>window.onload = () => { window.print(); }<\/script>
         </body></html>`);
       win.document.close();

@@ -81,21 +81,31 @@ import { Equipment, Loan } from '../../models';
             </div>
             <div *ngIf="isOverdue()" class="alert alert-warning" style="margin-bottom:16px;">⚠️ הציוד לא הוחזר בזמן!</div>
             <div class="info-row">
-              <span class="info-label">{{ activeLoan()?.loan_type === 'rental' ? 'שוכר' : 'שואל' }}</span>
-              <span class="info-value">{{ item()!.borrower_name }}</span>
+              <span class="info-label">שואל</span>
+              <span class="info-value">{{ item()!.borrower_name }}{{ isLaptop() && activeLoan()?.track ? ' — ' + activeLoan()!.track : '' }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row" *ngIf="!isLaptop()">
               <span class="info-label">טלפון</span>
               <span class="info-value">{{ item()!.borrower_phone || '—' }}</span>
             </div>
-            <div class="info-row">
-              <span class="info-label">תאריך התחלה</span>
+            <div class="info-row" *ngIf="isLaptop() && item()!.location">
+              <span class="info-label">כיתה</span>
+              <span class="info-value">{{ item()!.location }}</span>
+            </div>
+            <div class="info-row" *ngIf="isLaptop()">
+              <span class="info-label">תאריך השאלה</span>
               <span class="info-value">{{ item()!.loan_date }}</span>
             </div>
-            <div class="info-row">
-              <span class="info-label">תאריך החזרה</span>
-              <span class="info-value" [style.color]="isOverdue() ? 'var(--danger)' : 'inherit'">{{ item()!.expected_return }}</span>
-            </div>
+            <ng-container *ngIf="!isLaptop()">
+              <div class="info-row">
+                <span class="info-label">תאריך התחלה</span>
+                <span class="info-value">{{ item()!.loan_date }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">תאריך החזרה</span>
+                <span class="info-value" [style.color]="isOverdue() ? 'var(--danger)' : 'inherit'">{{ item()!.expected_return }}</span>
+              </div>
+            </ng-container>
             <div class="info-row" *ngIf="activeLoan()?.loan_type === 'rental'">
               <span class="info-label">מחיר ליום</span>
               <span class="info-value">{{ activeLoan()?.price_per_day || item()!.rental_price_per_day }} ₪</span>
@@ -104,10 +114,7 @@ import { Equipment, Loan } from '../../models';
               <span class="info-label">קנס איחור</span>
               <span class="info-value">{{ item()!.overdue_price_per_day }} ₪ / יום</span>
             </div>
-            <div class="info-row">
-              <span class="info-label">כרטיס</span>
-              <span class="info-value">**** {{ activeLoan()?.card_last4 }}</span>
-            </div>
+
             <div *ngIf="chargeResult()" class="alert alert-success" style="margin-top:12px;">✅ {{ chargeResult() }}</div>
             <div *ngIf="pendingCharge() > 0" class="charge-block">
               <div class="charge-title">💳 נדרש תשלום לפני החזרה</div>
@@ -142,18 +149,87 @@ import { Equipment, Loan } from '../../models';
             </div>
             <div class="form-group">
               <label>מסלול *</label>
-              <select [(ngModel)]="loan.track">
-                <option value="">בחר מסלול</option>
-                <option>גרפיקה שנה א</option>
-                <option>גרפיקה שנה ב</option>
-                <option>בימוי שנה א</option>
-                <option>בימוי שנה ב</option>
-                <option>אחר</option>
-              </select>
+              <div style="display:flex; gap:8px;">
+                <select [(ngModel)]="loan.trackName" style="flex:2" (ngModelChange)="onTrackChange()">
+                  <option value="">בחר מסלול</option>
+                  <option>אדריכלות</option>
+                  <option>הנדסאים</option>
+                  <option>הנדסת אנרגיה</option>
+                  <option>הוראה מתקנת</option>
+                  <option>תקשורת</option>
+                  <option>גרפיקה</option>
+                  <option>בימוי</option>
+                  <option>יעוץ מס</option>
+                  <option value="אחר">אחר</option>
+                </select>
+                <select [(ngModel)]="loan.trackYear" style="flex:1" *ngIf="trackNeedsYear()">
+                  <option value="">שנה</option>
+                  <option value="א">א</option>
+                  <option value="ב">ב</option>
+                </select>
+              </div>
             </div>
             <div class="form-group" *ngIf="isLaptop()">
               <label>לאן לוקחים *</label>
-              <input [(ngModel)]="loan.location" placeholder="לדוגמה: כיתה 201, בית ספר...">
+              <div style="display:flex; gap:8px; align-items:center;">
+                <select [(ngModel)]="loan.location" style="flex:1">
+                  <option value="">בחר כיתה</option>
+                  <optgroup label="קומה 4">
+                    <option>406 — גרפיקה א'</option>
+                    <option>405 — גרפיקה ב'</option>
+                    <option>402 — אדריכלות ב'</option>
+                    <option>401 — הנדסאים ב'</option>
+                    <option>407 — אולפן</option>
+                  </optgroup>
+                  <optgroup label="קומה 3">
+                    <option>312 — ו'4</option>
+                    <option>311 — ו'3</option>
+                    <option>310 — ו'5</option>
+                    <option>309 — טכנולוגי 1</option>
+                    <option>308 — בימוי והפקה</option>
+                    <option>306 — הקבצה 1</option>
+                    <option>305 — הקבצה 2</option>
+                    <option>304 — הנדסת אנרגיה</option>
+                    <option>303 — אדריכלות א'</option>
+                    <option>302 — ספרייה</option>
+                    <option>301 — מעבדה</option>
+                  </optgroup>
+                  <optgroup label="קומה 2">
+                    <option>210 — ד'1</option>
+                    <option>209 — ה'2</option>
+                    <option>208 — ד'2</option>
+                    <option>207 — ה'3</option>
+                    <option>206 — ד'3</option>
+                    <option>205 — בנות פערל</option>
+                    <option>204 — ו'1</option>
+                    <option>203 — ה'1</option>
+                    <option>201 — ו'2</option>
+                  </optgroup>
+                  <optgroup label="קומה 1">
+                    <option>110 — ב'2</option>
+                    <option>109 — ב'3</option>
+                    <option>108 — א'1</option>
+                    <option>107 — ג'1</option>
+                    <option>106 — א'2</option>
+                    <option>105 — ג'2</option>
+                    <option>104 — א'3</option>
+                    <option>103 — ג'3</option>
+                    <option>102 — ב'1</option>
+                  </optgroup>
+                  <optgroup label="קומה 0">
+                    <option>011 — הקבצה 4</option>
+                    <option>009 — הקבצה 5</option>
+                    <option>007 — הקבצה 6</option>
+                    <option>001 — סטודיו</option>
+                  </optgroup>
+                  <optgroup label="אחר">
+                    <option>משרדים</option>
+                    <option>חדר מורות</option>
+                    <option>אחר</option>
+                  </optgroup>
+                </select>
+                <a href="https://docs.google.com/spreadsheets/d/1gAyG-4tKUQXXfOw48D9nqfM0d6RglBCvzuJ_mMhWbmg/edit?usp=sharing" target="_blank" class="btn btn-ghost" style="white-space:nowrap;">📋 מפת חדרים</a>
+              </div>
             </div>
 
             <!-- Dates — only for non-laptops -->
@@ -399,7 +475,7 @@ export class EquipmentDetailComponent implements OnInit {
   loanType = signal<'loan' | 'rental'>('loan');
   today = new Date().toISOString().split('T')[0];
 
-  loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', location: '' };
+  loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '' };
   cardNumber = '';
   cvv = '';
 
@@ -550,6 +626,9 @@ export class EquipmentDetailComponent implements OnInit {
     return '✓ פנוי';
   }
 
+  trackNeedsYear() { return this.loan.trackName && this.loan.trackName !== 'אחר'; }
+  onTrackChange() { this.loan.trackYear = ''; }
+
   isLaptop() { return this.item()?.category === 'מחשב נייד'; }
 
   createLoan() {
@@ -557,9 +636,13 @@ export class EquipmentDetailComponent implements OnInit {
     if (!this.loan.borrower_name) {
       this.loanError.set('נא למלא שם'); return;
     }
-    if (!this.loan.track) {
+    if (!this.loan.trackName) {
       this.loanError.set('נא לבחור מסלול'); return;
     }
+    if (this.trackNeedsYear() && !this.loan.trackYear) {
+      this.loanError.set('נא לבחור שנה'); return;
+    }
+    this.loan.track = this.trackNeedsYear() ? `${this.loan.trackName} ${this.loan.trackYear}` : this.loan.trackName;
     if (this.isLaptop()) {
       if (!this.loan.location) { this.loanError.set('נא למלא לאן לוקחים'); return; }
       // Laptop: auto today, no card, no payment

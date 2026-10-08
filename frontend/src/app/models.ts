@@ -13,6 +13,8 @@ export interface Equipment {
   borrower_phone?: string;
   expected_return?: string;
   loan_date?: string;
+  track?: string;
+  location?: string;
   loan_id?: number;
   notes?: string;
   // future reservation
@@ -39,6 +41,7 @@ export interface Loan {
   card_holder?: string;
   payment_status?: string;
   track?: string;
+  location?: string;
 }
 
 export interface Category {
