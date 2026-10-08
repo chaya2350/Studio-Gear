@@ -51,11 +51,11 @@ import { Equipment, Loan } from '../../models';
             <span class="info-value" style="max-width:60%; text-align:left;">{{ item()!.description }}</span>
           </div>
 
-          <div class="info-row" *ngIf="item()!.rental_price_per_day">
+          <div class="info-row" *ngIf="item()!.rental_price_per_day && !isLaptop()">
             <span class="info-label">מחיר השכרה</span>
             <span class="info-value">{{ item()!.rental_price_per_day }} ₪ / יום</span>
           </div>
-          <div class="info-row" *ngIf="item()!.overdue_price_per_day">
+          <div class="info-row" *ngIf="item()!.overdue_price_per_day && !isLaptop()">
             <span class="info-label">קנס איחור</span>
             <span class="info-value">{{ item()!.overdue_price_per_day }} ₪ / יום</span>
           </div>
@@ -125,64 +125,90 @@ import { Equipment, Loan } from '../../models';
           </div>
 
           <ng-template #loanForm>
-            <!-- Type tabs -->
-            <div class="type-tabs">
+            <!-- Type tabs — hidden for laptops -->
+            <div class="type-tabs" *ngIf="!isLaptop()">
               <button [class.active]="loanType() === 'loan'" (click)="loanType.set('loan')">🤝 השאלה</button>
               <button [class.active]="loanType() === 'rental'" (click)="loanType.set('rental')">💰 השכרה</button>
             </div>
+            <div *ngIf="isLaptop()" class="laptop-badge">💻 השאלת מחשב נייד — ליום אחד</div>
 
             <div class="form-group">
-              <label>{{ loanType() === 'rental' ? 'שם השוכר' : 'שם השואל' }} *</label>
+              <label>שם השואל *</label>
               <input [(ngModel)]="loan.borrower_name" placeholder="שם מלא">
             </div>
-            <div class="form-group">
+            <div class="form-group" *ngIf="!isLaptop()">
               <label>טלפון</label>
               <input [(ngModel)]="loan.borrower_phone" placeholder="050-0000000">
             </div>
             <div class="form-group">
-              <label>תאריך התחלה *</label>
-              <input type="date" [(ngModel)]="loan.loan_date" [min]="today" (ngModelChange)="onDateChange()">
+              <label>מסלול *</label>
+              <select [(ngModel)]="loan.track">
+                <option value="">בחר מסלול</option>
+                <option>גרפיקה שנה א</option>
+                <option>גרפיקה שנה ב</option>
+                <option>בימוי שנה א</option>
+                <option>בימוי שנה ב</option>
+                <option>אחר</option>
+              </select>
             </div>
-            <div class="form-group">
-              <label>תאריך החזרה * <span class="field-hint">(מקסימום 14 יום)</span></label>
-              <input type="date" [(ngModel)]="loan.expected_return" [min]="loan.loan_date || today" [max]="maxReturnDate()">
-            </div>
-            <div *ngIf="loanType() === 'rental'" class="rental-price-info">
-              <span class="info-label">מחיר ליום</span>
-              <span class="info-value">{{ item()!.rental_price_per_day || 0 }} ₪</span>
-            </div>
-
-            <!-- Price summary -->
-            <div *ngIf="priceSummary() > 0" class="price-summary">
-              <span>💰 סה"כ משוער:</span>
-              <strong>{{ priceSummary() }} ₪</strong>
-              <span class="price-detail">{{ loanDays() }} ימים × {{ item()!.rental_price_per_day }} ₪</span>
+            <div class="form-group" *ngIf="isLaptop()">
+              <label>לאן לוקחים *</label>
+              <input [(ngModel)]="loan.location" placeholder="לדוגמה: כיתה 201, בית ספר...">
             </div>
 
-            <!-- Credit card -->
-            <div class="card-section">
-              <div class="section-title" style="font-size:0.9rem; margin-bottom:10px;">💳 פרטי אשראי</div>
+            <!-- Dates — only for non-laptops -->
+            <ng-container *ngIf="!isLaptop()">
               <div class="form-group">
-                <label>שם בעל הכרטיס *</label>
-                <input [(ngModel)]="loan.card_holder" placeholder="ישראל ישראלי">
+                <label>תאריך התחלה *</label>
+                <input type="date" [(ngModel)]="loan.loan_date" [min]="today" (ngModelChange)="onDateChange()">
               </div>
-              <div class="card-row">
-                <div class="form-group" style="flex:2">
-                  <label>מספר כרטיס *</label>
-                  <input [(ngModel)]="cardNumber" placeholder="0000 0000 0000 0000"
-                    maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length > 0 && !luhnValid()">
-                  <span *ngIf="cardNumber.length > 0 && !luhnValid()" class="field-error">מספר כרטיס לא תקין</span>
-                </div>
-                <div class="form-group" style="flex:1">
-                  <label>תוקף *</label>
-                  <input [(ngModel)]="loan.card_expiry" placeholder="MM/YY" maxlength="5" (input)="formatExpiry($event)">
-                </div>
-                <div class="form-group" style="flex:1">
-                  <label>CVV *</label>
-                  <input [(ngModel)]="cvv" placeholder="123" maxlength="4" type="password">
-                </div>
+              <div class="form-group">
+                <label>תאריך החזרה * <span class="field-hint">(מקסימום 14 יום)</span></label>
+                <input type="date" [(ngModel)]="loan.expected_return" [min]="loan.loan_date || today" [max]="maxReturnDate()">
               </div>
+              <div *ngIf="loanType() === 'rental'" class="rental-price-info">
+                <span class="info-label">מחיר ליום</span>
+                <span class="info-value">{{ item()!.rental_price_per_day || 0 }} ₪</span>
+              </div>
+              <div *ngIf="priceSummary() > 0" class="price-summary">
+                <span>💰 סה"כ משוער:</span>
+                <strong>{{ priceSummary() }} ₪</strong>
+                <span class="price-detail">{{ loanDays() }} ימים × {{ item()!.rental_price_per_day }} ₪</span>
+              </div>
+            </ng-container>
+
+            <!-- Laptop: show today's date info -->
+            <div *ngIf="isLaptop()" class="laptop-date-info">
+              <span>📅 תאריך השאלה:</span><strong>{{ today }}</strong>
+              <span>🔁 החזרה עד:</span><strong>{{ today }}</strong>
             </div>
+
+            <!-- Credit card — only for non-laptops -->
+            <ng-container *ngIf="!isLaptop()">
+              <div class="card-section">
+                <div class="section-title" style="font-size:0.9rem; margin-bottom:10px;">💳 פרטי אשראי</div>
+                <div class="form-group">
+                  <label>שם בעל הכרטיס *</label>
+                  <input [(ngModel)]="loan.card_holder" placeholder="ישראל ישראלי">
+                </div>
+                <div class="card-row">
+                  <div class="form-group" style="flex:2">
+                    <label>מספר כרטיס *</label>
+                    <input [(ngModel)]="cardNumber" placeholder="0000 0000 0000 0000"
+                      maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length > 0 && !luhnValid()">
+                    <span *ngIf="cardNumber.length > 0 && !luhnValid()" class="field-error">מספר כרטיס לא תקין</span>
+                  </div>
+                  <div class="form-group" style="flex:1">
+                    <label>תוקף *</label>
+                    <input [(ngModel)]="loan.card_expiry" placeholder="MM/YY" maxlength="5" (input)="formatExpiry($event)">
+                  </div>
+                  <div class="form-group" style="flex:1">
+                    <label>CVV *</label>
+                    <input [(ngModel)]="cvv" placeholder="123" maxlength="4" type="password">
+                  </div>
+                </div>
+              </div>
+            </ng-container>
 
             <div class="form-group">
               <label>הערות</label>
@@ -190,7 +216,7 @@ import { Equipment, Loan } from '../../models';
             </div>
             <p *ngIf="loanError()" class="alert alert-error">{{ loanError() }}</p>
             <button class="btn btn-primary" style="width:100%;" (click)="createLoan()">
-              {{ loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד' }}
+              {{ isLaptop() ? '💻 השאל מחשב' : (loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד') }}
             </button>
           </ng-template>
         </div>
@@ -338,6 +364,16 @@ import { Equipment, Loan } from '../../models';
     .payment-success {
       margin-top: 12px; font-weight: 700; color: #059669; font-size: 1rem;
     }
+    .laptop-badge {
+      background: #e0f2fe; color: #0369a1; border: 1.5px solid #7dd3fc;
+      border-radius: 10px; padding: 10px 14px; font-weight: 700; margin-bottom: 16px; font-size: 0.95rem;
+    }
+    .laptop-date-info {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      background: var(--surface-2); border-radius: 10px; padding: 10px 14px;
+      margin-bottom: 12px; font-size: 0.9rem; color: var(--text-muted);
+      strong { color: var(--text); margin-left: 4px; }
+    }
     .rental-price-info {
       display: flex; justify-content: space-between; align-items: center;
       background: var(--surface-2); border: 1.5px solid var(--border); border-radius: 10px;
@@ -363,7 +399,7 @@ export class EquipmentDetailComponent implements OnInit {
   loanType = signal<'loan' | 'rental'>('loan');
   today = new Date().toISOString().split('T')[0];
 
-  loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '' };
+  loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', location: '' };
   cardNumber = '';
   cvv = '';
 
@@ -514,10 +550,34 @@ export class EquipmentDetailComponent implements OnInit {
     return '✓ פנוי';
   }
 
+  isLaptop() { return this.item()?.category === 'מחשב נייד'; }
+
   createLoan() {
     const item = this.item()!;
-    if (!this.loan.borrower_name || !this.loan.loan_date || !this.loan.expected_return) {
-      this.loanError.set('נא למלא שם, תאריך התחלה ותאריך החזרה'); return;
+    if (!this.loan.borrower_name) {
+      this.loanError.set('נא למלא שם'); return;
+    }
+    if (!this.loan.track) {
+      this.loanError.set('נא לבחור מסלול'); return;
+    }
+    if (this.isLaptop()) {
+      if (!this.loan.location) { this.loanError.set('נא למלא לאן לוקחים'); return; }
+      // Laptop: auto today, no card, no payment
+      this.loan.loan_date = this.today;
+      this.loan.expected_return = this.today;
+      this.loan.loan_type = 'loan';
+      this.loan.payment_status = 'none';
+      this.api.createLoan({
+        equipment_id: item.id, ...this.loan, loan_type: 'loan',
+        card_last4: null, card_expiry: null, card_holder: null
+      }).subscribe({
+        next: () => { this.loanError.set(''); this.load(item.id); this.api.getLoansByEquipment(item.id).subscribe(d => this.history.set(d)); },
+        error: (e) => this.loanError.set(e.error?.error || 'שגיאה')
+      });
+      return;
+    }
+    if (!this.loan.loan_date || !this.loan.expected_return) {
+      this.loanError.set('נא למלא תאריך התחלה ותאריך החזרה'); return;
     }
     if (this.loanType() === 'rental' && !this.item()!.rental_price_per_day) {
       this.loanError.set('לציוד זה לא הוגדר מחיר השכרה'); return;

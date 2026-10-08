@@ -16,6 +16,14 @@ import { Loan } from '../../models';
       </div>
     </div>
 
+    <!-- Laptop overdue alert -->
+    <div *ngIf="laptopOverdue().length" class="laptop-alert">
+      <strong>💻 מחשבים שלא הוחזרו היום ({{ laptopOverdue().length }}):</strong>
+      <span *ngFor="let l of laptopOverdue(); let last = last">
+        {{ l.equipment_name }} — {{ l.borrower_name }}{{ !last ? ' | ' : '' }}
+      </span>
+    </div>
+
     <div class="filter-tabs">
       <button [class.active]="filter()==='active'" (click)="setFilter('active')">
         📤 פעילות <span class="tab-count">{{ activeCount() }}</span>
@@ -112,7 +120,11 @@ import { Loan } from '../../models';
       font-size: 0.78rem;
       &.overdue { background: var(--danger); color: white; }
     }
-    button.active .tab-count { background: rgba(255,255,255,0.3); }
+    .laptop-alert {
+      background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 20px; font-size: 0.9rem; color: #92400e;
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    }
     .eq-link { color: var(--primary); text-decoration: none; font-weight: 600; &:hover { text-decoration: underline; } }
     .cat-chip { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
     .overdue-row td { background: #fff8f8 !important; }
@@ -123,12 +135,14 @@ export class LoansComponent implements OnInit {
   displayed = signal<Loan[]>([]);
   filter = signal<'active' | 'overdue' | 'all'>('active');
   overdueCount = signal(0);
+  laptopOverdue = signal<any[]>([]);
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
   ngOnInit() {
     this.load();
     this.api.getOverdueLoans().subscribe(d => this.overdueCount.set(d.length));
+    this.api.getLaptopOverdue().subscribe(d => this.laptopOverdue.set(d));
     this.route.queryParams.subscribe(p => {
       if (p['filter'] === 'overdue') this.setFilter('overdue');
     });
