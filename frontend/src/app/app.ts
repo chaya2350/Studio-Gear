@@ -13,6 +13,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
       <div class="nav-links">
         <a routerLink="/equipment" routerLinkActive="active">📦 ציוד</a>
         <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
+        <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
         <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
         <a routerLink="/categories" routerLinkActive="active">⚙️ קטגוריות</a>
       </div>

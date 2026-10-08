@@ -9,4 +9,5 @@ export const routes: Routes = [
   { path: 'scan', loadComponent: () => import('./pages/scan/scan').then(m => m.ScanComponent) },
   { path: 'loans', loadComponent: () => import('./pages/loans/loans').then(m => m.LoansComponent) },
   { path: 'categories', loadComponent: () => import('./pages/categories/categories').then(m => m.CategoriesComponent) },
+  { path: 'calendar', loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarComponent) },
 ];
