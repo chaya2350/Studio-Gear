@@ -438,7 +438,7 @@ export class EquipmentListComponent implements OnInit {
 
   printAllBarcodes() {
     const items = this.all();
-    const base = 'http://localhost:3000/api';
+    const base = '/api';
     const sizeMap: Record<string, { w: string; h: string }> = {
       'מצלמות': { w: '50mm',  h: '20mm' },
       'עדשות': { w: '35mm',  h: '15mm' },

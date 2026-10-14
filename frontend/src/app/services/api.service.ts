@@ -4,7 +4,7 @@ import { Equipment, Loan, Category } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private base = 'http://localhost:3000/api';
+  private base = '/api';
 
   constructor(private http: HttpClient) {}
 
