@@ -1,3 +1,4 @@
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -5,24 +6,39 @@ const Database = require('better-sqlite3');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
 
+const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
+const uploadsDir = process.env.STUDIO_DATA_DIR
+  ? path.join(dataDir, 'uploads')
+  : path.join(__dirname, 'uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: path.join(__dirname, 'uploads'),
+    destination: uploadsDir,
     filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
   }),
   fileFilter: (req, file, cb) => cb(null, file.mimetype.startsWith('image/'))
 });
 
 const app = express();
-const db = new Database('studio.db');
+const db = new Database(path.join(dataDir, 'studio.db'));
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadsDir));
+
+const frontendDir = path.join(__dirname, '../frontend/dist/frontend/browser');
+if (fs.existsSync(frontendDir)) {
+  app.use(express.static(frontendDir));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
+    res.sendFile(path.join(frontendDir, 'index.html'));
+  });
+}
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
-  res.json({ url: `http://localhost:3000/uploads/${req.file.filename}` });
+  res.json({ url: `/uploads/${req.file.filename}` });
 });
 
 db.exec(`
@@ -54,6 +70,8 @@ db.exec(`
     icon TEXT DEFAULT '📦'
   );
 `);
+
+db.prepare("UPDATE equipment SET image_url = REPLACE(image_url, 'http://localhost:3000', '') WHERE image_url LIKE 'http://localhost:3000/uploads/%'").run();
 
 // Migration: add new loan columns if missing
 const loanCols = db.prepare("PRAGMA table_info(loans)").all().map((c) => c.name);
@@ -336,4 +354,5 @@ app.get('/api/laptops/overdue', (req, res) => {
   res.json(getLaptopOverdue());
 });
 
-app.listen(3000, () => console.log('Backend running on http://localhost:3000'));
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Backend running on port ${port}`));

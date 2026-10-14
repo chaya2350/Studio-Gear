@@ -1,7 +1,7 @@
 {
   "name": "studio-gear",
   "scripts": {
-    "backend": "node backend/index.js",
+    "backend": "cd backend && node index.js",
     "frontend": "cd frontend && ng serve",
     "dev": "start cmd /k npm run backend && start cmd /k npm run frontend"
   }
