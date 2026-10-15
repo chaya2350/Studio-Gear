@@ -3,6 +3,6 @@
   "scripts": {
     "backend": "cd backend && node index.js",
     "frontend": "cd frontend && ng serve",
-    "dev": "start cmd /k npm run backend && start cmd /k npm run frontend"
+    "dev": "start cmd /k npm run backend && start cmd /k npm run frontend`"
   }
 }
