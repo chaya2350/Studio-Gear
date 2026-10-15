@@ -450,6 +450,25 @@ app.delete('/api/loans/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Order receipt barcode ────────────────────────────────
+app.get('/api/loans/receipt-barcode/:id', async (req, res) => {
+  try {
+    const png = await bwipjs.toBuffer({
+      bcid: 'code128',
+      text: `ORDER-${req.params.id}`,
+      scale: 3,
+      height: 16,
+      includetext: true,
+      textxalign: 'center',
+      backgroundcolor: 'ffffff',
+    });
+    res.set('Content-Type', 'image/png');
+    res.send(png);
+  } catch (e) {
+    res.status(500).json({ error: 'Barcode generation failed' });
+  }
+});
+
 // ── Laptop overdue ────────────────────────────────────────
 
 function getLaptopOverdue() {

@@ -20,13 +20,30 @@ import { Student } from '../../models';
       </div>
     </div>
 
-    <div *ngIf="cart.count() === 0" class="empty-state">
-      <div class="empty-icon">🛒</div>
-      <p>העגלה ריקה — חזור לציוד ובחר פריטים</p>
-      <a routerLink="/equipment" class="btn btn-primary" style="margin-top:16px;">📦 לציוד</a>
+    <div *ngIf="confirmedOrder(); else checkoutView" class="confirmation-shell">
+      <div class="confirmation-card">
+        <div class="success-badge">✅ הזמנה אושרה</div>
+        <h2>ההזמנה נקלטה בהצלחה</h2>
+        <p class="confirmation-text">מספר הזמנה: <strong>ORDER-{{ confirmedOrder()!.orderId }}</strong></p>
+        <div class="confirmation-meta">
+          <span>📦 {{ confirmedOrder()!.itemCount }} פריטים</span>
+          <span>👤 {{ confirmedOrder()!.borrowerName }}</span>
+        </div>
+        <div class="receipt-box">
+          <img [src]="api.getOrderReceiptBarcodeUrl(confirmedOrder()!.orderId)" alt="barcode" />
+        </div>
+        <button class="btn btn-primary btn-submit" (click)="printReceipt()">🖨️ הדפס פרטי הזמנה</button>
+      </div>
     </div>
 
-    <div *ngIf="cart.count() > 0" class="checkout-grid">
+    <ng-template #checkoutView>
+      <div *ngIf="cart.count() === 0" class="empty-state">
+        <div class="empty-icon">🛒</div>
+        <p>העגלה ריקה — חזור לציוד ובחר פריטים</p>
+        <a routerLink="/equipment" class="btn btn-primary" style="margin-top:16px;">📦 לציוד</a>
+      </div>
+
+      <div *ngIf="cart.count() > 0" class="checkout-grid">
 
       <!-- עמודה שמאל: פרטי הזמנה -->
       <div class="checkout-main">
@@ -162,6 +179,7 @@ import { Student } from '../../models';
         </div>
       </div>
     </div>
+    </ng-template>
   `,
   styles: [`
     .checkout-grid { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
@@ -241,6 +259,40 @@ import { Student } from '../../models';
       strong { font-size: 1.2rem; color: var(--primary); font-weight: 900; }
     }
 
+    .confirmation-shell {
+      display: flex; justify-content: center; padding: 24px 0 40px;
+    }
+    .confirmation-card {
+      width: min(700px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow-lg);
+      padding: 28px 26px;
+      text-align: center;
+    }
+    .success-badge {
+      display: inline-block; background: #dcfce7; color: #166534; border: 1px solid #86efac;
+      border-radius: 999px; padding: 8px 14px; font-weight: 800; margin-bottom: 14px;
+    }
+    .confirmation-card h2 {
+      margin: 0; font-size: clamp(1.6rem, 2vw, 2.2rem); color: var(--text);
+    }
+    .confirmation-text {
+      margin: 12px 0 18px; font-size: 1rem; color: var(--text-muted);
+    }
+    .confirmation-meta {
+      display: flex; justify-content: center; gap: 18px; flex-wrap: wrap;
+      color: var(--text-muted); font-weight: 600; margin-bottom: 20px;
+    }
+    .receipt-box {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px 14px; margin-bottom: 20px; display: flex; justify-content: center;
+    }
+    .receipt-box img {
+      width: min(320px, 100%); max-height: 120px; object-fit: contain;
+      background: white; padding: 8px; border-radius: 10px;
+    }
     .btn-submit {
       width: 100%; padding: 15px; font-size: 1rem; font-weight: 800;
       border-radius: var(--radius); box-shadow: 0 4px 14px rgba(79,70,229,0.3);
@@ -255,6 +307,7 @@ export class CheckoutComponent implements OnInit {
   student = signal<Student | null>(null);
   error = signal('');
   submitting = signal(false);
+  confirmedOrder = signal<{ orderId: number; itemCount: number; borrowerName: string; itemIds: number[]; items: Array<{ id: number; name: string; category: string; subcategory?: string }> } | null>(null);
   cardNumber = '';
   cvv = '';
 
@@ -264,7 +317,7 @@ export class CheckoutComponent implements OnInit {
     loan_type: 'loan', card_holder: '', card_expiry: ''
   };
 
-  constructor(public cart: CartService, private api: ApiService, public router: Router) {}
+  constructor(public cart: CartService, public api: ApiService, public router: Router) {}
 
   ngOnInit() {}
 
@@ -361,6 +414,7 @@ export class CheckoutComponent implements OnInit {
 
     const items = this.cart.items();
     let done = 0, failed = 0;
+    const createdIds: number[] = [];
 
     items.forEach(item => {
       this.api.createLoan({
@@ -368,27 +422,81 @@ export class CheckoutComponent implements OnInit {
         equipment_id: item.id,
         price_per_day: item.rental_price_per_day || 0,
       }).subscribe({
-        next: () => {
+        next: (res) => {
           done++;
-          if (done + failed === items.length) this.onDone(failed);
+          createdIds.push(res.id);
+          if (done + failed === items.length) this.onDone(failed, createdIds, name);
         },
         error: () => {
           failed++;
-          if (done + failed === items.length) this.onDone(failed);
+          if (done + failed === items.length) this.onDone(failed, createdIds, name);
         }
       });
     });
   }
 
-  onDone(failed: number) {
+  printReceipt() {
+    const order = this.confirmedOrder();
+    if (!order) return;
+
+    const url = this.api.getOrderReceiptBarcodeUrl(order.orderId);
+    const itemsHtml = order.items.map(item => `
+      <li>
+        <span>${item.name}</span>
+        ${item.category ? `<small>${item.category}${item.subcategory ? ' › ' + item.subcategory : ''}</small>` : ''}
+      </li>
+    `).join('');
+
+    const win = window.open('', '_blank', 'width=500,height=700');
+    if (!win) return;
+
+    win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>ORDER-${order.orderId}</title>
+      <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 24px; background: #f8fafc; color: #1f2937; }
+        .receipt { max-width: 520px; margin: 0 auto; background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+        .title { font-size: 28px; font-weight: 900; text-align: center; margin-bottom: 16px; }
+        .meta { display: grid; gap: 8px; font-size: 15px; margin-bottom: 18px; }
+        .meta strong { font-weight: 800; }
+        .items { margin: 0 0 18px; padding-right: 18px; font-size: 14px; }
+        .items li { margin: 8px 0; line-height: 1.5; }
+        .items small { display: block; color: #64748b; }
+        .barcode-wrap { text-align: center; margin-top: 18px; }
+        img { max-width: 100%; height: auto; border-radius: 8px; }
+        .code { margin-top: 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+        @media print { body { background: white; } .receipt { box-shadow: none; } }
+      </style></head>
+      <body><div class="receipt">
+        <div class="title">✅ הזמנה אושרה</div>
+        <div class="meta"><div><strong>מספר הזמנה:</strong> ORDER-${order.orderId}</div><div><strong>שם:</strong> ${order.borrowerName}</div><div><strong>פריטים:</strong> ${order.itemCount}</div></div>
+        <div><strong>פרטי הזמנה:</strong></div>
+        <ul class="items">${itemsHtml}</ul>
+        <div class="barcode-wrap"><img src="${url}" alt="order barcode"><div class="code">ORDER-${order.orderId}</div></div>
+      </div></body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 250);
+  }
+
+  onDone(failed: number, createdIds: number[], borrowerName: string) {
     this.submitting.set(false);
     if (failed > 0) {
       this.error.set(`${failed} פריטים לא נרשמו (כנראה תפוסים בתאריכים אלו)`);
     } else {
+      const orderId = createdIds[0] ?? 0;
+      const items = this.cart.items().map(item => ({
+        id: item.id,
+        name: item.name,
+        category: item.category || '',
+        subcategory: item.subcategory || ''
+      }));
       this.cart.clear();
-      const s = this.student();
-      if (s) this.router.navigate(['/students', s.id_number]);
-      else this.router.navigate(['/loans']);
+      this.confirmedOrder.set({
+        orderId,
+        itemCount: createdIds.length,
+        borrowerName,
+        itemIds: createdIds,
+        items
+      });
+      sessionStorage.setItem('confirmedOrder', JSON.stringify({ orderId, itemIds: createdIds, items }));
     }
   }
 }

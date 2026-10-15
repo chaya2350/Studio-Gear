@@ -1,12 +1,14 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, ElementRef, ViewChild } from '@angular/core';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import { ApiService } from '../../services/api.service';
 import { Loan } from '../../models';
 
 @Component({
   selector: 'app-loans',
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, FormsModule],
   // loans component
   template: `
     <div class="page-header">
@@ -37,6 +39,23 @@ import { Loan } from '../../models';
       </button>
     </div>
 
+    <div class="card" *ngIf="orderFilter()">
+      <div class="return-scan-box">
+        <div class="return-title">🔎 החזרת פריטים מהזמנה</div>
+        <div class="scan-row">
+          <input [(ngModel)]="returnBarcode" (keydown.enter)="submitReturnScan()" placeholder="סרוק/הקלד ברקוד מוצר מההזמנה" />
+          <button type="button" class="btn btn-ghost" (click)="toggleReturnScan()" [class.active]="returnScanOpen()">📷</button>
+          <button class="btn btn-primary" (click)="submitReturnScan()">סמן כמוחזר</button>
+        </div>
+        <div *ngIf="returnScanOpen()" class="scan-video-wrap">
+          <video #returnScanVideo autoplay playsinline muted></video>
+        </div>
+        <div *ngIf="returnMessage()" class="return-message" [class.error]="returnMessageType() === 'error'">
+          {{ returnMessage() }}
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="table-wrap" *ngIf="displayed().length; else empty">
         <table>
@@ -49,16 +68,20 @@ import { Loan } from '../../models';
               <th>תאריך השאלה</th>
               <th>תאריך החזרה</th>
               <th>סטטוס</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let l of displayed()" [class.overdue-row]="isOverdue(l)">
+            <tr *ngFor="let l of displayed()" [class.overdue-row]="isOverdue(l)" [class.order-highlight-row]="isInOrderFilter(l)">
               <td>
                 <a [routerLink]="['/equipment', l.equipment_id]" class="eq-link">{{ l.equipment_name }}</a>
               </td>
               <td><span class="cat-chip">{{ l.category }}</span></td>
-              <td><strong>{{ l.borrower_name }}</strong></td>
+              <td>
+                <a *ngIf="l.borrower_id_number" [routerLink]="['/students', l.borrower_id_number]" class="student-link">
+                  <strong>{{ l.borrower_name }}</strong>
+                </a>
+                <strong *ngIf="!l.borrower_id_number">{{ l.borrower_name }}</strong>
+              </td>
               <td>{{ l.borrower_phone || '—' }}</td>
               <td>{{ l.loan_date }}</td>
               <td [style.color]="isOverdue(l) ? 'var(--danger)' : 'inherit'" [style.fontWeight]="isOverdue(l) ? '700' : '400'">
@@ -70,11 +93,6 @@ import { Loan } from '../../models';
                   {{ isOverdue(l) ? '⚠ איחור' : 'מושאל' }}
                 </span>
                 <span *ngIf="l.actual_return" class="badge badge-available">✓ {{ l.actual_return }}</span>
-              </td>
-              <td>
-                <button *ngIf="!l.actual_return && !isFuture(l)" class="btn btn-success" style="padding:5px 14px; font-size:0.8rem;" (click)="returnLoan(l)">
-                  {{ isOverdue(l) ? 'שלם והחזר' : 'החזר' }}
-                </button>
               </td>
             </tr>
           </tbody>
@@ -130,9 +148,39 @@ import { Loan } from '../../models';
       padding: 12px 16px; margin-bottom: 20px; font-size: 0.875rem; color: #92400e;
       display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 500;
     }
+    .return-scan-box {
+      padding: 18px 20px; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .return-title {
+      font-size: 0.9rem; font-weight: 800; color: var(--text); margin-bottom: 10px;
+    }
+    .scan-row {
+      display: flex; gap: 10px; align-items: center;
+    }
+    .scan-row input {
+      flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 0.95rem;
+      font-family: inherit; background: white;
+    }
+    .btn-ghost {
+      border: 1px solid var(--border); background: white; color: var(--text); padding: 10px 12px;
+      border-radius: var(--radius-sm); font-size: 1.2rem; min-width: 46px;
+    }
+    .btn-ghost.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+    .scan-video-wrap {
+      margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: #0f172a;
+    }
+    .scan-video-wrap video {
+      width: 100%; max-height: 220px; display: block; background: #0f172a;
+    }
+    .return-message {
+      margin-top: 10px; font-size: 0.82rem; font-weight: 700; color: #166534; background: #ecfdf5; border: 1px solid #86efac; border-radius: var(--radius-xs); padding: 8px 10px;
+    }
+    .return-message.error { color: #991b1b; background: #fef2f2; border-color: #fca5a5; }
     .eq-link { color: var(--primary); text-decoration: none; font-weight: 700; &:hover { text-decoration: underline; } }
+    .student-link { color: var(--primary); text-decoration: none; font-weight: 700; &:hover { text-decoration: underline; } }
     .cat-chip { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
     .overdue-row td { background: #fef2f2 !important; }
+    .order-highlight-row td { background: #eef2ff !important; box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2); }
   `]
 })
 export class LoansComponent implements OnInit {
@@ -141,6 +189,13 @@ export class LoansComponent implements OnInit {
   filter = signal<'active' | 'overdue' | 'all'>('active');
   overdueCount = signal(0);
   laptopOverdue = signal<any[]>([]);
+  orderFilter = signal<number | null>(null);
+  returnBarcode = '';
+  returnMessage = signal('');
+  returnMessageType = signal<'success' | 'error'>('success');
+  returnScanOpen = signal(false);
+  private returnReader = new BrowserMultiFormatReader();
+  @ViewChild('returnScanVideo') returnVideoEl?: ElementRef<HTMLVideoElement>;
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
@@ -149,7 +204,10 @@ export class LoansComponent implements OnInit {
     this.api.getOverdueLoans().subscribe(d => this.overdueCount.set(d.length));
     this.api.getLaptopOverdue().subscribe(d => this.laptopOverdue.set(d));
     this.route.queryParams.subscribe(p => {
+      const order = p['order'];
+      this.orderFilter.set(order ? Number(order) : null);
       if (p['filter'] === 'overdue') this.setFilter('overdue');
+      this.applyFilter();
     });
   }
 
@@ -164,9 +222,89 @@ export class LoansComponent implements OnInit {
   applyFilter() {
     const today = new Date().toISOString().split('T')[0];
     const all = this.all();
-    if (this.filter() === 'active')       this.displayed.set(all.filter(l => !l.actual_return && !this.isFuture(l)));
-    else if (this.filter() === 'overdue') this.displayed.set(all.filter(l => !l.actual_return && !this.isFuture(l) && l.expected_return < today));
-    else this.displayed.set(all);
+    const orderId = this.orderFilter();
+
+    const visible = orderId
+      ? all.filter(l => this.matchesOrder(l, orderId))
+      : all;
+
+    if (this.filter() === 'active')       this.displayed.set(visible.filter(l => !l.actual_return && !this.isFuture(l)));
+    else if (this.filter() === 'overdue') this.displayed.set(visible.filter(l => !l.actual_return && !this.isFuture(l) && l.expected_return < today));
+    else this.displayed.set(visible);
+  }
+
+  matchesOrder(l: Loan, orderId: number) {
+    if (l.id === orderId) return true;
+    const saved = sessionStorage.getItem('confirmedOrder');
+    if (!saved) return false;
+    try {
+      const parsed = JSON.parse(saved);
+      const ids = Array.isArray(parsed.itemIds) ? parsed.itemIds : [];
+      return ids.includes(l.id) && Number(parsed.orderId) === orderId;
+    } catch {
+      return false;
+    }
+  }
+
+  toggleReturnScan() {
+    if (this.returnScanOpen()) {
+      this.returnScanOpen.set(false);
+      BrowserMultiFormatReader.releaseAllStreams();
+      return;
+    }
+
+    this.returnScanOpen.set(true);
+    setTimeout(() => {
+      if (!this.returnVideoEl) return;
+      this.returnReader.decodeFromVideoDevice(undefined, this.returnVideoEl.nativeElement, (result) => {
+        if (!result) return;
+        this.returnBarcode = result.getText();
+        this.returnScanOpen.set(false);
+        BrowserMultiFormatReader.releaseAllStreams();
+        this.submitReturnScan();
+      });
+    }, 150);
+  }
+
+  submitReturnScan() {
+    const orderId = this.orderFilter();
+    if (!orderId) {
+      this.returnMessageType.set('error');
+      this.returnMessage.set('יש לסרוק תחילה ברקוד הזמנה כדי לגשת להזמנה');
+      return;
+    }
+
+    const code = this.returnBarcode.trim();
+    if (!code) {
+      this.returnMessageType.set('error');
+      this.returnMessage.set('יש לסרוק או להקליד ברקוד של מוצר מההזמנה');
+      return;
+    }
+
+    const match = this.all().find(l => !l.actual_return && this.matchesOrder(l, orderId) && l.barcode === code);
+    if (!match) {
+      this.returnMessageType.set('error');
+      this.returnMessage.set('המוצר הזה לא שייך להזמנה הפעילה או כבר הוחזר');
+      return;
+    }
+
+    this.api.returnLoan(match.id).subscribe({
+      next: () => {
+        this.returnBarcode = '';
+        this.returnMessageType.set('success');
+        this.returnMessage.set(`הפריט "${match.equipment_name}" סומן כמוחזר`);
+        this.load();
+      },
+      error: (e) => {
+        this.returnMessageType.set('error');
+        this.returnMessage.set(e.error?.error || 'לא ניתן לסמן פריט זה כמוחזר');
+      }
+    });
+  }
+
+  isInOrderFilter(l: Loan) {
+    const orderId = this.orderFilter();
+    return !!orderId && this.matchesOrder(l, orderId);
   }
 
   isFuture(l: Loan) { return l.is_future === 1; }
