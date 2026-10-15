@@ -1,10 +1,12 @@
 import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="page-header">
       <div>
@@ -47,6 +49,59 @@ import { HttpClient } from '@angular/common/http';
         סה"כ {{ totalImported() }} תלמידות במערכת
       </div>
     </div>
+
+    <!-- ניהול סוגי אישורים -->
+    <div class="card" style="max-width:760px; margin-top:24px;">
+      <div class="section-title">📄 ניהול סוגי אישורים</div>
+
+      <div class="approval-list">
+        <div *ngFor="let t of approvalTypes()" class="approval-row">
+          <div class="approval-row-info">
+            <strong>{{ t.name }}</strong>
+            <span class="approval-type-badge" [class.single]="t.type === 'single'">
+              {{ t.type === 'single' ? '💍 אישור אישי' : '📄 אישור קבוצתי' }}
+            </span>
+          </div>
+          <div class="approval-row-actions">
+            <button class="btn btn-secondary" style="font-size:0.78rem; padding:5px 12px;" (click)="editApproval(t)">✏️ עריכה</button>
+            <button class="btn btn-danger" style="font-size:0.78rem; padding:5px 12px;" (click)="deleteApproval(t.id)">🗑️</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="approval-form" *ngIf="editingApproval()">
+        <div class="section-title" style="margin-top:20px;">{{ editingApproval()!.id ? '✏️ עריכת אישור' : '➕ אישור חדש' }}</div>
+        <div class="form-group"><label>שם האישור</label><input [(ngModel)]="editingApproval()!.name" placeholder="שם האישור"></div>
+        <div class="form-group">
+          <label>סוג</label>
+          <select [(ngModel)]="editingApproval()!.type">
+            <option value="regular">📄 אישור קבוצתי (בחירת תלמידות)</option>
+            <option value="single">💍 אישור אישי (מילוי ידני)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>חתימה</label>
+          <select [(ngModel)]="editingApproval()!.signature">
+            <option value="principal">מנהלת</option>
+            <option value="secretary">מזכירות</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>תבנית טקסט</label>
+          <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;">
+            משתנים זמינים: <code>{{שם}}</code> <code>{{תז}}</code> <code>{{שנה}}</code> <code>{{מסלול}}</code>
+            <span *ngIf="editingApproval()!.type === 'single'"> <code>{{תאריך לידה}}</code> <code>{{כתובת}}</code></span>
+          </div>
+          <textarea [(ngModel)]="editingApproval()!.template" rows="8" style="font-family:monospace; font-size:0.82rem;"></textarea>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-primary" (click)="saveApproval()">💾 שמור</button>
+          <button class="btn btn-secondary" (click)="editingApproval.set(null)">ביטול</button>
+        </div>
+      </div>
+
+      <button *ngIf="!editingApproval()" class="btn btn-secondary" style="margin-top:16px;" (click)="newApproval()">➕ הוסף סוג אישור</button>
+    </div>
   `,
   styles: [`
     .upload-area {
@@ -76,6 +131,21 @@ import { HttpClient } from '@angular/common/http';
       border-radius: var(--radius-sm); font-weight: 700; color: var(--primary);
       font-size: 0.875rem; text-align: center;
     }
+    .approval-list { display: flex; flex-direction: column; gap: 8px; }
+    .approval-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .approval-row-info { display: flex; align-items: center; gap: 10px; }
+    .approval-row-info strong { font-size: 0.9rem; }
+    .approval-type-badge {
+      font-size: 0.72rem; padding: 2px 8px; border-radius: 20px;
+      background: var(--primary-light); color: var(--primary); font-weight: 600;
+      &.single { background: #fdf4ff; color: #7c3aed; }
+    }
+    .approval-row-actions { display: flex; gap: 6px; }
+    .approval-form { margin-top: 4px; }
+    code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
   `]
 })
 export class AdminComponent {
@@ -83,13 +153,37 @@ export class AdminComponent {
   importing = signal(false);
   results = signal<{ filename: string; ok: boolean; imported?: number; skipped?: number; error?: string }[]>([]);
   totalImported = signal(0);
+  approvalTypes = signal<any[]>([]);
+  editingApproval = signal<any | null>(null);
 
-  constructor(private http: HttpClient) {
+  constructor(private http: HttpClient, private api: ApiService) {
     this.loadTotal();
+    this.loadApprovals();
   }
 
   loadTotal() {
     this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.length));
+  }
+
+  loadApprovals() {
+    this.api.getApprovalTypes().subscribe(t => this.approvalTypes.set(t));
+  }
+
+  newApproval() {
+    this.editingApproval.set({ id: null, name: '', template: '', signature: 'principal', type: 'regular' });
+  }
+
+  editApproval(t: any) { this.editingApproval.set({ ...t }); }
+
+  saveApproval() {
+    const t = this.editingApproval()!;
+    const obs = t.id ? this.api.updateApprovalType(t.id, t) : this.api.createApprovalType(t);
+    obs.subscribe(() => { this.loadApprovals(); this.editingApproval.set(null); });
+  }
+
+  deleteApproval(id: number) {
+    if (!confirm('למחוק סוג אישור זה?')) return;
+    this.api.deleteApprovalType(id).subscribe(() => this.loadApprovals());
   }
 
   onFileChange(e: Event) {
