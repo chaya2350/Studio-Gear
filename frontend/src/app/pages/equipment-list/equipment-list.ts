@@ -101,8 +101,8 @@ type View = 'categories' | 'subcategories' | 'items';
           <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
-          <button class="btn btn-primary" (click)="addSubcategory()">＋ הוסף קטגורית-משנה</button>
-          <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+          <button *ngIf="selectedCategory() !== 'מחשב נייד' && selectedCategory() !== 'מחשבים ניידים'" class="btn btn-primary" (click)="addSubcategory()">＋ הוסף קטגורית-משנה</button>
+          <a [routerLink]="['/equipment/new']" [queryParams]="newEquipmentQueryParams()" class="btn btn-primary">＋ הוסף ציוד</a>
         </div>
       </div>
 
@@ -143,8 +143,8 @@ type View = 'categories' | 'subcategories' | 'items';
           <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
-          <button class="btn btn-primary" (click)="addSubcategory()">＋ הוסף תת-קטגוריה</button>
-          <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
+          <button *ngIf="selectedCategory() !== 'מחשב נייד' && selectedCategory() !== 'מחשבים ניידים'" class="btn btn-primary" (click)="addSubcategory()">＋ הוסף תת-קטגוריה</button>
+          <a [routerLink]="['/equipment/new']" [queryParams]="newEquipmentQueryParams()" class="btn btn-primary">＋ הוסף ציוד</a>
         </div>
       </div>
 
@@ -182,6 +182,10 @@ type View = 'categories' | 'subcategories' | 'items';
   `,
   styles: [`
     .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+      margin-top: 10px; max-height: calc(100vh - 260px); overflow-y: auto; padding: 4px 4px 8px;
+    }
 
     .cat-card {
       background: var(--surface); border-radius: var(--radius); padding: 24px 22px 20px;
@@ -312,7 +316,8 @@ export class EquipmentListComponent implements OnInit {
 
   topLevelCategories(): Category[] {
     const parentCategories = this.categories().filter(cat => !cat.parent_id);
-    return parentCategories.length ? parentCategories : [
+    const filtered = parentCategories.filter(cat => cat.name !== 'מצלמות אישיות');
+    return filtered.length ? filtered : [
       { id: -1, name: 'ציוד צילום', icon: '📷' },
       { id: -2, name: 'מחשבים ניידים', icon: '🖥️' }
     ];
@@ -438,6 +443,14 @@ export class EquipmentListComponent implements OnInit {
 
   topLevelCategoryNames(): string[] {
     return this.topLevelCategories().map(c => c.name);
+  }
+
+  newEquipmentQueryParams() {
+    const cat = this.selectedCategory();
+    const sub = this.selectedSubcategory();
+    if (!cat) return {};
+    if (sub && sub !== '__none__') return { category: cat, subcategory: sub };
+    return { category: cat };
   }
 
   selectCategory(cat: Category) {

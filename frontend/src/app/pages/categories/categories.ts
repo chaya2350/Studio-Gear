@@ -17,7 +17,7 @@ const TOP_LEVEL_GROUPS = [
   template: `
     <div class="page-header">
       <div style="display:flex; align-items:center; gap:16px;">
-        <a routerLink="/equipment" class="back-btn">←</a>
+        <a routerLink="/equipment" class="back-btn">→</a>
         <div>
           <h1>ניהול קטגוריות</h1>
           <p class="subtitle">{{ categories().length }} קטגוריות במערכת</p>

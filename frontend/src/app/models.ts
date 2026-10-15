@@ -42,6 +42,9 @@ export interface Loan {
   payment_status?: string;
   track?: string;
   location?: string;
+  deposit_check?: boolean;
+  deposit_scan_url?: string;
+  hebrew_year?: string;
 }
 
 export interface Category {
