@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'equipment', pathMatch: 'full' },
+  { path: '', loadComponent: () => import('./pages/home/home').then(m => m.HomeComponent) },
   { path: 'equipment', loadComponent: () => import('./pages/equipment-list/equipment-list').then(m => m.EquipmentListComponent) },
   { path: 'equipment/new', loadComponent: () => import('./pages/equipment-form/equipment-form').then(m => m.EquipmentFormComponent) },
   { path: 'equipment/:id/edit', loadComponent: () => import('./pages/equipment-form/equipment-form').then(m => m.EquipmentFormComponent) },
