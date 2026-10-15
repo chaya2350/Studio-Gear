@@ -59,27 +59,28 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
     .mode-toggle {
       display: flex;
       background: var(--surface);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 5px;
       margin-bottom: 16px;
       gap: 4px;
+      box-shadow: var(--shadow-xs);
 
       button {
         flex: 1;
         padding: 10px;
         border: none;
-        border-radius: 10px;
+        border-radius: var(--radius-xs);
         background: transparent;
         color: var(--text-muted);
-        font-size: 0.9rem;
-        font-weight: 600;
+        font-size: 0.875rem;
+        font-weight: 700;
         font-family: inherit;
         cursor: pointer;
-        transition: all 0.18s;
+        transition: all var(--transition);
 
-        &.active { background: var(--primary); color: white; box-shadow: var(--shadow); }
-        &:not(.active):hover { background: var(--primary-light); color: var(--primary); }
+        &.active { background: var(--grad-primary); color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3); }
+        &:not(.active):hover { background: var(--surface-2); color: var(--text); }
       }
     }
 
@@ -87,7 +88,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 
     .video-wrap {
       position: relative;
-      border-radius: 12px;
+      border-radius: var(--radius-sm);
       overflow: hidden;
       background: #0a0a1a;
       aspect-ratio: 4/3;
@@ -101,23 +102,23 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(0,0,0,0.35);
+      background: rgba(0,0,0,0.4);
     }
 
     .scan-frame {
       width: 200px;
       height: 120px;
-      border: 2.5px solid var(--primary);
-      border-radius: 10px;
-      box-shadow: 0 0 0 2000px rgba(0,0,0,0.3);
+      border: 2.5px solid white;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.35), 0 0 20px rgba(79,70,229,0.6);
       position: relative;
 
       &::before, &::after {
         content: '';
         position: absolute;
-        width: 20px;
-        height: 20px;
-        border-color: white;
+        width: 22px;
+        height: 22px;
+        border-color: var(--primary);
         border-style: solid;
       }
       &::before { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
@@ -129,6 +130,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
       color: var(--text-muted);
       font-size: 0.85rem;
       margin-top: 12px;
+      font-weight: 500;
     }
 
     .barcode-input-wrap {
@@ -139,9 +141,9 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
       border: 1.5px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 12px 16px;
-      transition: border-color 0.18s;
+      transition: all var(--transition);
 
-      &:focus-within { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px rgba(108,99,255,0.1); }
+      &:focus-within { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px var(--primary-glow); }
 
       .barcode-icon { font-size: 1.2rem; }
 
@@ -154,7 +156,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
         direction: rtl;
         color: var(--text);
         &:focus { outline: none; }
-        &::placeholder { color: var(--text-muted); }
+        &::placeholder { color: var(--text-light); }
       }
     }
   `]
@@ -205,9 +207,16 @@ export class ScanComponent implements AfterViewInit, OnDestroy {
   }
 
   navigate(barcode: string) {
-    this.api.getEquipmentByBarcode(barcode).subscribe({
-      next: (item) => this.router.navigate(['/equipment', item.id]),
-      error: () => this.error.set(`ברקוד "${barcode}" לא נמצא במערכת`)
+    const trimmed = barcode.trim();
+    const orderMatch = trimmed.match(/^ORDER-(\d+)$/i);
+    if (orderMatch) {
+      this.router.navigate(['/loans'], { queryParams: { order: Number(orderMatch[1]) } });
+      return;
+    }
+
+    this.api.getEquipmentByBarcode(trimmed).subscribe({
+      next: (item) => this.router.navigate(['/equipment', item.id], { queryParams: { fromScan: '1' } }),
+      error: () => this.error.set(`ברקוד "${trimmed}" לא נמצא במערכת`)
     });
   }
 

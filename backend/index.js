@@ -1,28 +1,50 @@
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const Database = require('better-sqlite3');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
+const XLSX = require('xlsx');
+
+const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
+const uploadsDir = process.env.STUDIO_DATA_DIR
+  ? path.join(dataDir, 'uploads')
+  : path.join(__dirname, 'uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: path.join(__dirname, 'uploads'),
+    destination: uploadsDir,
     filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
   }),
   fileFilter: (req, file, cb) => cb(null, file.mimetype.startsWith('image/'))
 });
 
+const xlsxUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
+
 const app = express();
-const db = new Database('studio.db');
+const db = new Database(path.join(dataDir, 'studio.db'));
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadsDir));
+
+const frontendDir = path.join(__dirname, '../frontend/dist/frontend/browser');
+if (fs.existsSync(frontendDir)) {
+  app.use(express.static(frontendDir));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
+    res.sendFile(path.join(frontendDir, 'index.html'));
+  });
+}
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
-  res.json({ url: `http://localhost:3000/uploads/${req.file.filename}` });
+  res.json({ url: `/uploads/${req.file.filename}` });
 });
 
 db.exec(`
@@ -51,9 +73,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    icon TEXT DEFAULT '📦'
+    icon TEXT DEFAULT '📦',
+    parent_id INTEGER DEFAULT NULL
   );
 `);
+
+db.prepare("UPDATE equipment SET image_url = REPLACE(image_url, 'http://localhost:3000', '') WHERE image_url LIKE 'http://localhost:3000/uploads/%'").run();
 
 // Migration: add new loan columns if missing
 const loanCols = db.prepare("PRAGMA table_info(loans)").all().map((c) => c.name);
@@ -66,8 +91,15 @@ const newLoanCols = [
   ['payment_status', "ALTER TABLE loans ADD COLUMN payment_status TEXT DEFAULT 'pending'"],
   ['track', "ALTER TABLE loans ADD COLUMN track TEXT"],
   ['location', "ALTER TABLE loans ADD COLUMN location TEXT"],
+  ['borrower_id_number', "ALTER TABLE loans ADD COLUMN borrower_id_number TEXT"],
+  ['deposit_check', "ALTER TABLE loans ADD COLUMN deposit_check INTEGER DEFAULT 0"],
+  ['deposit_scan_url', "ALTER TABLE loans ADD COLUMN deposit_scan_url TEXT"],
+  ['hebrew_year', "ALTER TABLE loans ADD COLUMN hebrew_year TEXT"],
 ];
 newLoanCols.forEach(([col, sql]) => { if (!loanCols.includes(col)) db.exec(sql); });
+
+const categoryCols = db.prepare("PRAGMA table_info(categories)").all().map((c) => c.name);
+if (!categoryCols.includes('parent_id')) db.exec('ALTER TABLE categories ADD COLUMN parent_id INTEGER DEFAULT NULL');
 
 // Migration: rename singular categories to plural
 const renameMap = [['מצלמה','מצלמות'],['עדשה','עדשות'],['חצובה','חצובות']];
@@ -76,6 +108,8 @@ renameMap.forEach(([from, to]) => {
   db.prepare('UPDATE equipment SET category=? WHERE category=?').run(to, from);
 });
 
+db.prepare("UPDATE equipment SET category='ציוד צילום', subcategory='מצלמות אישיות' WHERE category='מצלמות אישיות'").run();
+
 // Migration: add equipment columns if missing
 const cols = db.prepare("PRAGMA table_info(equipment)").all();
 const eqColNames = cols.map(c => c.name);
@@ -83,23 +117,128 @@ if (!eqColNames.includes('subcategory')) db.exec('ALTER TABLE equipment ADD COLU
 if (!eqColNames.includes('rental_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN rental_price_per_day REAL DEFAULT 0');
 if (!eqColNames.includes('overdue_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN overdue_price_per_day REAL DEFAULT 0');
 
-const catCount = db.prepare('SELECT COUNT(*) as c FROM categories').get();
-if (catCount.c === 0) {
-  const ins = db.prepare('INSERT OR IGNORE INTO categories (name, icon) VALUES (?, ?)');
-  [['מצלמות','📷'],['עדשות','🔭'],['תאורה','💡'],['שמע','🎙️'],['חצובות','🎬'],['אחר','📦']]
-    .forEach(([n, i]) => ins.run(n, i));
+const defaultCategories = [
+  ['ציוד צילום','📷', null],
+  ['מצלמות','📷', null],
+  ['עדשות','🔭', null],
+  ['תאורה','💡', null],
+  ['שמע','🎙️', null],
+  ['חצובות','🎬', null],
+  ['גימבל','🎥', null],
+  ['נק','📦', null],
+  ['אחר','📦', null],
+  ['מחשבים ניידים','🖥️', null],
+  ['מחשב נייד','💻', null],
+];
+const ins = db.prepare('INSERT OR IGNORE INTO categories (name, icon, parent_id) VALUES (?, ?, ?)');
+defaultCategories.forEach(([n, i, p]) => ins.run(n, i, p));
+
+const photoGroupId = db.prepare("SELECT id FROM categories WHERE name = 'ציוד צילום'").get()?.id;
+if (photoGroupId) {
+  db.prepare("UPDATE categories SET parent_id = ? WHERE name IN ('מצלמות','עדשות','תאורה','שמע','חצובות','גימבל','נק','אחר','מצלמות אישיות') AND parent_id IS NULL").run(photoGroupId);
 }
+const laptopGroupId = db.prepare("SELECT id FROM categories WHERE name = 'מחשבים ניידים'").get()?.id;
+if (laptopGroupId) {
+  db.prepare("UPDATE categories SET parent_id = ? WHERE name = 'מחשב נייד' AND parent_id IS NULL").run(laptopGroupId);
+}
+
+const legacyPhotoCategory = db.prepare("SELECT id FROM categories WHERE name = 'מצלמות אישיות'").get()?.id;
+if (legacyPhotoCategory && photoGroupId) {
+  db.prepare("UPDATE categories SET parent_id = ? WHERE id = ?").run(photoGroupId, legacyPhotoCategory);
+}
+
+// ── Students ───────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_number TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    track TEXT,
+    year TEXT
+  );
+`);
+
+app.get('/api/students', (req, res) => {
+  const { q } = req.query;
+  if (q) {
+    const rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
+      .all(`%${q}%`, `%${q}%`);
+    return res.json(rows);
+  }
+  res.json(db.prepare('SELECT * FROM students ORDER BY name').all());
+});
+
+app.get('/api/students/:id_number', (req, res) => {
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'לא נמצא' });
+  const loans = db.prepare(`
+    SELECT l.*, e.name as equipment_name, e.barcode, e.category
+    FROM loans l JOIN equipment e ON e.id = l.equipment_id
+    WHERE l.borrower_id_number = ?
+    ORDER BY l.loan_date DESC
+  `).all(req.params.id_number);
+  res.json({ ...student, loans });
+});
+
+app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    let allRows = [];
+    for (const sheetName of wb.SheetNames) {
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (rows.length > 0) console.log(`Sheet "${sheetName}" columns:`, Object.keys(rows[0]));
+      allRows = allRows.concat(rows);
+    }
+    const rows = allRows;
+
+    const insert = db.prepare(`
+      INSERT INTO students (id_number, name, phone, track, year)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id_number) DO UPDATE SET name=excluded.name, phone=excluded.phone, track=excluded.track, year=excluded.year
+    `);
+
+    let imported = 0, skipped = 0;
+    const importMany = db.transaction((rows) => {
+      for (const row of rows) {
+        const id_number = String(row["מס' זהות"] || row['ת. זהות'] || row['ת.ז'] || row['ת.ז.'] || row['תז'] || row['id_number'] || row['ID'] || '').trim();
+        const firstName = String(row['שם פרטי'] || '').trim();
+        const lastName = String(row['משפחה'] || '').trim();
+        const name = [lastName, firstName].filter(Boolean).join(' ') || String(row['שם'] || row['שם מלא'] || row['name'] || '').trim();
+        const phone = String(row['נייד אישי'] || row['טלפון'] || row['phone'] || '').trim();
+        const track = String(row['התמחות'] ||  row['מסלול'] || row['התמחות 1'] || row['מגמה'] || row['מגמה '] || row['track'] || '').trim();
+        const year = String(row['כיתה'] || row['שנה'] || row['year'] || '').trim();
+        if (!id_number || !name) { skipped++; continue; }
+        insert.run(id_number, name, phone, track, year);
+        imported++;
+      }
+    });
+    importMany(rows);
+    res.json({ imported, skipped, total: rows.length });
+  } catch (e) {
+    console.error('Import error:', e);
+    res.status(500).json({ error: 'שגיאה בקריאת הקובץ: ' + e.message });
+  }
+});
 
 // ── Categories ─────────────────────────────────────────────
 app.get('/api/categories', (req, res) => {
-  res.json(db.prepare('SELECT * FROM categories ORDER BY name').all());
+  res.json(db.prepare(`
+    SELECT c.*, p.name as parent_name
+    FROM categories c
+    LEFT JOIN categories p ON p.id = c.parent_id
+    ORDER BY COALESCE(p.name, c.name), c.name
+  `).all());
 });
 app.post('/api/categories', (req, res) => {
-  const { name, icon } = req.body;
+  const { name, icon, parent_id } = req.body;
   if (!name) return res.status(400).json({ error: 'שם קטגוריה חובה' });
   try {
-    const result = db.prepare('INSERT INTO categories (name, icon) VALUES (?, ?)').run(name, icon || '📦');
-    res.json({ id: result.lastInsertRowid, name, icon: icon || '📦' });
+    const result = db.prepare('INSERT INTO categories (name, icon, parent_id) VALUES (?, ?, ?)')
+      .run(name, icon || '📦', parent_id ?? null);
+    res.json({ id: result.lastInsertRowid, name, icon: icon || '📦', parent_id: parent_id ?? null });
   } catch { res.status(400).json({ error: 'קטגוריה כבר קיימת' }); }
 });
 app.delete('/api/categories/:id', (req, res) => {
@@ -112,6 +251,8 @@ app.delete('/api/categories/:id', (req, res) => {
 function equipmentQuery(whereClause = '') {
   return `
     SELECT e.*,
+      CASE WHEN e.category = 'מצלמות אישיות' THEN 'ציוד צילום' ELSE e.category END as category,
+      CASE WHEN e.category = 'מצלמות אישיות' THEN 'מצלמות אישיות' ELSE e.subcategory END as subcategory,
       CASE WHEN active.id IS NOT NULL THEN 1 ELSE 0 END as is_loaned,
       active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
@@ -146,20 +287,53 @@ app.get('/api/equipment/:id', (req, res) => {
   res.json(row);
 });
 
+function normalizeEquipmentName(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function ensureUniqueEquipmentName(name, excludeId = null) {
+  const trimmed = normalizeEquipmentName(name);
+  if (!trimmed) return null;
+  const existing = db.prepare(
+    'SELECT id FROM equipment WHERE lower(name) = lower(?) AND (? IS NULL OR id != ?)' 
+  ).get(trimmed, excludeId, excludeId);
+  return existing ? 'שם הציוד כבר קיים במערכת' : null;
+}
+
 app.post('/api/equipment', (req, res) => {
   const { barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day } = req.body;
+  const normalizedName = normalizeEquipmentName(name);
+  if (!normalizedName) return res.status(400).json({ error: 'שם הציוד הוא שדה חובה' });
+  const duplicateError = ensureUniqueEquipmentName(normalizedName);
+  if (duplicateError) return res.status(409).json({ error: duplicateError });
+
   try {
+    const finalCategory = category === 'מחשב נייד' ? 'מחשב נייד' : category;
+    const finalSubcategory = finalCategory === 'מחשב נייד' ? null : (subcategory || null);
+    const finalRental = finalCategory === 'מחשב נייד' ? 0 : (rental_price_per_day || 0);
+    const finalOverdue = finalCategory === 'מחשב נייד' ? 0 : (overdue_price_per_day || 0);
+
     const result = db.prepare(
       'INSERT INTO equipment (barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(barcode, name, category, subcategory || null, description, image_url, rental_price_per_day || 0, overdue_price_per_day || 0);
+    ).run(barcode, normalizedName, finalCategory, finalSubcategory, description, image_url, finalRental, finalOverdue);
     res.json({ id: result.lastInsertRowid });
   } catch { res.status(400).json({ error: 'Barcode already exists' }); }
 });
 
 app.put('/api/equipment/:id', (req, res) => {
   const { barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day } = req.body;
+  const normalizedName = normalizeEquipmentName(name);
+  if (!normalizedName) return res.status(400).json({ error: 'שם הציוד הוא שדה חובה' });
+  const duplicateError = ensureUniqueEquipmentName(normalizedName, Number(req.params.id));
+  if (duplicateError) return res.status(409).json({ error: duplicateError });
+
+  const finalCategory = category === 'מחשב נייד' ? 'מחשב נייד' : category;
+  const finalSubcategory = finalCategory === 'מחשב נייד' ? null : (subcategory || null);
+  const finalRental = finalCategory === 'מחשב נייד' ? 0 : (rental_price_per_day || 0);
+  const finalOverdue = finalCategory === 'מחשב נייד' ? 0 : (overdue_price_per_day || 0);
+
   db.prepare('UPDATE equipment SET barcode=?, name=?, category=?, subcategory=?, description=?, image_url=?, rental_price_per_day=?, overdue_price_per_day=? WHERE id=?')
-    .run(barcode, name, category, subcategory || null, description, image_url, rental_price_per_day || 0, overdue_price_per_day || 0, req.params.id);
+    .run(barcode, normalizedName, finalCategory, finalSubcategory, description, image_url, finalRental, finalOverdue, req.params.id);
   res.json({ success: true });
 });
 
@@ -205,6 +379,10 @@ app.get('/api/loans', (req, res) => {
       CASE WHEN l.actual_return IS NULL AND l.loan_date > ? THEN 1 ELSE 0 END as is_future
     FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
+    WHERE NOT (
+      e.category = 'מצלמות אישיות' OR
+      (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+    )
     ORDER BY l.actual_return IS NULL DESC, l.loan_date ASC, l.expected_return ASC
   `).all(today);
   res.json(rows);
@@ -216,7 +394,13 @@ app.get('/api/loans/overdue', (req, res) => {
     SELECT l.*, e.name as equipment_name, e.barcode, e.category
     FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
-    WHERE l.actual_return IS NULL AND l.loan_date <= ? AND l.expected_return < ?
+    WHERE l.actual_return IS NULL
+      AND l.loan_date <= ?
+      AND l.expected_return < ?
+      AND NOT (
+        e.category = 'מצלמות אישיות' OR
+        (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+      )
     ORDER BY l.expected_return ASC
   `).all(today, today);
   res.json(rows);
@@ -231,32 +415,55 @@ app.get('/api/loans/equipment/:equipmentId', (req, res) => {
 });
 
 app.post('/api/loans', (req, res) => {
-  const { equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
-          loan_type, price_per_day, card_last4, card_expiry, card_holder, track, location } = req.body;
+  const { equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
+          loan_type, price_per_day, card_last4, card_expiry, card_holder, track, location,
+          deposit_check, deposit_scan_url, hebrew_year } = req.body;
   const today = new Date().toISOString().split('T')[0];
+
+  const eq = db.prepare('SELECT category, subcategory FROM equipment WHERE id=?').get(equipment_id);
+  const isLaptop = eq && eq.category === 'מחשב נייד';
+  const isPersonalCamera = eq && (
+    eq.category === 'מצלמות אישיות' ||
+    (eq.category === 'ציוד צילום' && eq.subcategory === 'מצלמות אישיות')
+  );
+
+  if (isPersonalCamera) {
+    if (!borrower_name) return res.status(400).json({ error: 'שם השואל חובה' });
+    if (!notes || !String(notes).trim()) return res.status(400).json({ error: 'חובה לכתוב מה קיבלה בנוסף למצלמה' });
+    if (deposit_check && !deposit_scan_url) return res.status(400).json({ error: 'נא להעלות סריקת שיק/פיקדון' });
+
+    const active = db.prepare('SELECT id FROM loans WHERE equipment_id=? AND actual_return IS NULL').get(equipment_id);
+    if (active) return res.status(400).json({ error: 'המצלמה כבר הוזמנה' });
+
+    const loanStart = '2026-09-01';
+    const loanEnd = '2027-06-30';
+
+    const result = db.prepare(
+      `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
+        loan_type, payment_status, track, location, deposit_check, deposit_scan_url, hebrew_year)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'loan', 'none', ?, ?, ?, ?, ?)`
+    ).run(equipment_id, borrower_name, borrower_phone || '', borrower_id_number || null, loanStart, loanEnd, notes,
+      track || 'גרפיקה א', location || null, Number(Boolean(deposit_check)), deposit_scan_url || null, hebrew_year || 'תשפ"ז');
+    return res.json({ id: result.lastInsertRowid });
+  }
 
   if (!loan_date || !expected_return) return res.status(400).json({ error: 'תאריכים חסרים' });
   if (loan_date < today) return res.status(400).json({ error: 'תאריך ההתחלה לא יכול להיות בעבר' });
   if (expected_return < loan_date) return res.status(400).json({ error: 'תאריך ההחזרה חייב להיות אחרי תאריך ההתחלה' });
 
-  // Max 14 days
   const start = new Date(loan_date), end = new Date(expected_return);
   const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
   if (days > 14) return res.status(400).json({ error: 'לא ניתן להשאיל/להשכיר ליותר מ-14 יום' });
 
-  // Credit card required (not for laptops)
-  const eq = db.prepare('SELECT category FROM equipment WHERE id=?').get(equipment_id);
-  const isLaptop = eq && eq.category === 'מחשב נייד';
   if (!isLaptop && (!card_last4 || !card_expiry || !card_holder)) return res.status(400).json({ error: 'פרטי אשראי חובה' });
 
-  // Laptop: same-day only, no overlap check needed beyond active loan
   if (isLaptop) {
     const active = db.prepare('SELECT id FROM loans WHERE equipment_id=? AND actual_return IS NULL').get(equipment_id);
     if (active) return res.status(400).json({ error: 'המחשב כבר מושאל' });
     const result = db.prepare(
-      `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes, loan_type, payment_status, track, location)
-       VALUES (?, ?, ?, ?, ?, ?, 'loan', 'none', ?, ?)`
-    ).run(equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes, track || null, location || null);
+      `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes, loan_type, payment_status, track, location)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'loan', 'none', ?, ?)`
+    ).run(equipment_id, borrower_name, borrower_phone, borrower_id_number || null, loan_date, expected_return, notes, track || null, location || null);
     return res.json({ id: result.lastInsertRowid });
   }
 
@@ -270,10 +477,10 @@ app.post('/api/loans', (req, res) => {
   if (overlap) return res.status(400).json({ error: 'הציוד כבר תפוס בתאריכים אלו' });
 
   const result = db.prepare(
-    `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
+    `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
       loan_type, price_per_day, card_last4, card_expiry, card_holder, payment_status, track, location)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(equipment_id, borrower_name, borrower_phone, loan_date, expected_return, notes,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(equipment_id, borrower_name, borrower_phone, borrower_id_number || null, loan_date, expected_return, notes,
         loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, 'pending', track || null, location || null);
   res.json({ id: result.lastInsertRowid });
 });
@@ -321,6 +528,25 @@ app.delete('/api/loans/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Order receipt barcode ────────────────────────────────
+app.get('/api/loans/receipt-barcode/:id', async (req, res) => {
+  try {
+    const png = await bwipjs.toBuffer({
+      bcid: 'code128',
+      text: `ORDER-${req.params.id}`,
+      scale: 3,
+      height: 16,
+      includetext: true,
+      textxalign: 'center',
+      backgroundcolor: 'ffffff',
+    });
+    res.set('Content-Type', 'image/png');
+    res.send(png);
+  } catch (e) {
+    res.status(500).json({ error: 'Barcode generation failed' });
+  }
+});
+
 // ── Laptop overdue ────────────────────────────────────────
 
 function getLaptopOverdue() {
@@ -336,4 +562,5 @@ app.get('/api/laptops/overdue', (req, res) => {
   res.json(getLaptopOverdue());
 });
 
-app.listen(3000, () => console.log('Backend running on http://localhost:3000'));
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Backend running on port ${port}`));
