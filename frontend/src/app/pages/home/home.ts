@@ -7,14 +7,14 @@ import { RouterLink } from '@angular/router';
   template: `
     <div class="home-wrap">
       <div class="home-header">
-        <div class="home-logo">🎬</div>
-        <h1>מערכת סמינר גור</h1>
-        <p class="home-sub">בחר מודול להמשך</p>
+        <img src="/logo.png" class="home-logo-img" alt="לוגו">
+        <h1>ניהול ה ו</h1>
+        <p class="home-sub">מה תרצו לעשות עכשיו?</p>
       </div>
 
       <div class="modules-grid">
         <a routerLink="/equipment" class="module-card">
-          <div class="module-icon">📦</div>
+          <div class="module-icon"></div>
           <div class="module-info">
             <div class="module-title">השאלת ציוד</div>
             <div class="module-desc">ניהול ציוד, השאלות, סריקות וקבלות</div>
@@ -39,10 +39,7 @@ import { RouterLink } from '@angular/router';
       padding: 40px 24px;
     }
     .home-header { text-align: center; margin-bottom: 48px; }
-    .home-logo {
-      font-size: 3.5rem; margin-bottom: 16px;
-      filter: drop-shadow(0 4px 12px rgba(79,70,229,0.3));
-    }
+    .home-logo-img { height: 120px; width: auto; object-fit: contain; margin-bottom: 16px; }
     h1 { font-size: 2.2rem; font-weight: 900; letter-spacing: -1px; color: var(--text); margin-bottom: 8px; }
     .home-sub { color: var(--text-muted); font-size: 1rem; font-weight: 500; }
 
