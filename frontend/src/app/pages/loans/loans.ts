@@ -91,43 +91,48 @@ import { Loan } from '../../models';
   styles: [`
     .filter-tabs {
       display: flex;
-      gap: 8px;
-      margin-bottom: 20px;
+      gap: 6px;
+      margin-bottom: 22px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 5px;
 
       button {
-        padding: 9px 20px;
-        border: 1.5px solid var(--border);
-        border-radius: 10px;
-        background: var(--surface);
+        padding: 8px 18px;
+        border: none;
+        border-radius: var(--radius-xs);
+        background: transparent;
         color: var(--text-muted);
-        font-size: 0.88rem;
-        font-weight: 600;
+        font-size: 0.875rem;
+        font-weight: 700;
         font-family: inherit;
         cursor: pointer;
-        transition: all 0.18s;
+        transition: all var(--transition);
         display: flex;
         align-items: center;
         gap: 7px;
 
-        &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-        &.active { background: var(--primary); color: white; border-color: var(--primary); }
+        &:hover { background: var(--surface-2); color: var(--text); }
+        &.active { background: var(--grad-primary); color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3); }
       }
     }
     .tab-count {
       background: rgba(255,255,255,0.25);
-      border-radius: 10px;
+      border-radius: 20px;
       padding: 1px 8px;
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       &.overdue { background: var(--danger); color: white; }
     }
+    button:not(.active) .tab-count { background: var(--surface-2); color: var(--text-muted); }
     .laptop-alert {
-      background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 10px;
-      padding: 12px 16px; margin-bottom: 20px; font-size: 0.9rem; color: #92400e;
-      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: var(--radius-sm);
+      padding: 12px 16px; margin-bottom: 20px; font-size: 0.875rem; color: #92400e;
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 500;
     }
-    .eq-link { color: var(--primary); text-decoration: none; font-weight: 600; &:hover { text-decoration: underline; } }
-    .cat-chip { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
-    .overdue-row td { background: #fff8f8 !important; }
+    .eq-link { color: var(--primary); text-decoration: none; font-weight: 700; &:hover { text-decoration: underline; } }
+    .cat-chip { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
+    .overdue-row td { background: #fef2f2 !important; }
   `]
 })
 export class LoansComponent implements OnInit {

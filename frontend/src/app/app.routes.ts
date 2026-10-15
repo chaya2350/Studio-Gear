@@ -8,6 +8,8 @@ export const routes: Routes = [
   { path: 'equipment/:id', loadComponent: () => import('./pages/equipment-detail/equipment-detail').then(m => m.EquipmentDetailComponent) },
   { path: 'scan', loadComponent: () => import('./pages/scan/scan').then(m => m.ScanComponent) },
   { path: 'loans', loadComponent: () => import('./pages/loans/loans').then(m => m.LoansComponent) },
-  { path: 'categories', loadComponent: () => import('./pages/categories/categories').then(m => m.CategoriesComponent) },
   { path: 'calendar', loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarComponent) },
+  { path: 'admin', loadComponent: () => import('./pages/admin/admin').then(m => m.AdminComponent) },
+  { path: 'checkout', loadComponent: () => import('./pages/checkout/checkout').then(m => m.CheckoutComponent) },
+  { path: 'students/:id', loadComponent: () => import('./pages/student/student').then(m => m.StudentComponent) },
 ];

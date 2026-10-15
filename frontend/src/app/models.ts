@@ -17,7 +17,6 @@ export interface Equipment {
   location?: string;
   loan_id?: number;
   notes?: string;
-  // future reservation
   is_reserved: number;
 }
 
@@ -29,6 +28,7 @@ export interface Loan {
   category?: string;
   borrower_name: string;
   borrower_phone: string;
+  borrower_id_number?: string;
   loan_date: string;
   expected_return: string;
   actual_return?: string;
@@ -48,4 +48,16 @@ export interface Category {
   id: number;
   name: string;
   icon: string;
+  parent_id?: number | null;
+  parent_name?: string | null;
+}
+
+export interface Student {
+  id: number;
+  id_number: string;
+  name: string;
+  phone?: string;
+  track?: string;
+  year?: string;
+  loans?: Loan[];
 }
