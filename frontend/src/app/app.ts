@@ -17,6 +17,7 @@ import { CartService } from './services/cart.service';
         <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
         <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
         <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
+        <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
       </div>
     </nav>

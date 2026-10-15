@@ -16,6 +16,7 @@ export class ApiService {
   deleteEquipment(id: number) { return this.http.delete(`${this.base}/equipment/${id}`); }
   getNewBarcode() { return this.http.get<{barcode: string}>(`${this.base}/equipment/new-barcode`); }
   getBarcodeUrl(id: number) { return `${this.base}/equipment/${id}/barcode`; }
+  getOrderReceiptBarcodeUrl(id: number) { return `${this.base}/loans/receipt-barcode/${id}`; }
   uploadImage(fd: FormData) { return this.http.post<{url: string}>(`${this.base}/upload`, fd); }
 
   getLoans() { return this.http.get<Loan[]>(`${this.base}/loans`); }

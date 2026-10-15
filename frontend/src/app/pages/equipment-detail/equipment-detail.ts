@@ -172,36 +172,58 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
             </div>
             <div *ngIf="isLaptop()" class="laptop-badge">💻 תפיסת מחשב נייד — ליום אחד</div>
 
-            <div class="form-group">
-              <label>שם השואל *</label>
-              <input [(ngModel)]="loan.borrower_name" placeholder="שם מלא">
-            </div>
-            <div class="form-group" *ngIf="!isLaptop()">
-              <label>טלפון</label>
-              <input [(ngModel)]="loan.borrower_phone" placeholder="050-0000000">
-            </div>
-            <div class="form-group">
-              <label>מסלול *</label>
-              <div style="display:flex; gap:8px;">
-                <select [(ngModel)]="loan.trackName" style="flex:2" (ngModelChange)="onTrackChange()">
-                  <option value="">בחר מסלול</option>
-                  <option>אדריכלות</option>
-                  <option>הנדסאים</option>
-                  <option>הנדסת אנרגיה</option>
-                  <option>הוראה מתקנת</option>
-                  <option>תקשורת</option>
-                  <option>גרפיקה</option>
-                  <option>בימוי</option>
-                  <option>יעוץ מס</option>
-                  <option value="אחר">אחר</option>
-                </select>
-                <select [(ngModel)]="loan.trackYear" style="flex:1" *ngIf="trackNeedsYear()">
-                  <option value="" disabled>שנה</option>
-                  <option value="א">א</option>
-                  <option value="ב">ב</option>
-                </select>
+            <div class="form-group" *ngIf="isLaptop(); else borrowerManual">
+              <label>מז *</label>
+              <div style="position:relative;">
+                <input [(ngModel)]="studentQuery" placeholder="הקלד מז או שם לחיפוש..." (input)="onStudentSearch()" autocomplete="off">
+                <div *ngIf="studentSuggestions().length" class="suggestions">
+                  <div *ngFor="let s of studentSuggestions()" class="suggestion-item" (click)="selectStudent(s)">
+                    <strong>{{ s.name }}</strong>
+                    <span>{{ s.id_number }} · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span>
+                  </div>
+                </div>
+              </div>
+              <div *ngIf="selectedStudent()" class="student-found">
+                <div class="student-name">{{ selectedStudent()!.name }}</div>
+                <div class="student-meta">
+                  <span>🪪 {{ selectedStudent()!.id_number }}</span>
+                  <span *ngIf="selectedStudent()!.track">📚 {{ selectedStudent()!.track }}{{ selectedStudent()!.year ? ' ' + selectedStudent()!.year : '' }}</span>
+                  <span *ngIf="selectedStudent()!.phone">📱 {{ selectedStudent()!.phone }}</span>
+                </div>
               </div>
             </div>
+            <ng-template #borrowerManual>
+              <div class="form-group">
+                <label>שם השואל *</label>
+                <input [(ngModel)]="loan.borrower_name" placeholder="שם מלא">
+              </div>
+              <div class="form-group">
+                <label>טלפון</label>
+                <input [(ngModel)]="loan.borrower_phone" placeholder="050-0000000">
+              </div>
+              <div class="form-group">
+                <label>מסלול *</label>
+                <div style="display:flex; gap:8px;">
+                  <select [(ngModel)]="loan.trackName" style="flex:2" (ngModelChange)="onTrackChange()">
+                    <option value="">בחר מסלול</option>
+                    <option>אדריכלות</option>
+                    <option>הנדסאים</option>
+                    <option>הנדסת אנרגיה</option>
+                    <option>הוראה מתקנת</option>
+                    <option>תקשורת</option>
+                    <option>גרפיקה</option>
+                    <option>בימוי</option>
+                    <option>יעוץ מס</option>
+                    <option value="אחר">אחר</option>
+                  </select>
+                  <select [(ngModel)]="loan.trackYear" style="flex:1" *ngIf="trackNeedsYear()">
+                    <option value="" disabled>שנה</option>
+                    <option value="א">א</option>
+                    <option value="ב">ב</option>
+                  </select>
+                </div>
+              </div>
+            </ng-template>
             <div class="form-group" *ngIf="isLaptop()">
               <label>לאן לוקחים *</label>
               <div style="display:flex; gap:8px; align-items:center;">
@@ -592,6 +614,24 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
       background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe;
       border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 700; margin-bottom: 16px; font-size: 0.875rem;
     }
+    .suggestions {
+      position: absolute; top: 100%; right: 0; left: 0; z-index: 100;
+      background: var(--surface); border: 1.5px solid var(--border-focus); border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg); overflow: hidden; margin-top: 4px;
+    }
+    .suggestion-item {
+      padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.875rem; transition: background var(--transition); border-bottom: 1px solid var(--border);
+      &:last-child { border-bottom: none; }
+      strong { color: var(--text); }
+      span { color: var(--text-muted); font-size: 0.78rem; }
+      &:hover { background: var(--primary-light); }
+    }
+    .student-found {
+      background: #f0fdf4; border: 1.5px solid #86efac; border-radius: var(--radius-sm); padding: 14px 16px; margin-top: 10px;
+      .student-name { font-weight: 800; font-size: 1.05rem; color: #166534; margin-bottom: 6px; }
+      .student-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.82rem; color: #166534; }
+    }
     .laptop-date-info {
       display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
       background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px;
@@ -623,8 +663,11 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   historyTab = signal<'past' | 'future'>('past');
   loanType = signal<'loan' | 'rental'>('loan');
   today = new Date().toISOString().split('T')[0];
+  studentQuery = '';
+  studentSuggestions = signal<any[]>([]);
+  selectedStudent = signal<any | null>(null);
 
-  loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '' };
+  loan: any = { borrower_name: '', borrower_phone: '', borrower_id_number: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '' };
   returnBarcode = '';
   returnBarcodeError = signal(false);
   returnScanning = signal(false);
@@ -659,6 +702,28 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   pastLoans()   { return this.history().filter(l => !l.is_future); }
   futureLoans() { return this.history().filter(l => l.is_future).sort((a,b) => a.loan_date.localeCompare(b.loan_date)); }
   activeLoan()  { return this.history().find(l => !l.actual_return && !l.is_future) ?? null; }
+
+  onStudentSearch() {
+    this.selectedStudent.set(null);
+    const q = this.studentQuery.trim();
+    if (q.length < 2) {
+      this.studentSuggestions.set([]);
+      return;
+    }
+    this.api.getStudents(q).subscribe(s => this.studentSuggestions.set(s.slice(0, 8)));
+  }
+
+  selectStudent(s: any) {
+    this.selectedStudent.set(s);
+    this.studentQuery = s.id_number;
+    this.studentSuggestions.set([]);
+    this.loan.borrower_name = s.name;
+    this.loan.borrower_phone = s.phone || '';
+    this.loan.borrower_id_number = s.id_number;
+    this.loan.trackName = s.track || '';
+    this.loan.trackYear = s.year || '';
+    this.loan.track = s.track && s.year ? `${s.track} ${s.year}` : (s.track || '');
+  }
 
   maxReturnDate(): string {
     if (!this.loan.loan_date) return '';
@@ -804,19 +869,18 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
 
   createLoan() {
     const item = this.item()!;
-    if (!this.loan.borrower_name) {
-      this.loanError.set('נא למלא שם'); return;
-    }
-    if (!this.loan.trackName) {
-      this.loanError.set('נא לבחור מסלול'); return;
-    }
-    if (this.trackNeedsYear() && !this.loan.trackYear) {
-      this.loanError.set('נא לבחור שנה'); return;
-    }
-    this.loan.track = this.trackNeedsYear() ? `${this.loan.trackName} ${this.loan.trackYear}` : this.loan.trackName;
     if (this.isLaptop()) {
+      if (!this.loan.borrower_name) {
+        this.loanError.set('נא לבחור מז תקין'); return;
+      }
+      if (!this.loan.trackName) {
+        this.loanError.set('נא לבחור מסלול'); return;
+      }
+      if (this.trackNeedsYear() && !this.loan.trackYear) {
+        this.loanError.set('נא לבחור שנה'); return;
+      }
+      this.loan.track = this.trackNeedsYear() ? `${this.loan.trackName} ${this.loan.trackYear}` : this.loan.trackName;
       if (!this.loan.location) { this.loanError.set('נא למלא לאן לוקחים'); return; }
-      // Laptop: auto today, no card, no payment
       this.loan.loan_date = this.today;
       this.loan.expected_return = this.today;
       this.loan.loan_type = 'loan';
@@ -830,6 +894,17 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
       });
       return;
     }
+
+    if (!this.loan.borrower_name) {
+      this.loanError.set('נא למלא שם'); return;
+    }
+    if (!this.loan.trackName) {
+      this.loanError.set('נא לבחור מסלול'); return;
+    }
+    if (this.trackNeedsYear() && !this.loan.trackYear) {
+      this.loanError.set('נא לבחור שנה'); return;
+    }
+    this.loan.track = this.trackNeedsYear() ? `${this.loan.trackName} ${this.loan.trackYear}` : this.loan.trackName;
     if (!this.loan.loan_date || !this.loan.expected_return) {
       this.loanError.set('נא למלא תאריך התחלה ותאריך החזרה'); return;
     }

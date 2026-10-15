@@ -11,5 +11,6 @@ export const routes: Routes = [
   { path: 'calendar', loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarComponent) },
   { path: 'admin', loadComponent: () => import('./pages/admin/admin').then(m => m.AdminComponent) },
   { path: 'checkout', loadComponent: () => import('./pages/checkout/checkout').then(m => m.CheckoutComponent) },
+  { path: 'students', loadComponent: () => import('./pages/student-search/student-search').then(m => m.StudentSearchComponent) },
   { path: 'students/:id', loadComponent: () => import('./pages/student/student').then(m => m.StudentComponent) },
 ];
