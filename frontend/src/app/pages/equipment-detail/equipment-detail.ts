@@ -1,10 +1,11 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { CartService } from '../../services/cart.service';
 import { Equipment, Loan } from '../../models';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 @Component({
   selector: 'app-equipment-detail',
@@ -12,31 +13,26 @@ import { Equipment, Loan } from '../../models';
   template: `
     <div *ngIf="item()">
       <div class="page-header">
-        <div style="display:flex; align-items:center; gap:16px;">
+        <div class="header-top">
           <a routerLink="/equipment" class="back-btn">←</a>
-          <div>
+          <div class="header-info">
             <h1>{{ item()!.name }}</h1>
             <p class="subtitle">{{ item()!.category }}<span *ngIf="item()!.subcategory"> › {{ item()!.subcategory }}</span> · ברקוד {{ item()!.barcode }}</p>
           </div>
+          <span class="badge header-badge" [class]="statusClass()">{{ statusLabel() }}</span>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button *ngIf="item() && !cart.has(item()!.id)" class="btn btn-primary" (click)="addToCart()">➕ הוסף להזמנה</button>
-          <button *ngIf="item() && cart.has(item()!.id)" class="btn btn-ghost" (click)="addToCart()">✓ נוסף לעגלה</button>
-          <button class="btn btn-ghost" (click)="printBarcode()">🖨️ הדפס ברקוד</button>
-          <a [routerLink]="['/equipment', item()!.id, 'edit']" class="btn btn-ghost">✏️ עריכה</a>
-          <button class="btn btn-danger" (click)="delete()">🗑 מחיקה</button>
+        <div class="page-actions">
+          <button class="btn btn-ghost action-btn" (click)="printBarcode()">🖨️ הדפס ברקוד</button>
+          <a [routerLink]="['/equipment', item()!.id, 'edit']" class="btn btn-ghost action-btn">✏️ עריכה</a>
+          <button class="btn btn-danger action-btn" (click)="delete()">🗑 מחיקה</button>
         </div>
       </div>
 
       <div class="detail-grid">
         <!-- Info card -->
-        <div class="card">
+        <div class="card info-col">
           <img *ngIf="item()!.image_url" [src]="item()!.image_url" class="item-image">
           <div class="section-title">📋 פרטי הציוד</div>
-          <div class="info-row">
-            <span class="info-label">סטטוס</span>
-            <span class="badge" [class]="statusClass()">{{ statusLabel() }}</span>
-          </div>
           <div class="info-row">
             <span class="info-label">ברקוד</span>
             <span class="info-value barcode-val">{{ item()!.barcode }}</span>
@@ -76,8 +72,29 @@ import { Equipment, Loan } from '../../models';
           </div>
         </div>
 
-        <!-- Loan card -->
-        <div class="card">
+        <!-- Cart CTA card -->
+        <div class="cart-card" *ngIf="showAddToCart() && !item()!.is_loaned">
+          <div class="cart-card-glow" [class.cart-card-glow--added]="cart.has(item()!.id)"></div>
+          <div class="cart-card-inner">
+            <div class="cart-card-icon" [class.cart-card-icon--added]="cart.has(item()!.id)">
+              <span *ngIf="!cart.has(item()!.id)">🛒</span>
+              <span *ngIf="cart.has(item()!.id)">✅</span>
+            </div>
+            <div class="cart-card-text">
+              <div class="cart-card-title" *ngIf="!cart.has(item()!.id)">הוסף להזמנה קבוצתית</div>
+              <div class="cart-card-title" *ngIf="cart.has(item()!.id)">הציוד בסל!</div>
+              <div class="cart-card-desc" *ngIf="!cart.has(item()!.id)">בחר מספר פריטים יחד ושלח הזמנה אחת לכולם</div>
+              <div class="cart-card-desc" *ngIf="cart.has(item()!.id)">הפריט נוסף לסל ההזמנה — לחץ להסרה</div>
+            </div>
+            <button class="cart-cta-big" [class.cart-cta-big--added]="cart.has(item()!.id)" (click)="addToCart()">
+              <span class="cart-btn-icon">{{ cart.has(item()!.id) ? '✓' : '+' }}</span>
+              <span>{{ cart.has(item()!.id) ? 'הסר מהסל' : 'הוסף לסל' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Return / Loan card -->
+        <div class="card" *ngIf="item()!.is_loaned || !showAddToCart() || isLaptop()">
           <div *ngIf="item()!.is_loaned; else loanForm">
             <div class="section-title">
               {{ isLaptop() ? '💻 בשימוש' : (activeLoan()?.loan_type === 'rental' ? '💰 השכרה פעילה' : '📤 השאלה פעילה') }}
@@ -131,7 +148,20 @@ import { Equipment, Loan } from '../../models';
               <div *ngIf="paymentState() === 'success'" class="payment-success">✅ חיוב בוצע בהצלחה!</div>
               <button *ngIf="paymentState() === 'idle'" class="btn btn-primary" style="margin-top:10px; width:100%;" (click)="payAndReturn()">💳 שלם {{ pendingCharge() }} ₪ והחזר</button>
             </div>
-            <button *ngIf="pendingCharge() === 0" class="btn btn-success" style="margin-top:16px; width:100%;" (click)="returnItem()">{{ isLaptop() ? '✓ סמן כהוחזר ' : '✓ סמן כהוחזר' }}</button>
+            <!-- Barcode confirm before return -->
+            <div *ngIf="pendingCharge() === 0" class="return-confirm">
+              <div class="return-confirm-label">🔒 לאישור החזרה — סרוק או הקלד ברקוד</div>
+              <div class="return-confirm-row">
+                <input #returnInput class="return-barcode-input" [(ngModel)]="returnBarcode" placeholder="הזן ברקוד" (keyup.enter)="returnItem()" [class.input-error]="returnBarcodeError()">
+                <button class="btn btn-ghost return-scan-btn" (click)="toggleReturnScan()" [class.active]="returnScanning()">📷</button>
+                <button class="btn btn-success return-btn" (click)="returnItem()">✓ אשר</button>
+              </div>
+              <div *ngIf="returnScanning()" class="return-video-wrap">
+                <video #returnVideoEl autoplay playsinline></video>
+                <div class="return-scan-overlay"><div class="return-scan-frame"></div></div>
+              </div>
+              <div *ngIf="returnBarcodeError()" class="barcode-error">❌ ברקוד שגוי — נסה שוב</div>
+            </div>
           </div>
 
           <ng-template #loanForm>
@@ -371,9 +401,93 @@ import { Equipment, Loan } from '../../models';
     .back-btn {
       width: 36px; height: 36px; background: var(--surface); border: 1.5px solid var(--border);
       border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
       text-decoration: none; color: var(--text-muted); font-size: 1rem; font-weight: 700;
       transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+    }
+    .page-header {
+      display: flex; flex-direction: column; gap: 14px; margin-bottom: 4px;
+    }
+    .header-top {
+      display: flex; align-items: center; gap: 14px;
+    }
+    .header-info {
+      flex: 1; min-width: 0;
+      h1 { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .subtitle { margin: 2px 0 0; }
+    }
+    .header-badge {
+      flex-shrink: 0; font-size: 0.85rem; padding: 6px 14px;
+    }
+    .page-actions {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 2px 0;
+    }
+    .action-btn {
+      height: 38px; padding: 0 16px; border-radius: 10px; font-size: 0.875rem; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: all var(--transition);
+    }
+    .cart-card {
+      position: relative; overflow: hidden;
+      background: linear-gradient(145deg, #faf9ff 0%, #f0edff 50%, #ede9ff 100%);
+      border: 1.5px solid #c4b5fd;
+      border-radius: var(--radius); padding: 32px 28px;
+      display: flex; align-items: center;
+      box-shadow: 0 4px 24px rgba(109,78,247,0.08);
+      transition: box-shadow 0.2s;
+      &:hover { box-shadow: 0 8px 32px rgba(109,78,247,0.14); }
+    }
+    .cart-card-glow {
+      position: absolute; top: -60px; left: -60px;
+      width: 200px; height: 200px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(109,78,247,0.12) 0%, transparent 70%);
+      pointer-events: none; transition: background 0.4s;
+    }
+    .cart-card-glow--added {
+      background: radial-gradient(circle, rgba(16,185,129,0.14) 0%, transparent 70%);
+    }
+    .cart-card-inner {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 24px; width: 100%;
+    }
+    .cart-card-icon {
+      font-size: 3.2rem; line-height: 1; flex-shrink: 0;
+      filter: drop-shadow(0 4px 8px rgba(109,78,247,0.25));
+      transition: transform 0.3s;
+      &:hover { transform: scale(1.08) rotate(-4deg); }
+    }
+    .cart-card-icon--added { filter: drop-shadow(0 4px 8px rgba(16,185,129,0.3)); }
+    .cart-card-text { flex: 1; }
+    .cart-card-title {
+      font-size: 1.2rem; font-weight: 800; color: #3730a3; margin-bottom: 6px; line-height: 1.2;
+    }
+    .cart-card-desc { font-size: 0.875rem; color: #6b7280; line-height: 1.55; }
+    .cart-cta-big {
+      position: relative; overflow: hidden;
+      flex-shrink: 0; height: 52px; padding: 0 28px; border-radius: 14px;
+      font-weight: 900; font-size: 1rem; letter-spacing: 0.3px;
+      border: none; color: #fff; cursor: pointer; font-family: inherit;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      box-shadow: 0 6px 20px rgba(79,70,229,0.35), inset 0 1px 0 rgba(255,255,255,0.3);
+      transition: transform 0.18s, box-shadow 0.18s;
+      display: inline-flex; align-items: center; gap: 10px;
+      &::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 60%);
+        pointer-events: none;
+      }
+      &:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(79,70,229,0.42); }
+      &:active { transform: translateY(0); box-shadow: 0 4px 12px rgba(79,70,229,0.3); }
+    }
+    .cart-cta-big--added {
+      background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+      box-shadow: 0 6px 20px rgba(5,150,105,0.32), inset 0 1px 0 rgba(255,255,255,0.25);
+      &:hover { box-shadow: 0 12px 28px rgba(5,150,105,0.4); }
+    }
+    .cart-btn-icon {
+      font-size: 1.2rem; font-weight: 900; line-height: 1;
     }
     .item-image { width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--radius-sm); margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--border); }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -422,7 +536,40 @@ import { Equipment, Loan } from '../../models';
     }
     .tab-count { background: rgba(255,255,255,0.25); border-radius: 20px; padding: 1px 8px; font-size: 0.72rem; }
     button:not(.active) .tab-count { background: var(--surface-2); color: var(--text-muted); }
-    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 600; }
+    .return-confirm {
+      margin-top: 16px; padding: 16px; background: #f0fdf4;
+      border: 1.5px solid #86efac; border-radius: var(--radius-sm);
+    }
+    .return-confirm-label {
+      font-size: 0.8rem; font-weight: 700; color: #166534; margin-bottom: 10px; letter-spacing: 0.3px;
+    }
+    .return-confirm-row { display: flex; gap: 8px; }
+    .return-barcode-input {
+      flex: 1; height: 42px; padding: 0 12px; border-radius: var(--radius-sm);
+      border: 1.5px solid #86efac; background: white; font-size: 0.95rem;
+      font-family: monospace; outline: none; direction: ltr;
+      &:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.12); }
+      &.input-error { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(239,68,68,0.1); }
+    }
+    .return-btn { height: 42px; padding: 0 18px; white-space: nowrap; }
+    .barcode-error { margin-top: 8px; font-size: 0.8rem; color: var(--danger); font-weight: 600; }
+    .return-video-wrap {
+      position: relative; margin-top: 10px; border-radius: var(--radius-sm); overflow: hidden;
+      background: #0a0a1a; aspect-ratio: 4/3;
+      video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    }
+    .return-scan-overlay {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.4);
+    }
+    .return-scan-frame {
+      width: 180px; height: 100px; border: 2.5px solid white; border-radius: var(--radius-sm);
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.35), 0 0 20px rgba(79,70,229,0.6);
+    }
+    .return-scan-btn {
+      height: 42px; padding: 0 12px; font-size: 1.1rem;
+      &.active { background: var(--primary-light); border-color: var(--primary); }
+    }
     .charge-block {
       margin-top: 14px; padding: 18px; background: #fffbeb;
       border: 1.5px solid #f59e0b; border-radius: var(--radius-sm); text-align: center;
@@ -466,7 +613,8 @@ import { Equipment, Loan } from '../../models';
     }
   `]
 })
-export class EquipmentDetailComponent implements OnInit {
+export class EquipmentDetailComponent implements OnInit, OnDestroy {
+  @ViewChild('returnVideoEl') returnVideoEl?: ElementRef<HTMLVideoElement>;
   item = signal<Equipment | null>(null);
   history = signal<Loan[]>([]);
   loanError = signal('');
@@ -477,6 +625,10 @@ export class EquipmentDetailComponent implements OnInit {
   today = new Date().toISOString().split('T')[0];
 
   loan: any = { borrower_name: '', borrower_phone: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '' };
+  returnBarcode = '';
+  returnBarcodeError = signal(false);
+  returnScanning = signal(false);
+  private returnReader = new BrowserMultiFormatReader();
   cardNumber = '';
   cvv = '';
 
@@ -484,12 +636,16 @@ export class EquipmentDetailComponent implements OnInit {
 
   addToCart() {
     const item = this.item();
-    if (!item) return;
+    if (!item || this.isLaptop()) return;
     if (this.cart.has(item.id)) {
       this.cart.remove(item.id);
       return;
     }
     this.cart.add(item);
+  }
+
+  showAddToCart(): boolean {
+    return !this.isLaptop();
   }
 
   ngOnInit() {
@@ -701,8 +857,39 @@ export class EquipmentDetailComponent implements OnInit {
     });
   }
 
+  toggleReturnScan() {
+    if (this.returnScanning()) {
+      this.returnScanning.set(false);
+      BrowserMultiFormatReader.releaseAllStreams();
+    } else {
+      this.returnScanning.set(true);
+      setTimeout(() => {
+        if (!this.returnVideoEl) return;
+        this.returnReader.decodeFromVideoDevice(undefined, this.returnVideoEl.nativeElement, (result) => {
+          if (result) {
+            this.returnBarcode = result.getText();
+            this.returnScanning.set(false);
+            BrowserMultiFormatReader.releaseAllStreams();
+            this.returnItem();
+          }
+        });
+      }, 150);
+    }
+  }
+
+  ngOnDestroy() {
+    BrowserMultiFormatReader.releaseAllStreams();
+  }
+
   returnItem() {
     const item = this.item()!;
+    if (this.returnBarcode.trim() !== item.barcode) {
+      this.returnBarcodeError.set(true);
+      setTimeout(() => this.returnBarcodeError.set(false), 2000);
+      return;
+    }
+    this.returnBarcodeError.set(false);
+    this.returnBarcode = '';
     this.api.returnLoan(item.loan_id!).subscribe({
       next: (res: any) => {
         if (res.chargeAmount > 0) {

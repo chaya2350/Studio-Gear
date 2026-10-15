@@ -109,15 +109,36 @@ import { Student } from '../../models';
       width: 36px; height: 36px; background: var(--surface); border: 1.5px solid var(--border);
       border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
       text-decoration: none; color: var(--text-muted); font-size: 1rem; font-weight: 700;
-      transition: all var(--transition);
+      transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
-    .barcode-val { font-family: monospace; background: var(--surface-2); padding: 3px 9px; border-radius: var(--radius-xs); font-size: 0.85rem; border: 1px solid var(--border); }
-    .loan-row { padding: 10px 0; border-bottom: 1px solid var(--border); &:last-child { border: none; } }
-    .loan-name { font-weight: 700; color: var(--primary); text-decoration: none; font-size: 0.9rem; display: block; margin-bottom: 4px; &:hover { text-decoration: underline; } }
-    .loan-meta { display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted); }
+    .barcode-val {
+      font-family: monospace; background: var(--surface-2); padding: 3px 9px;
+      border-radius: var(--radius-xs); font-size: 0.85rem; border: 1px solid var(--border);
+    }
+    .loan-row {
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+      &:last-child { border: none; }
+    }
+    .loan-name {
+      font-weight: 700; color: var(--primary); text-decoration: none; font-size: 0.9rem;
+      display: block; margin-bottom: 5px;
+      &:hover { text-decoration: underline; }
+    }
+    .loan-meta {
+      display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);
+    }
+    .stats-row {
+      display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px;
+      padding: 5px 14px; font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+      display: flex; align-items: center; gap: 6px;
+      span { color: var(--text); font-size: 1rem; }
+    }
   `]
 })
 export class StudentComponent implements OnInit {

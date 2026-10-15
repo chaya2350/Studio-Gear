@@ -108,7 +108,7 @@ export class AdminComponent {
     this.results.set([]);
     this.importing.set(true);
     let done = 0;
-    const newResults: typeof this.results extends () => infer T ? T : never = [];
+    const newResults: { filename: string; ok: boolean; imported?: number; skipped?: number; error?: string }[] = [];
 
     files.forEach(file => {
       const fd = new FormData();
