@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./pages/home/home').then(m => m.HomeComponent) },
+  { path: 'approvals', loadComponent: () => import('./pages/approvals/approvals').then(m => m.ApprovalsComponent) },
   { path: 'equipment', loadComponent: () => import('./pages/equipment-list/equipment-list').then(m => m.EquipmentListComponent) },
   { path: 'equipment/new', loadComponent: () => import('./pages/equipment-form/equipment-form').then(m => m.EquipmentFormComponent) },
   { path: 'equipment/:id/edit', loadComponent: () => import('./pages/equipment-form/equipment-form').then(m => m.EquipmentFormComponent) },
