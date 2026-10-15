@@ -9,16 +9,19 @@ import { CartService } from './services/cart.service';
   template: `
     <nav class="navbar">
       <a routerLink="/" class="brand">
-        <div class="brand-icon">🎬</div>
+        <img src="/logo.png" class="brand-logo" alt="לוגו סמינר גור">
         <span>Studio Gear</span>
       </a>
       <div class="nav-links">
-        <a routerLink="/equipment" routerLinkActive="active">📦 ציוד</a>
-        <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-        <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
-        <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
-        <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
-        <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
+        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">🏠 בית</a>
+        <ng-container *ngIf="!isHome()">
+          <a routerLink="/equipment" routerLinkActive="active">📦 ציוד</a>
+          <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
+          <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
+          <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
+          <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
+          <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
+        </ng-container>
       </div>
     </nav>
     <main class="container">
@@ -34,6 +37,7 @@ import { CartService } from './services/cart.service';
   `,
   styles: [`
     .brand { text-decoration: none; }
+    .brand-logo { height: 42px; width: auto; object-fit: contain; }
     .app-footer {
       display: flex;
       justify-content: center;
@@ -60,5 +64,8 @@ import { CartService } from './services/cart.service';
 })
 export class App {
   constructor(public cart: CartService) {}
-}
 
+  isHome(): boolean {
+    return window.location.pathname === '/';
+  }
+}
