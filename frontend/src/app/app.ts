@@ -1,7 +1,9 @@
-import { Component } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, OnInit } from '@angular/core';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { CartService } from './services/cart.service';
+import { ApiService } from './services/api.service';
+import { filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-root',
@@ -14,16 +16,36 @@ import { CartService } from './services/cart.service';
       </a>
       <div class="nav-links">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">🏠 בית</a>
-        <ng-container *ngIf="!isHome()">
-          <a routerLink="/equipment" routerLinkActive="active">📦 ציוד</a>
-          <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-          <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
-          <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
-          <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
-          <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
-        </ng-container>
+        <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
+        <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
+        <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
       </div>
     </nav>
+
+    <nav class="subnav" *ngIf="isApprovalsSection()">
+      <ng-container *ngFor="let t of approvalTypes">
+        <a *ngIf="t.type !== 'single'"
+           [routerLink]="['/approvals']" [queryParams]="{type: t.id}"
+           [class.active]="isApprovalTypeActive(t.id)">
+          📄 {{ t.name }}
+        </a>
+        <a *ngIf="t.type === 'single'"
+           [routerLink]="['/approvals/single']" [queryParams]="{type: t.id}"
+           [class.active]="isSingleApprovalActive(t.id)">
+          💍 {{ t.name }}
+        </a>
+      </ng-container>
+    </nav>
+
+    <nav class="subnav" *ngIf="isEquipmentSection()">
+      <a routerLink="/equipment" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">📦 ציוד</a>
+      <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
+      <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
+      <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
+      <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
+      <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
+    </nav>
+
     <main class="container">
       <router-outlet />
     </main>
@@ -39,13 +61,8 @@ import { CartService } from './services/cart.service';
     .brand { text-decoration: none; }
     .brand-logo { height: 42px; width: auto; object-fit: contain; }
     .app-footer {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 8px 12px 14px;
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      letter-spacing: 0.02em;
+      display: flex; justify-content: center; align-items: center;
+      padding: 8px 12px 14px; font-size: 0.72rem; color: var(--text-muted); letter-spacing: 0.02em;
     }
     .cart-fab {
       position: fixed; bottom: 28px; left: 28px; z-index: 500;
@@ -62,10 +79,39 @@ import { CartService } from './services/cart.service';
     }
   `]
 })
-export class App {
-  constructor(public cart: CartService) {}
+export class App implements OnInit {
+  currentPath = '';
+  currentQuery = '';
+  approvalTypes: any[] = [];
 
-  isHome(): boolean {
-    return window.location.pathname === '/';
+  constructor(public cart: CartService, private router: Router, private api: ApiService) {
+    this.currentPath = this.router.url.split('?')[0];
+    this.currentQuery = this.router.url;
+    this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe((e: any) => {
+      this.currentPath = e.urlAfterRedirects.split('?')[0];
+      this.currentQuery = e.urlAfterRedirects;
+    });
+  }
+
+  ngOnInit() {
+    this.api.getApprovalTypes().subscribe(t => { this.approvalTypes = t; });
+  }
+
+  isApprovalTypeActive(id: number): boolean {
+    return this.currentPath === '/approvals' && this.currentQuery.includes(`type=${id}`);
+  }
+
+  isSingleApprovalActive(id: number): boolean {
+    return this.currentPath === '/approvals/single' && this.currentQuery.includes(`type=${id}`);
+  }
+
+  isEquipmentSection(): boolean {
+    return ['/equipment', '/scan', '/loans', '/calendar', '/students', '/checkout'].some(p =>
+      this.currentPath === p || this.currentPath.startsWith(p + '/') || this.currentPath.startsWith(p + '?')
+    );
+  }
+
+  isApprovalsSection(): boolean {
+    return this.currentPath === '/approvals' || this.currentPath.startsWith('/approvals/');
   }
 }

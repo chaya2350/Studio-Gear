@@ -568,9 +568,22 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     template TEXT NOT NULL,
-    signature TEXT NOT NULL DEFAULT 'principal'
+    signature TEXT NOT NULL DEFAULT 'principal',
+    type TEXT NOT NULL DEFAULT 'regular'
   );
 `);
+
+const approvalTypeCols = db.prepare("PRAGMA table_info(approval_types)").all().map(c => c.name);
+if (!approvalTypeCols.includes('type')) db.exec("ALTER TABLE approval_types ADD COLUMN type TEXT NOT NULL DEFAULT 'regular'");
+
+// Migration: ensure אישור רווקה exists as single type
+const singleExists = db.prepare("SELECT id FROM approval_types WHERE type='single'").get();
+if (!singleExists) {
+  db.prepare('INSERT INTO approval_types (name, template, signature, type) VALUES (?, ?, ?, ?)').run(
+    'אישור רווקה',
+    'מוסד לימודים: סמינר גור ירושלים\nשנת לימודים: {{שנה}}\n\nמאשרים בזאת כי הגב\' {{שם}}, ת.ז. {{תז}},\nילידת {{תאריך לידה}}, המתגוררת ב{{כתובת}},\nהינה תלמידה במוסדנו במסלול {{מסלול}}\nולמיטב ידיעתנו הינה רווקה.\n\nהאישור ניתן לפי בקשתה לצורך הגשה לרשויות.',
+    'principal', 'single');
+}
 
 // seed default approval types if empty
 const approvalCount = db.prepare('SELECT COUNT(*) as c FROM approval_types').get().c;
@@ -582,9 +595,10 @@ if (approvalCount === 0) {
   ins.run('אישור לימודים',
     'לכל המעוניין,\n\nהרני לאשר בי התלמידה: {{שם}} מס\' ת.ז: {{תז}}\nלומדת כתלמידה מן המנין במוסדנו\nבין השנים: {{שנה}}\nבמגמת: {{מסלול}}\nבס"ך כולל של 2100 שעות\nהכל ונאיות לדיפלמה מטעם מה"ט לאחר שתגיש פרויקט גמר.\n\nבברכה,\nההנהלה',
     'principal');
-  ins.run('אישור 12 שנות לימוד',
+  db.prepare('INSERT INTO approval_types (name, template, signature, type) VALUES (?, ?, ?, ?)').run(
+    'אישור 12 שנות לימוד',
     'לכל המעוניין,\n\nהתלמידה-{{שם}}\nמס\' זהות-{{תז}}\nסיימה במוסדנו, סמינר גור ירושלים\nאת 12 שנות תיכון בשנת תשפ"ו,\nסמל מוסד 142075.\n\nבברכה,\nהמנהלת-גב\' דינה כהן',
-    'principal');
+    'principal', 'regular');
 }
 
 app.get('/api/approval-types', (req, res) => {
