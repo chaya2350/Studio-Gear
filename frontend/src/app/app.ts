@@ -24,6 +24,9 @@ import { CartService } from './services/cart.service';
     <main class="container">
       <router-outlet />
     </main>
+    <footer class="app-footer">
+      <span>כל הזכויות שמורות למלי וחיה</span>
+    </footer>
     <a *ngIf="cart.count() > 0" routerLink="/checkout" class="cart-fab">
       🛒 הזמנה
       <span class="cart-badge">{{ cart.count() }}</span>
@@ -31,6 +34,15 @@ import { CartService } from './services/cart.service';
   `,
   styles: [`
     .brand { text-decoration: none; }
+    .app-footer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 8px 12px 14px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
     .cart-fab {
       position: fixed; bottom: 28px; left: 28px; z-index: 500;
       background: var(--grad-primary); color: white; text-decoration: none;
