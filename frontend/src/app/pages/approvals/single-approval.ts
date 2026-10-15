@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'app-single-approval',
@@ -98,12 +99,13 @@ export class SingleApprovalComponent implements OnInit {
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
   ngOnInit() {
-    this.api.getApprovalTypes().subscribe(types => {
-      this.route.queryParams.subscribe(p => {
-        const id = p['type'] ? +p['type'] : null;
-        const singleTypes = types.filter((t: any) => t.type === 'single');
-        this.approvalType = id ? types.find((t: any) => t.id === id) : singleTypes[0];
-      });
+    combineLatest([
+      this.api.getApprovalTypes(),
+      this.route.queryParams
+    ]).subscribe(([types, p]) => {
+      const id = p['type'] ? +p['type'] : null;
+      const singleTypes = types.filter((t: any) => t.type === 'single');
+      this.approvalType = id ? types.find((t: any) => t.id === id) : singleTypes[0];
     });
   }
 
@@ -144,14 +146,11 @@ export class SingleApprovalComponent implements OnInit {
         body { font-family: 'Heebo', Arial, sans-serif; background: white; direction: rtl; }
         .approval-page {
           width: 210mm; min-height: 297mm; padding: 14mm 18mm 14mm 18mm;
-          display: flex; flex-direction: column; position: relative; background: white; overflow: hidden;
+          display: flex; flex-direction: column; position: relative; overflow: hidden;
+          background-image: url('/blank.png');
+          background-size: 100% 100%;
+          background-repeat: no-repeat;
         }
-        .ap-watermark {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 18mm;
-          background: linear-gradient(180deg, #f0ece8 0%, #d4c8bc 30%, #b8a898 60%, #d4c8bc 80%, #f0ece8 100%);
-          opacity: 0.6;
-        }
-        .ap-watermark-logo { position: absolute; left: 1mm; top: 50%; transform: translateY(-50%); width: 16mm; opacity: 0.15; }
         .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12mm; }
         .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: left; }
         .ap-bsd { font-size: 0.8rem; color: #333; font-weight: 700; }
@@ -169,15 +168,12 @@ export class SingleApprovalComponent implements OnInit {
         @media print { @page { size: A4; margin: 0; } }
       </style></head><body>
       <div class="approval-page">
-        <div class="ap-watermark"></div>
-        <img src="/logo.png" class="ap-watermark-logo">
         <div class="ap-top">
           <div class="ap-top-left">
             <div class="ap-bsd">בס"ד</div>
             <div class="ap-date-he">${hebrewDate}</div>
             <div class="ap-date">${dateHe}</div>
           </div>
-          <img src="/logo.png" class="ap-logo">
         </div>
         <div class="ap-title">${this.approvalType.name}</div>
         <div class="ap-body">${bodyHtml}</div>
@@ -186,7 +182,6 @@ export class SingleApprovalComponent implements OnInit {
             <img src="${sig}" class="ap-sig-img">
             <div class="ap-sig-name">${sigName}</div>
           </div>
-          <img src="/logo.png" class="ap-footer-logo">
         </div>
       </div>
       <script>window.onload = () => { window.print(); }<\/script>
