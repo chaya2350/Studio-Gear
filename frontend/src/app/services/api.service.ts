@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Equipment, Loan, Category } from '../models';
+import { Equipment, Loan, Category, Student } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private base = 'http://localhost:3000/api';
+  private base = '/api';
 
   constructor(private http: HttpClient) {}
 
@@ -16,6 +16,7 @@ export class ApiService {
   deleteEquipment(id: number) { return this.http.delete(`${this.base}/equipment/${id}`); }
   getNewBarcode() { return this.http.get<{barcode: string}>(`${this.base}/equipment/new-barcode`); }
   getBarcodeUrl(id: number) { return `${this.base}/equipment/${id}/barcode`; }
+  getOrderReceiptBarcodeUrl(id: number) { return `${this.base}/loans/receipt-barcode/${id}`; }
   uploadImage(fd: FormData) { return this.http.post<{url: string}>(`${this.base}/upload`, fd); }
 
   getLoans() { return this.http.get<Loan[]>(`${this.base}/loans`); }
@@ -27,9 +28,12 @@ export class ApiService {
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
 
   getCategories() { return this.http.get<Category[]>(`${this.base}/categories`); }
-  createCategory(data: { name: string; icon: string }) { return this.http.post<Category>(`${this.base}/categories`, data); }
+  createCategory(data: { name: string; icon: string; parent_id?: number | null }) { return this.http.post<Category>(`${this.base}/categories`, data); }
   deleteCategory(id: number) { return this.http.delete(`${this.base}/categories/${id}`); }
   getSubcategories(category: string) { return this.http.get<string[]>(`${this.base}/subcategories/${encodeURIComponent(category)}`); }
 
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
+
+  getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
 }

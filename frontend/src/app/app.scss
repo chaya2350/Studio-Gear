@@ -1,0 +1,22 @@
+.app-shell {
+  min-height: calc(100vh - 32px);
+  display: block;
+}
+
+.app-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 12px 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+  background: transparent;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 640px) {
+  .app-footer {
+    font-size: 0.66rem;
+    padding-bottom: 8px;
+  }
+}
