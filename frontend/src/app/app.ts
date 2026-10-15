@@ -8,7 +8,7 @@ import { CartService } from './services/cart.service';
   imports: [RouterOutlet, RouterLink, RouterLinkActive, CommonModule],
   template: `
     <nav class="navbar">
-      <a routerLink="/equipment" class="brand">
+      <a routerLink="/" class="brand">
         <div class="brand-icon">🎬</div>
         <span>Studio Gear</span>
       </a>
