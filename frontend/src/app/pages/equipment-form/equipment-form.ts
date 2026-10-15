@@ -36,7 +36,6 @@ import { Category } from '../../models';
           <option value="">בחר קטגוריה</option>
           <option *ngFor="let cat of categories()" [value]="cat.name">{{ cat.name }}</option>
         </select>
-        <a routerLink="/categories" style="font-size:0.8rem; color:var(--primary); margin-top:4px;">+ ניהול קטגוריות</a>
       </div>
 
       <div class="form-group" *ngIf="form.category">
@@ -86,28 +85,28 @@ import { Category } from '../../models';
   `,
   styles: [`
     .back-btn {
-      width: 38px; height: 38px;
-      background: var(--surface-2); border: 1.5px solid var(--border);
-      border-radius: 10px; display: flex; align-items: center; justify-content: center;
-      text-decoration: none; color: var(--text); font-size: 1.1rem; font-weight: 700;
-      transition: all 0.18s;
+      width: 36px; height: 36px;
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+      text-decoration: none; color: var(--text-muted); font-size: 1rem; font-weight: 700;
+      transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
     .image-upload-area {
       border: 2px dashed var(--border); border-radius: var(--radius);
-      cursor: pointer; overflow: hidden; min-height: 120px;
+      cursor: pointer; overflow: hidden; min-height: 130px;
       display: flex; align-items: center; justify-content: center;
-      transition: border-color 0.2s;
-      &:hover { border-color: var(--primary); }
+      transition: all var(--transition); background: var(--surface-2);
+      &:hover { border-color: var(--primary); background: var(--primary-light); }
     }
     .image-preview { width: 100%; max-height: 200px; object-fit: contain; display: block; }
-    .image-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.9rem; padding: 20px; }
+    .image-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.875rem; padding: 24px; font-weight: 500; }
     .barcode-display {
-      font-family: monospace; font-size: 1rem; letter-spacing: 1px;
-      padding: 10px 14px; background: var(--surface-2); border: 1.5px solid var(--border);
-      border-radius: 10px; color: var(--text-muted);
+      font-family: monospace; font-size: 1rem; letter-spacing: 2px;
+      padding: 11px 14px; background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text); font-weight: 700;
     }
-    .field-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block; }
+    .field-hint { font-size: 0.72rem; color: var(--text-light); margin-top: 4px; display: block; font-weight: 500; }
     .prices-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   `]
 })

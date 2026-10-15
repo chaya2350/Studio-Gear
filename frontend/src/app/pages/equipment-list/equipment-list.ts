@@ -3,6 +3,7 @@ import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { CartService } from '../../services/cart.service';
 import { Equipment, Category } from '../../models';
 
 type View = 'categories' | 'subcategories' | 'items';
@@ -11,6 +12,22 @@ type View = 'categories' | 'subcategories' | 'items';
   selector: 'app-equipment-list',
   imports: [CommonModule, RouterLink, FormsModule],
   template: `
+    <!-- ── Modal ── -->
+    <div *ngIf="modal()" class="modal-backdrop" (click)="closeModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-icon">{{ modal()!.icon }}</div>
+        <div class="modal-title">{{ modal()!.title }}</div>
+        <div class="modal-msg">{{ modal()!.message }}</div>
+        <div *ngIf="modal()!.type === 'input'" class="modal-input-wrap">
+          <input [(ngModel)]="modalInput" [placeholder]="modal()!.placeholder || ''" (keyup.enter)="confirmModal()" autofocus>
+        </div>
+        <div class="modal-actions">
+          <button *ngIf="modal()!.type === 'input'" class="btn btn-primary" (click)="confirmModal()">אישור</button>
+          <button class="btn btn-secondary" (click)="closeModal()">{{ modal()!.type === 'input' ? 'ביטול' : 'סגור' }}</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Category view ── -->
     <ng-container *ngIf="view() === 'categories'">
       <div class="page-header">
@@ -20,19 +37,11 @@ type View = 'categories' | 'subcategories' | 'items';
         </div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-ghost" (click)="printAllBarcodes()">🖨️ הדפס ברקודים</button>
-          <a routerLink="/categories" class="btn btn-ghost">⚙️ קטגוריות</a>
           <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
         </div>
       </div>
 
       <div class="stats-row">
-        <div class="stat-card clickable" (click)="goItems('__all__')">
-          <div class="stat-icon" style="background:#ede9ff;">📦</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ all().length }}</div>
-            <div class="stat-label">סה"כ ציוד</div>
-          </div>
-        </div>
         <div class="stat-card clickable" (click)="goItems('__available__')">
           <div class="stat-icon" style="background:#e6faf4;">✅</div>
           <div class="stat-info">
@@ -59,21 +68,22 @@ type View = 'categories' | 'subcategories' | 'items';
       <hr class="section-divider">
 
       <div class="cat-grid">
-        <div *ngFor="let cat of categories()" class="cat-card" (click)="selectCategory(cat)">
+        <div *ngFor="let cat of topLevelCategories()" class="cat-card" (click)="selectCategory(cat)">
+          <button class="delete-mini" type="button" (click)="deleteCategoryRow(cat, $event)">מחק</button>
           <div class="cat-name">{{ cat.name }}</div>
           <div class="cat-counts">
-            <span class="cat-total">{{ countByCategory(cat.name) }} פריטים</span>
-            <span *ngIf="loanedByCategory(cat.name)" class="cat-loaned">{{ loanedByCategory(cat.name) }} מושאל</span>
+            <span class="cat-total">{{ countByTopLevelGroup(cat.name) }} פריטים</span>
+            <span *ngIf="loanedByTopLevelGroup(cat.name)" class="cat-loaned">{{ loanedByTopLevelGroup(cat.name) }} מושאל</span>
           </div>
           <div class="cat-bar">
             <div class="cat-bar-fill"
-              [style.width.%]="countByCategory(cat.name) ? (loanedByCategory(cat.name) / countByCategory(cat.name)) * 100 : 0">
+              [style.width.%]="countByTopLevelGroup(cat.name) ? (loanedByTopLevelGroup(cat.name) / countByTopLevelGroup(cat.name)) * 100 : 0">
             </div>
           </div>
         </div>
-        <div class="cat-card cat-all" (click)="goItems('__all__')">
-          <div class="cat-name">כל הציוד</div>
-          <div class="cat-counts"><span class="cat-total">{{ all().length }} פריטים</span></div>
+        <div class="cat-card cat-all" (click)="addTopLevelCategory()">
+          <div class="cat-name">＋ תחום</div>
+          <div class="cat-counts"><span class="cat-total">הוסף תחום חדש</span></div>
         </div>
       </div>
     </ng-container>
@@ -92,6 +102,7 @@ type View = 'categories' | 'subcategories' | 'items';
           <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
+          <button class="btn btn-primary" (click)="addSubcategory()">＋ הוסף קטגורית-משנה</button>
           <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
         </div>
       </div>
@@ -99,6 +110,7 @@ type View = 'categories' | 'subcategories' | 'items';
       <div class="cat-grid">
         <!-- Subcategory cards -->
         <div *ngFor="let sub of subcategoriesInCat()" class="cat-card" (click)="selectSubcategory(sub)">
+          <button class="delete-mini" type="button" (click)="deleteSubcategoryRow(sub, $event)">מחק</button>
           <div class="cat-name">{{ sub }}</div>
           <div class="cat-counts">
             <span class="cat-total">{{ countBySubcategory(sub) }} פריטים</span>
@@ -114,11 +126,6 @@ type View = 'categories' | 'subcategories' | 'items';
         <div *ngIf="itemsWithoutSubcat().length" class="cat-card cat-all" (click)="selectSubcategory('__none__')">
           <div class="cat-name">ללא תת-קטגוריה</div>
           <div class="cat-counts"><span class="cat-total">{{ itemsWithoutSubcat().length }} פריטים</span></div>
-        </div>
-        <!-- All in category -->
-        <div class="cat-card" style="border-style:dashed" (click)="goItems('__cat__')">
-          <div class="cat-name">כל {{ selectedCategory() }}</div>
-          <div class="cat-counts"><span class="cat-total">{{ countByCategory(selectedCategory()!) }} פריטים</span></div>
         </div>
       </div>
     </ng-container>
@@ -137,6 +144,7 @@ type View = 'categories' | 'subcategories' | 'items';
           <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
+          <button class="btn btn-primary" (click)="addSubcategory()">＋ הוסף תת-קטגוריה</button>
           <a routerLink="/equipment/new" class="btn btn-primary">＋ הוסף ציוד</a>
         </div>
       </div>
@@ -150,7 +158,7 @@ type View = 'categories' | 'subcategories' | 'items';
         <a *ngFor="let item of filtered()" [routerLink]="['/equipment', item.id]" class="equipment-card">
           <div class="eq-top">
             <span class="badge" [class]="getStatusClass(item)">
-              {{ item.is_loaned ? (isOverdue(item) ? '⚠ איחור' : 'מושאל') : '✓ פנוי' }}
+              {{ item.is_reserved ? '📅 שמור' : (item.is_loaned ? (isOverdue(item) ? '⚠ איחור' : (item.category === 'מחשב נייד' ? '💻 תפוס' : 'מושאל')) : '✓ פנוי') }}
             </span>
           </div>
           <h3 class="eq-name">{{ item.name }}</h3>
@@ -174,45 +182,107 @@ type View = 'categories' | 'subcategories' | 'items';
     </ng-container>
   `,
   styles: [`
-    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
-    .cat-card {
-      background: var(--surface); border-radius: var(--radius); padding: 24px 20px 18px;
-      border: 1.5px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
-      transition: all 0.2s; display: flex; flex-direction: column; gap: 6px;
-      &:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--primary); }
-    }
-    .cat-all { border-style: dashed; }
-    .cat-name { font-size: 1.35rem; font-weight: 700; }
-    .cat-counts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .cat-total { font-size: 0.82rem; color: var(--text-muted); }
-    .cat-loaned { font-size: 0.78rem; background: #fff0f3; color: var(--accent); padding: 2px 8px; border-radius: 8px; font-weight: 600; }
-    .cat-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
-    .cat-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s; }
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 
-    .stat-card.clickable { cursor: pointer; transition: all 0.2s;
-      &:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--primary); }
+    .cat-card {
+      background: var(--surface); border-radius: var(--radius); padding: 24px 22px 20px;
+      border: 1px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
+      transition: all var(--transition); display: flex; flex-direction: column; gap: 8px;
+      position: relative;
+      &:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: transparent;
+        outline: 2px solid var(--primary); outline-offset: -1px; }
+    }
+
+    .delete-mini {
+      position: absolute; top: 10px; left: 10px; z-index: 2;
+      border: 1px solid #f4b7c3; background: #fff1f4; color: var(--danger);
+      border-radius: 7px; padding: 4px 8px; font-size: 0.72rem; font-weight: 800;
+      cursor: pointer; line-height: 1; transition: all var(--transition); opacity: 1;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
+    }
+    .delete-mini:hover { background: #fee2e2; color: var(--danger); transform: translateY(-1px); }
+
+    .cat-all {
+      border: 2px dashed var(--border); background: transparent; box-shadow: none;
+      align-items: center; justify-content: center; min-height: 120px;
+      color: var(--text-muted);
+      &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); box-shadow: none; outline: none; }
+      .cat-name { font-size: 1rem; }
+    }
+
+    .cat-name { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.3px; color: var(--text); }
+    .cat-counts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+    .cat-total { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+    .cat-loaned {
+      font-size: 0.72rem; background: #fee2e2; color: #dc2626;
+      padding: 2px 9px; border-radius: 20px; font-weight: 700;
+    }
+    .cat-bar { height: 4px; background: var(--surface-3); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+    .cat-bar-fill {
+      height: 100%; background: var(--grad-primary); border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    .stat-card.clickable { cursor: pointer;
+      &:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
     }
 
     .equipment-card {
       text-decoration: none; color: inherit; background: var(--surface); border-radius: var(--radius);
-      padding: 20px; border: 1.5px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
-      transition: all 0.2s; display: block;
-      &:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--primary); }
+      padding: 20px; border: 1px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
+      transition: all var(--transition); display: block;
+      &:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg);
+        border-color: transparent; outline: 2px solid var(--primary); outline-offset: -1px; }
     }
     .eq-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-    .eq-icon { font-size: 2rem; line-height: 1; }
-    .eq-name { font-size: 1.05rem; font-weight: 700; margin-bottom: 3px; }
-    .eq-category { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
-    .eq-barcode { font-size: 0.8rem; color: var(--text-muted); font-family: monospace; background: var(--surface-2); padding: 4px 8px; border-radius: 6px; display: inline-block; margin-bottom: 10px; }
-    .eq-borrower { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding-top: 10px; border-top: 1px solid var(--border); }
-    .eq-return { font-size: 0.8rem; font-weight: 600; }
+    .eq-name { font-size: 1rem; font-weight: 800; margin-bottom: 3px; letter-spacing: -0.3px; }
+    .eq-category { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.4px; }
+    .eq-barcode {
+      font-size: 0.72rem; color: var(--text-light); font-family: monospace;
+      background: var(--surface-2); padding: 3px 8px; border-radius: var(--radius-xs);
+      display: inline-block; margin-bottom: 10px; border: 1px solid var(--border);
+    }
+    .eq-borrower {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.82rem; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .eq-return { font-size: 0.78rem; font-weight: 700; }
 
     .back-btn {
-      width: 38px; height: 38px; background: var(--surface-2); border: 1.5px solid var(--border);
-      border-radius: 10px; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 1.1rem; font-weight: 700; color: var(--text); transition: all 0.18s;
+      width: 36px; height: 36px; background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1rem; font-weight: 700; color: var(--text-muted);
+      transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+      animation: fadeIn 0.15s ease;
+    }
+    .modal {
+      background: var(--surface); border-radius: var(--radius-lg); padding: 36px 32px 28px;
+      width: 100%; max-width: 400px; box-shadow: var(--shadow-lg);
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      animation: slideUp 0.2s cubic-bezier(0.4,0,0.2,1);
+    }
+    .modal-icon { font-size: 2.4rem; line-height: 1; }
+    .modal-title { font-size: 1.1rem; font-weight: 800; color: var(--text); text-align: center; letter-spacing: -0.3px; }
+    .modal-msg { font-size: 0.875rem; color: var(--text-muted); text-align: center; line-height: 1.6; }
+    .modal-input-wrap {
+      width: 100%; margin-top: 4px;
+      input {
+        width: 100%; padding: 11px 14px; border: 1.5px solid var(--border);
+        border-radius: var(--radius-sm); font-size: 0.95rem; font-family: inherit;
+        direction: rtl; background: var(--surface-2); color: var(--text);
+        transition: border-color var(--transition), box-shadow var(--transition);
+        &:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+      }
+    }
+    .modal-actions { display: flex; gap: 8px; margin-top: 8px; width: 100%; justify-content: center; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   `]
 })
 export class EquipmentListComponent implements OnInit {
@@ -227,7 +297,7 @@ export class EquipmentListComponent implements OnInit {
 
   readonly today = new Date().toISOString().split('T')[0];
 
-  constructor(private api: ApiService, private router: Router, private route: ActivatedRoute) {}
+  constructor(private api: ApiService, private router: Router, private route: ActivatedRoute, public cart: CartService) {}
 
   ngOnInit() {
     this.api.getEquipment().subscribe(data => { this.all.set(data); this.filtered.set(data); });
@@ -241,20 +311,152 @@ export class EquipmentListComponent implements OnInit {
   loaned()       { return this.all().filter(e => e.is_loaned).length; }
   overdueCount() { return this.all().filter(e => e.is_loaned && this.isOverdue(e)).length; }
 
+  topLevelCategories(): Category[] {
+    const parentCategories = this.categories().filter(cat => !cat.parent_id);
+    return parentCategories.length ? parentCategories : [
+      { id: -1, name: 'ציוד צילום', icon: '📷' },
+      { id: -2, name: 'מחשבים ניידים', icon: '🖥️' }
+    ];
+  }
+
+  modal = signal<{ type: 'input' | 'error'; icon: string; title: string; message: string; placeholder?: string; onConfirm?: (val: string) => void } | null>(null);
+  modalInput = '';
+
+  openInputModal(icon: string, title: string, placeholder: string, onConfirm: (val: string) => void) {
+    this.modalInput = '';
+    this.modal.set({ type: 'input', icon, title, message: '', placeholder, onConfirm });
+  }
+
+  openErrorModal(title: string, message: string) {
+    this.modal.set({ type: 'error', icon: '⚠️', title, message });
+  }
+
+  confirmModal() {
+    const m = this.modal();
+    if (m?.onConfirm && this.modalInput.trim()) {
+      m.onConfirm(this.modalInput.trim());
+    }
+    this.modal.set(null);
+  }
+
+  closeModal() { this.modal.set(null); }
+
+  deleteCategoryRow(cat: Category, event: Event) {
+    event.stopPropagation();
+    const target = this.categories().find(c => c.id === cat.id);
+    if (!target) return;
+    if (!confirm(`למחוק את התחום "${target.name}"?`)) return;
+    this.api.deleteCategory(target.id).subscribe(() => {
+      this.api.getCategories().subscribe(cats => this.categories.set(cats));
+    });
+  }
+
+  deleteSubcategoryRow(sub: string, event: Event) {
+    event.stopPropagation();
+    const target = this.categories().find(c => c.name === sub);
+    if (!target) return;
+    if (!confirm(`למחוק את התת-קטגוריה "${target.name}"?`)) return;
+    this.api.deleteCategory(target.id).subscribe(() => {
+      this.api.getCategories().subscribe(cats => this.categories.set(cats));
+    });
+  }
+
+  addTopLevelCategory() {
+    this.openInputModal('📁', 'הוספת תחום חדש', 'שם התחום...', (name) => {
+      this.api.createCategory({ name, icon: '📦', parent_id: null }).subscribe({
+        next: () => this.api.getCategories().subscribe(cats => this.categories.set(cats)),
+        error: () => this.openErrorModal('לא ניתן להוסיף תחום', 'שם התחום כבר קיים. נסה שם אחר.')
+      });
+    });
+  }
+
+  addSubcategory() {
+    const group = this.selectedCategory();
+    if (!group) return;
+
+    // אם אנחנו ב-subcategories view — ה-parent הוא הקטגוריה הנבחרת (דור 2)
+    // אם אנחנו ב-items view — ה-parent הוא הקטגוריה הנבחרת (דור 2 או 3)
+    const parentName = this.selectedSubcategory() && this.view() === 'items'
+      ? this.selectedSubcategory()!
+      : group;
+
+    const parent = this.categories().find(cat => cat.name === parentName)
+      ?? this.topLevelCategories().find(cat => cat.name === parentName);
+    if (!parent) { this.openErrorModal('לא נמצא תחום', 'יש לבחור תחום לפני הוספת תת-קטגוריה.'); return; }
+
+    this.openInputModal('📂', `הוספת תת-קטגוריה ל${parentName}`, 'שם התת-קטגוריה...', (name) => {
+      this.api.createCategory({ name, icon: '📦', parent_id: parent.id }).subscribe({
+        next: () => {
+          this.api.getCategories().subscribe(cats => this.categories.set(cats));
+          this.api.getEquipment().subscribe(data => this.all.set(data));
+        },
+        error: () => this.openErrorModal('לא ניתן להוסיף', 'שם התת-קטגוריה כבר קיים. נסה שם אחר.')
+      });
+    });
+  }
+
+  topLevelChildCategories(name: string): string[] {
+    const parent = this.categories().find(cat => cat.name === name);
+    if (!parent) return [];
+    return this.categories()
+      .filter(cat => cat.parent_id === parent.id)
+      .map(cat => cat.name)
+      .sort();
+  }
+
+  itemsForTopLevelGroup(name: string) {
+    const childNames = new Set(this.topLevelChildCategories(name));
+    const groupName = name;
+    return this.all().filter(e => childNames.has(e.category ?? '') || e.category === groupName);
+  }
+
+  countByTopLevelGroup(name: string) {
+    return this.itemsForTopLevelGroup(name).length;
+  }
+
+  loanedByTopLevelGroup(name: string) {
+    const childNames = new Set(this.topLevelChildCategories(name));
+    return this.all().filter(e => (childNames.has(e.category ?? '') || e.category === name) && e.is_loaned).length;
+  }
+
   countByCategory(name: string)  { return this.all().filter(e => e.category === name).length; }
   loanedByCategory(name: string) { return this.all().filter(e => e.category === name && e.is_loaned).length; }
 
   subcategoriesInCat() {
     const cat = this.selectedCategory()!;
-    const subs = [...new Set(this.all().filter(e => e.category === cat && e.subcategory).map(e => e.subcategory!))];
-    return subs.sort();
+    // תמיד מחזיר את הילדים מה-categories tree
+    return this.topLevelChildCategories(cat);
   }
-  countBySubcategory(sub: string)  { return this.all().filter(e => e.category === this.selectedCategory() && e.subcategory === sub).length; }
-  loanedBySubcategory(sub: string) { return this.all().filter(e => e.category === this.selectedCategory() && e.subcategory === sub && e.is_loaned).length; }
+  countBySubcategory(sub: string) {
+    const childNames = new Set(this.topLevelChildCategories(sub));
+    return this.all().filter(e => e.category === sub || e.subcategory === sub || childNames.has(e.category ?? '')).length;
+  }
+  loanedBySubcategory(sub: string) {
+    const childNames = new Set(this.topLevelChildCategories(sub));
+    return this.all().filter(e => (e.category === sub || e.subcategory === sub || childNames.has(e.category ?? '')) && e.is_loaned).length;
+  }
   itemsWithoutSubcat() { return this.all().filter(e => e.category === this.selectedCategory() && !e.subcategory); }
+
+  topLevelCategoryNames(): string[] {
+    return this.topLevelCategories().map(c => c.name);
+  }
 
   selectCategory(cat: Category) {
     this.selectedCategory.set(cat.name);
+    // קטגוריות שמכילות ישירות פריטים (ללא תת-קטגוריות)
+    const directItemsCategories = ['מחשבים ניידים', 'מחשב נייד'];
+    if (directItemsCategories.includes(cat.name)) {
+      this.filtered.set(this.itemsForTopLevelGroup(cat.name));
+      this.itemsSource = 'subcategories';
+      this.search = '';
+      this._baseBeforeSearch = null;
+      this.view.set('items');
+      return;
+    }
+    if (this.topLevelCategoryNames().includes(cat.name)) {
+      this.view.set('subcategories');
+      return;
+    }
     const subs = this.subcategoriesInCat();
     if (subs.length > 0) {
       this.view.set('subcategories');
@@ -267,11 +469,24 @@ export class EquipmentListComponent implements OnInit {
     this.selectedSubcategory.set(sub);
     this.itemsSource = 'subcategories';
     this.search = '';
+    this._baseBeforeSearch = null;
+
     if (sub === '__none__') {
       this.filtered.set(this.itemsWithoutSubcat());
-    } else {
-      this.filtered.set(this.all().filter(e => e.category === this.selectedCategory() && e.subcategory === sub));
+      this.view.set('items');
+      return;
     }
+
+    // אם יש לקטגוריה זו ילדים ב-tree — פתח אותה כ-subcategories view
+    const children = this.topLevelChildCategories(sub);
+    if (children.length > 0) {
+      this.selectedCategory.set(sub);
+      this.view.set('subcategories');
+      return;
+    }
+
+    // אין ילדים — הצג פריטים (category === sub OR subcategory === sub)
+    this.filtered.set(this.all().filter(e => e.category === sub || e.subcategory === sub));
     this.view.set('items');
   }
 
@@ -280,12 +495,23 @@ export class EquipmentListComponent implements OnInit {
     if (mode === '__all__')       { this.filtered.set(this.all()); }
     else if (mode === '__available__') { this.filtered.set(this.all().filter(e => !e.is_loaned)); }
     else if (mode === '__loaned__')    { this.filtered.set(this.all().filter(e => e.is_loaned)); }
-    else if (mode === '__cat__')       { this.filtered.set(this.all().filter(e => e.category === this.selectedCategory())); this.itemsSource = 'subcategories'; }
+    else if (mode === '__cat__') {
+      const group = this.selectedCategory();
+      const items = group && this.topLevelCategoryNames().includes(group) ? this.itemsForTopLevelGroup(group) : this.all().filter(e => e.category === group);
+      this.filtered.set(items);
+      this.itemsSource = 'subcategories';
+    }
     this.search = '';
     this.view.set('items');
   }
 
   goBack() {
+    const directItemsCategories = ['מחשבים ניידים', 'מחשב נייד'];
+    if (directItemsCategories.includes(this.selectedCategory() ?? '')) {
+      this.view.set('categories');
+      this.selectedCategory.set(null);
+      return;
+    }
     if (this.itemsSource === 'subcategories') {
       this.view.set('subcategories');
     } else {
@@ -425,6 +651,7 @@ export class EquipmentListComponent implements OnInit {
   isOverdue(item: Equipment) { return item.expected_return && item.expected_return < this.today; }
 
   getStatusClass(item: Equipment) {
+    if (item.is_reserved) return 'badge-reserved';
     if (!item.is_loaned) return 'badge-available';
     return this.isOverdue(item) ? 'badge-overdue' : 'badge-loaned';
   }

@@ -3,6 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { CartService } from '../../services/cart.service';
 import { Equipment, Loan } from '../../models';
 
 @Component({
@@ -19,6 +20,8 @@ import { Equipment, Loan } from '../../models';
           </div>
         </div>
         <div style="display:flex; gap:8px;">
+          <button *ngIf="item() && !cart.has(item()!.id)" class="btn btn-primary" (click)="addToCart()">➕ הוסף להזמנה</button>
+          <button *ngIf="item() && cart.has(item()!.id)" class="btn btn-ghost" (click)="addToCart()">✓ נוסף לעגלה</button>
           <button class="btn btn-ghost" (click)="printBarcode()">🖨️ הדפס ברקוד</button>
           <a [routerLink]="['/equipment', item()!.id, 'edit']" class="btn btn-ghost">✏️ עריכה</a>
           <button class="btn btn-danger" (click)="delete()">🗑 מחיקה</button>
@@ -77,11 +80,11 @@ import { Equipment, Loan } from '../../models';
         <div class="card">
           <div *ngIf="item()!.is_loaned; else loanForm">
             <div class="section-title">
-              {{ activeLoan()?.loan_type === 'rental' ? '💰 השכרה פעילה' : '📤 השאלה פעילה' }}
+              {{ isLaptop() ? '💻 בשימוש' : (activeLoan()?.loan_type === 'rental' ? '💰 השכרה פעילה' : '📤 השאלה פעילה') }}
             </div>
-            <div *ngIf="isOverdue()" class="alert alert-warning" style="margin-bottom:16px;">⚠️ הציוד לא הוחזר בזמן!</div>
+            <div *ngIf="isOverdue() && !isLaptop()" class="alert alert-warning" style="margin-bottom:16px;">⚠️ הציוד לא הוחזר בזמן!</div>
             <div class="info-row">
-              <span class="info-label">שואל</span>
+              <span class="info-label">{{ isLaptop() ? 'שם' : 'שואל' }}</span>
               <span class="info-value">{{ item()!.borrower_name }}{{ isLaptop() && activeLoan()?.track ? ' — ' + activeLoan()!.track : '' }}</span>
             </div>
             <div class="info-row" *ngIf="!isLaptop()">
@@ -93,7 +96,7 @@ import { Equipment, Loan } from '../../models';
               <span class="info-value">{{ item()!.location }}</span>
             </div>
             <div class="info-row" *ngIf="isLaptop()">
-              <span class="info-label">תאריך השאלה</span>
+              <span class="info-label">תאריך </span>
               <span class="info-value">{{ item()!.loan_date }}</span>
             </div>
             <ng-container *ngIf="!isLaptop()">
@@ -128,7 +131,7 @@ import { Equipment, Loan } from '../../models';
               <div *ngIf="paymentState() === 'success'" class="payment-success">✅ חיוב בוצע בהצלחה!</div>
               <button *ngIf="paymentState() === 'idle'" class="btn btn-primary" style="margin-top:10px; width:100%;" (click)="payAndReturn()">💳 שלם {{ pendingCharge() }} ₪ והחזר</button>
             </div>
-            <button *ngIf="pendingCharge() === 0" class="btn btn-success" style="margin-top:16px; width:100%;" (click)="returnItem()">✓ סמן כהוחזר</button>
+            <button *ngIf="pendingCharge() === 0" class="btn btn-success" style="margin-top:16px; width:100%;" (click)="returnItem()">{{ isLaptop() ? '✓ סמן כהוחזר ' : '✓ סמן כהוחזר' }}</button>
           </div>
 
           <ng-template #loanForm>
@@ -137,7 +140,7 @@ import { Equipment, Loan } from '../../models';
               <button [class.active]="loanType() === 'loan'" (click)="loanType.set('loan')">🤝 השאלה</button>
               <button [class.active]="loanType() === 'rental'" (click)="loanType.set('rental')">💰 השכרה</button>
             </div>
-            <div *ngIf="isLaptop()" class="laptop-badge">💻 השאלת מחשב נייד — ליום אחד</div>
+            <div *ngIf="isLaptop()" class="laptop-badge">💻 תפיסת מחשב נייד — ליום אחד</div>
 
             <div class="form-group">
               <label>שם השואל *</label>
@@ -163,7 +166,7 @@ import { Equipment, Loan } from '../../models';
                   <option value="אחר">אחר</option>
                 </select>
                 <select [(ngModel)]="loan.trackYear" style="flex:1" *ngIf="trackNeedsYear()">
-                  <option value="">שנה</option>
+                  <option value="" disabled>שנה</option>
                   <option value="א">א</option>
                   <option value="ב">ב</option>
                 </select>
@@ -255,8 +258,7 @@ import { Equipment, Loan } from '../../models';
 
             <!-- Laptop: show today's date info -->
             <div *ngIf="isLaptop()" class="laptop-date-info">
-              <span>📅 תאריך השאלה:</span><strong>{{ today }}</strong>
-              <span>🔁 החזרה עד:</span><strong>{{ today }}</strong>
+              <span>📅 תאריך :</span><strong>{{ today }}</strong>
             </div>
 
             <!-- Credit card — only for non-laptops -->
@@ -280,7 +282,7 @@ import { Equipment, Loan } from '../../models';
                   </div>
                   <div class="form-group" style="flex:1">
                     <label>CVV *</label>
-                    <input [(ngModel)]="cvv" placeholder="123" maxlength="4" type="password">
+                    <input [(ngModel)]="cvv" placeholder="123" maxlength="3" type="password" (input)="formatCvv($event)">
                   </div>
                 </div>
               </div>
@@ -292,7 +294,7 @@ import { Equipment, Loan } from '../../models';
             </div>
             <p *ngIf="loanError()" class="alert alert-error">{{ loanError() }}</p>
             <button class="btn btn-primary" style="width:100%;" (click)="createLoan()">
-              {{ isLaptop() ? '💻 השאל מחשב' : (loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד') }}
+              {{ isLaptop() ? '💻 תפוס מחשב' : (loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד') }}
             </button>
           </ng-template>
         </div>
@@ -367,101 +369,100 @@ import { Equipment, Loan } from '../../models';
   `,
   styles: [`
     .back-btn {
-      width: 38px; height: 38px; background: var(--surface-2); border: 1.5px solid var(--border);
-      border-radius: 10px; display: flex; align-items: center; justify-content: center;
-      text-decoration: none; color: var(--text); font-size: 1.1rem; font-weight: 700; transition: all 0.18s;
+      width: 36px; height: 36px; background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+      text-decoration: none; color: var(--text-muted); font-size: 1rem; font-weight: 700;
+      transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
-    .item-image { width: 100%; max-height: 220px; object-fit: contain; border-radius: 10px; margin-bottom: 16px; background: var(--surface-2); }
+    .item-image { width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--radius-sm); margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--border); }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .barcode-val { font-family: monospace; background: var(--surface-2); padding: 3px 8px; border-radius: 6px; font-size: 0.9rem; }
+    .barcode-val { font-family: monospace; background: var(--surface-2); padding: 3px 9px; border-radius: var(--radius-xs); font-size: 0.85rem; border: 1px solid var(--border); }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
 
     .type-tabs {
-      display: flex; gap: 6px; margin-bottom: 16px;
+      display: flex; gap: 6px; margin-bottom: 18px;
       button {
-        flex: 1; padding: 8px; border: 1.5px solid var(--border); border-radius: 10px;
-        background: var(--surface); color: var(--text-muted); font-size: 0.9rem;
-        font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.18s;
-        &:hover { border-color: var(--primary); color: var(--primary); }
-        &.active { background: var(--primary); color: white; border-color: var(--primary); }
+        flex: 1; padding: 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--surface); color: var(--text-muted); font-size: 0.875rem;
+        font-weight: 700; font-family: inherit; cursor: pointer; transition: all var(--transition);
+        &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+        &.active { background: var(--grad-primary); color: white; border-color: transparent; box-shadow: 0 3px 10px rgba(79,70,229,0.3); }
       }
     }
 
     .card-section {
-      background: var(--surface-2); border-radius: 10px; padding: 14px;
-      border: 1.5px solid var(--border); margin-bottom: 12px;
+      background: var(--surface-2); border-radius: var(--radius-sm); padding: 16px;
+      border: 1px solid var(--border); margin-bottom: 14px;
     }
     .card-row { display: flex; gap: 8px; }
-    .field-hint { font-size: 0.75rem; color: var(--text-muted); font-weight: 400; }
-    .field-error { font-size: 0.75rem; color: var(--danger); display: block; margin-top: 3px; }
-    input.invalid { border-color: var(--danger) !important; }
+    .field-hint { font-size: 0.72rem; color: var(--text-light); font-weight: 500; }
+    .field-error { font-size: 0.72rem; color: var(--danger); display: block; margin-top: 3px; font-weight: 600; }
+    input.invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.1) !important; }
 
     .reservation-notice {
-      margin-top: 16px; padding: 14px; background: #f0eeff;
-      border: 1.5px solid var(--primary); border-radius: 10px;
-      .res-header { font-weight: 700; color: var(--primary); margin-bottom: 8px; }
-      .res-row { display: flex; justify-content: space-between; font-size: 0.88rem; padding: 3px 0; color: var(--text-muted);
+      margin-top: 16px; padding: 14px; background: var(--primary-light);
+      border: 1.5px solid var(--primary); border-radius: var(--radius-sm);
+      .res-header { font-weight: 800; color: var(--primary); margin-bottom: 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.4px; }
+      .res-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 3px 0; color: var(--text-muted);
         strong { color: var(--text); }
       }
     }
 
     .history-tabs {
-      display: flex; gap: 8px; margin-bottom: 16px;
+      display: flex; gap: 8px; margin-bottom: 18px;
       button {
-        padding: 8px 18px; border: 1.5px solid var(--border); border-radius: 10px;
-        background: var(--surface); color: var(--text-muted); font-size: 0.88rem;
-        font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.18s;
+        padding: 9px 20px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--surface); color: var(--text-muted); font-size: 0.85rem;
+        font-weight: 700; font-family: inherit; cursor: pointer; transition: all var(--transition);
         display: flex; align-items: center; gap: 7px;
         &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-        &.active { background: var(--primary); color: white; border-color: var(--primary); }
+        &.active { background: var(--grad-primary); color: white; border-color: transparent; box-shadow: 0 3px 10px rgba(79,70,229,0.3); }
       }
     }
-    .tab-count { background: rgba(255,255,255,0.25); border-radius: 10px; padding: 1px 8px; font-size: 0.78rem; }
+    .tab-count { background: rgba(255,255,255,0.25); border-radius: 20px; padding: 1px 8px; font-size: 0.72rem; }
     button:not(.active) .tab-count { background: var(--surface-2); color: var(--text-muted); }
-    .alert-success { background: #e6faf4; color: #059669; border: 1px solid #059669; border-radius: 8px; padding: 10px 14px; }
+    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 600; }
     .charge-block {
-      margin-top: 12px; padding: 14px; background: #fff8ec;
-      border: 1.5px solid #d97706; border-radius: 10px; text-align: center;
-      .charge-title { font-weight: 700; color: #d97706; margin-bottom: 6px; }
-      .charge-amount { font-size: 1.6rem; font-weight: 800; color: #d97706; }
-      .charge-desc { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+      margin-top: 14px; padding: 18px; background: #fffbeb;
+      border: 1.5px solid #f59e0b; border-radius: var(--radius-sm); text-align: center;
+      .charge-title { font-weight: 800; color: #92400e; margin-bottom: 6px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+      .charge-amount { font-size: 2rem; font-weight: 900; color: #d97706; letter-spacing: -2px; }
+      .charge-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
     }
     .payment-processing {
       display: flex; align-items: center; justify-content: center; gap: 10px;
-      margin-top: 12px; color: #d97706; font-weight: 600; font-size: 0.95rem;
+      margin-top: 14px; color: #d97706; font-weight: 700; font-size: 0.9rem;
     }
     .spinner {
-      width: 20px; height: 20px; border: 3px solid #f3d08a;
+      width: 18px; height: 18px; border: 2.5px solid #fde68a;
       border-top-color: #d97706; border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .payment-success {
-      margin-top: 12px; font-weight: 700; color: #059669; font-size: 1rem;
-    }
+    .payment-success { margin-top: 12px; font-weight: 800; color: #166534; font-size: 1rem; }
     .laptop-badge {
-      background: #e0f2fe; color: #0369a1; border: 1.5px solid #7dd3fc;
-      border-radius: 10px; padding: 10px 14px; font-weight: 700; margin-bottom: 16px; font-size: 0.95rem;
+      background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe;
+      border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 700; margin-bottom: 16px; font-size: 0.875rem;
     }
     .laptop-date-info {
       display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-      background: var(--surface-2); border-radius: 10px; padding: 10px 14px;
-      margin-bottom: 12px; font-size: 0.9rem; color: var(--text-muted);
-      strong { color: var(--text); margin-left: 4px; }
+      background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px;
+      margin-bottom: 12px; font-size: 0.875rem; color: var(--text-muted); border: 1px solid var(--border);
+      strong { color: var(--text); margin-left: 4px; font-weight: 700; }
     }
     .rental-price-info {
       display: flex; justify-content: space-between; align-items: center;
-      background: var(--surface-2); border: 1.5px solid var(--border); border-radius: 10px;
-      padding: 10px 14px; margin-bottom: 12px;
-      .info-value { font-weight: 700; color: var(--primary); font-size: 1rem; }
+      background: var(--primary-light); border: 1.5px solid var(--border-focus); border-radius: var(--radius-sm);
+      padding: 12px 16px; margin-bottom: 12px;
+      .info-value { font-weight: 900; color: var(--primary); font-size: 1.1rem; }
     }
     .price-summary {
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      background: #e6faf4; border: 1px solid #059669; border-radius: 8px;
-      padding: 10px 14px; margin-bottom: 12px; color: #059669; font-size: 0.9rem;
-      strong { font-size: 1.1rem; }
-      .price-detail { font-size: 0.78rem; color: var(--text-muted); }
+      background: #f0fdf4; border: 1px solid #86efac; border-radius: var(--radius-sm);
+      padding: 10px 14px; margin-bottom: 12px; color: #166534; font-size: 0.875rem;
+      strong { font-size: 1.1rem; font-weight: 900; }
+      .price-detail { font-size: 0.75rem; color: var(--text-muted); }
     }
   `]
 })
@@ -479,7 +480,17 @@ export class EquipmentDetailComponent implements OnInit {
   cardNumber = '';
   cvv = '';
 
-  constructor(private route: ActivatedRoute, private router: Router, private api: ApiService) {}
+  constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public cart: CartService) {}
+
+  addToCart() {
+    const item = this.item();
+    if (!item) return;
+    if (this.cart.has(item.id)) {
+      this.cart.remove(item.id);
+      return;
+    }
+    this.cart.add(item);
+  }
 
   ngOnInit() {
     const id = +this.route.snapshot.params['id'];
@@ -607,6 +618,10 @@ export class EquipmentDetailComponent implements OnInit {
     this.loan.card_expiry = v;
   }
 
+  formatCvv(e: Event) {
+    this.cvv = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 3);
+  }
+
   isOverdue() {
     const item = this.item();
     return item?.is_loaned && item.expected_return && item.expected_return < this.today;
@@ -621,7 +636,7 @@ export class EquipmentDetailComponent implements OnInit {
 
   statusLabel() {
     const item = this.item()!;
-    if (item.is_loaned) return this.isOverdue() ? '⚠ איחור' : (this.activeLoan()?.loan_type === 'rental' ? '💰 מושכר' : 'מושאל');
+    if (item.is_loaned) return this.isOverdue() ? '⚠ איחור' : (this.isLaptop() ? '💻 תפוס' : (this.activeLoan()?.loan_type === 'rental' ? '💰 מושכר' : 'מושאל'));
     if (item.is_reserved) return '📅 שמור';
     return '✓ פנוי';
   }
@@ -668,6 +683,9 @@ export class EquipmentDetailComponent implements OnInit {
     this.loan.price_per_day = this.item()!.rental_price_per_day;
     if (!this.loan.card_holder || !this.loan.card_expiry || !this.luhnValid()) {
       this.loanError.set('נא למלא פרטי אשראי תקינים'); return;
+    }
+    if (!/^\d{3}$/.test(this.cvv)) {
+      this.loanError.set('CVV חייב להכיל רק 3 ספרות'); return;
     }
     const card_last4 = this.cardNumber.replace(/\s/g, '').slice(-4);
     this.api.createLoan({
