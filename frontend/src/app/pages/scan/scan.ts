@@ -208,7 +208,7 @@ export class ScanComponent implements AfterViewInit, OnDestroy {
 
   navigate(barcode: string) {
     this.api.getEquipmentByBarcode(barcode).subscribe({
-      next: (item) => this.router.navigate(['/equipment', item.id]),
+      next: (item) => this.router.navigate(['/equipment', item.id], { queryParams: { fromScan: '1' } }),
       error: () => this.error.set(`ברקוד "${barcode}" לא נמצא במערכת`)
     });
   }

@@ -3,7 +3,6 @@ import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
-import { CartService } from '../../services/cart.service';
 import { Equipment, Category } from '../../models';
 
 type View = 'categories' | 'subcategories' | 'items';
@@ -297,7 +296,7 @@ export class EquipmentListComponent implements OnInit {
 
   readonly today = new Date().toISOString().split('T')[0];
 
-  constructor(private api: ApiService, private router: Router, private route: ActivatedRoute, public cart: CartService) {}
+  constructor(private api: ApiService, private router: Router, private route: ActivatedRoute) {}
 
   ngOnInit() {
     this.api.getEquipment().subscribe(data => { this.all.set(data); this.filtered.set(data); });

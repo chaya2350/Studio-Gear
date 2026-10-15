@@ -23,7 +23,6 @@ import { CartService } from './services/cart.service';
     <main class="container">
       <router-outlet />
     </main>
-    <!-- כפתור צף עגלה -->
     <a *ngIf="cart.count() > 0" routerLink="/checkout" class="cart-fab">
       🛒 הזמנה
       <span class="cart-badge">{{ cart.count() }}</span>
@@ -49,3 +48,4 @@ import { CartService } from './services/cart.service';
 export class App {
   constructor(public cart: CartService) {}
 }
+

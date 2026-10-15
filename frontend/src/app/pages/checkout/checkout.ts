@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -164,7 +164,7 @@ import { Student } from '../../models';
     </div>
   `,
   styles: [`
-    .checkout-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+    .checkout-grid { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
     @media (max-width: 800px) { .checkout-grid { grid-template-columns: 1fr; } }
     .checkout-main { display: flex; flex-direction: column; gap: 16px; }
 
@@ -172,7 +172,7 @@ import { Student } from '../../models';
       width: 36px; height: 36px; background: var(--surface); border: 1.5px solid var(--border);
       border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
       cursor: pointer; font-size: 1rem; font-weight: 700; color: var(--text-muted);
-      transition: all var(--transition);
+      transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
 
@@ -190,56 +190,61 @@ import { Student } from '../../models';
     .card-row { display: flex; gap: 8px; }
     .field-hint { font-size: 0.72rem; color: var(--text-light); }
     .field-error { font-size: 0.72rem; color: var(--danger); display: block; margin-top: 3px; font-weight: 600; }
-    input.invalid { border-color: var(--danger) !important; }
+    input.invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.1) !important; }
 
-    /* חיפוש תלמידה */
     .suggestions {
       position: absolute; top: 100%; right: 0; left: 0; z-index: 100;
       background: var(--surface); border: 1.5px solid var(--border-focus);
-      border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden;
+      border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden; margin-top: 4px;
     }
     .suggestion-item {
       padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between;
       align-items: center; font-size: 0.875rem; transition: background var(--transition);
+      border-bottom: 1px solid var(--border);
+      &:last-child { border-bottom: none; }
       strong { color: var(--text); }
       span { color: var(--text-muted); font-size: 0.78rem; }
       &:hover { background: var(--primary-light); }
     }
     .student-found {
       background: #f0fdf4; border: 1.5px solid #86efac; border-radius: var(--radius-sm);
-      padding: 12px 16px; margin-top: 8px;
-      .student-name { font-weight: 800; font-size: 1rem; color: #166534; margin-bottom: 6px; }
-      .student-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: #166534; }
+      padding: 14px 16px; margin-top: 10px;
+      .student-name { font-weight: 800; font-size: 1.05rem; color: #166534; margin-bottom: 6px; }
+      .student-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.82rem; color: #166534; }
     }
     .student-not-found {
       background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-sm);
       padding: 10px 14px; font-size: 0.85rem; color: #92400e; margin-top: 8px;
     }
 
-    /* סל */
+    /* סל צד */
+    .cart-sidebar { position: sticky; top: 20px; }
     .cart-item {
       display: flex; align-items: flex-start; justify-content: space-between;
       padding: 12px 0; border-bottom: 1px solid var(--border);
       &:last-of-type { border-bottom: none; }
     }
-    .cart-item-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 2px; }
-    .cart-item-cat { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+    .cart-item-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 2px; color: var(--text); }
+    .cart-item-cat { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
     .cart-item-status { font-size: 0.72rem; font-weight: 600; color: var(--success); }
     .cart-item-status.taken { color: var(--warning); }
     .remove-btn {
       border: none; background: transparent; color: var(--text-light); cursor: pointer;
-      font-size: 0.85rem; padding: 4px 6px; border-radius: var(--radius-xs);
-      transition: all var(--transition); flex-shrink: 0;
+      font-size: 0.85rem; padding: 4px 8px; border-radius: var(--radius-xs);
+      transition: all var(--transition); flex-shrink: 0; margin-top: 2px;
       &:hover { background: #fee2e2; color: var(--danger); }
     }
     .price-total {
       display: flex; justify-content: space-between; align-items: center;
-      padding-top: 12px; margin-top: 4px; border-top: 1.5px solid var(--border);
+      padding-top: 14px; margin-top: 8px; border-top: 2px solid var(--border);
       font-size: 0.875rem; color: var(--text-muted);
-      strong { font-size: 1.1rem; color: var(--primary); font-weight: 900; }
+      strong { font-size: 1.2rem; color: var(--primary); font-weight: 900; }
     }
 
-    .btn-submit { width: 100%; padding: 14px; font-size: 1rem; }
+    .btn-submit {
+      width: 100%; padding: 15px; font-size: 1rem; font-weight: 800;
+      border-radius: var(--radius); box-shadow: 0 4px 14px rgba(79,70,229,0.3);
+    }
     .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
   `]
 })

@@ -66,7 +66,12 @@ const TOP_LEVEL_GROUPS = [
               <small *ngIf="!cat.parent_id" class="parent-tag">תחום</small>
               <small *ngIf="cat.parent_id" class="parent-tag">תת-קטגוריה</small>
             </span>
-            <button class="delete-btn" (click)="remove(cat)" title="מחק קטגוריה">מחק</button>
+            <button class="delete-btn" (click)="remove(cat)" title="מחק קטגוריה">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              מחק
+            </button>
           </div>
         </div>
         <ng-template #empty>
@@ -108,11 +113,13 @@ const TOP_LEVEL_GROUPS = [
     .child-row { padding-block: 8px; border-bottom: 1px solid var(--border); }
     .child-icon { color: var(--text-muted); font-size: 1rem; }
     .delete-btn {
-      min-width: 52px; height: 30px; padding: 0 10px; border-radius: var(--radius-xs);
-      border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted);
-      cursor: pointer; font-size: 0.72rem; font-weight: 700; line-height: 1;
-      transition: all var(--transition);
-      &:hover { background: #fee2e2; border-color: var(--danger); color: var(--danger); }
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 32px; padding: 0 12px; border-radius: var(--radius-xs);
+      border: 1.5px solid #fca5a5; background: #fff5f5; color: #dc2626;
+      cursor: pointer; font-size: 0.78rem; font-weight: 700; line-height: 1;
+      transition: all var(--transition); flex-shrink: 0;
+      &:hover { background: #fee2e2; border-color: var(--danger); box-shadow: 0 2px 8px rgba(220,38,38,0.15); transform: translateY(-1px); }
+      &:active { transform: translateY(0); }
     }
   `]
 })
