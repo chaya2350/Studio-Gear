@@ -183,6 +183,18 @@ body {
     &:hover { box-shadow: 0 6px 20px rgba(16,185,129,0.35); transform: translateY(-1px); }
   }
   &-danger {
+    background: transparent;
+    color: #dc2626;
+    border: 1.5px solid #fca5a5;
+    box-shadow: none;
+    &:hover {
+      background: #fef2f2;
+      border-color: #ef4444;
+      box-shadow: 0 2px 10px rgba(239,68,68,0.15);
+      transform: translateY(-1px);
+    }
+  }
+  &-danger-solid {
     background: var(--grad-danger);
     color: white;
     box-shadow: 0 2px 8px rgba(239,68,68,0.25);

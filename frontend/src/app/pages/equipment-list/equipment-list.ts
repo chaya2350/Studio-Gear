@@ -198,12 +198,17 @@ type View = 'categories' | 'subcategories' | 'items';
 
     .delete-mini {
       position: absolute; top: 10px; left: 10px; z-index: 2;
-      border: 1px solid #f4b7c3; background: #fff1f4; color: var(--danger);
-      border-radius: 7px; padding: 4px 8px; font-size: 0.72rem; font-weight: 800;
-      cursor: pointer; line-height: 1; transition: all var(--transition); opacity: 1;
-      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
+      border: 1px solid #fca5a5; background: transparent; color: #dc2626;
+      border-radius: 7px; padding: 3px 9px; font-size: 0.7rem; font-weight: 600;
+      cursor: pointer; line-height: 1; transition: all var(--transition);
+      opacity: 0; pointer-events: none;
     }
-    .delete-mini:hover { background: #fee2e2; color: var(--danger); transform: translateY(-1px); }
+    .cat-card:hover .delete-mini { opacity: 1; pointer-events: auto; }
+    .delete-mini:hover {
+      background: #fef2f2; border-color: #ef4444;
+      box-shadow: 0 2px 8px rgba(239,68,68,0.12);
+      transform: translateY(-1px);
+    }
 
     .cat-all {
       border: 2px dashed var(--border); background: transparent; box-shadow: none;
