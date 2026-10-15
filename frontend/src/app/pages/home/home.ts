@@ -8,16 +8,25 @@ import { RouterLink } from '@angular/router';
     <div class="home-wrap">
       <div class="home-header">
         <img src="/logo.png" class="home-logo-img" alt="לוגו">
-        <h1>ניהול ה ו</h1>
-        <p class="home-sub">מה תרצו לעשות עכשיו?</p>
+        <h1>מערכת סמינר גור</h1>
+        <p class="home-sub">בחר מודול להמשך</p>
       </div>
 
       <div class="modules-grid">
         <a routerLink="/equipment" class="module-card">
-          <div class="module-icon"></div>
+          <div class="module-icon">📦</div>
           <div class="module-info">
             <div class="module-title">השאלת ציוד</div>
             <div class="module-desc">ניהול ציוד, השאלות, סריקות וקבלות</div>
+          </div>
+          <div class="module-arrow">←</div>
+        </a>
+
+        <a routerLink="/approvals" class="module-card">
+          <div class="module-icon">📄</div>
+          <div class="module-info">
+            <div class="module-title">אישורים</div>
+            <div class="module-desc">הפקת אישורי נוכחות, לימודים ו-12 שנה</div>
           </div>
           <div class="module-arrow">←</div>
         </a>

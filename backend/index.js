@@ -562,5 +562,54 @@ app.get('/api/laptops/overdue', (req, res) => {
   res.json(getLaptopOverdue());
 });
 
+// ── Approval Types ──────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS approval_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    template TEXT NOT NULL,
+    signature TEXT NOT NULL DEFAULT 'principal'
+  );
+`);
+
+// seed default approval types if empty
+const approvalCount = db.prepare('SELECT COUNT(*) as c FROM approval_types').get().c;
+if (approvalCount === 0) {
+  const ins = db.prepare('INSERT INTO approval_types (name, template, signature) VALUES (?, ?, ?)');
+  ins.run('אישור נוכחות',
+    'לכל המעוניין,\n\nהנני לאשר שהתלמידה:\n\n{{שם}}\nמספר זהות: {{תז}}\nסטודנטית במוסדנו\nבשנת הלימודים {{שנה}}\nבסמינר גור ירושלים',
+    'principal');
+  ins.run('אישור לימודים',
+    'לכל המעוניין,\n\nהרני לאשר בי התלמידה: {{שם}} מס\' ת.ז: {{תז}}\nלומדת כתלמידה מן המנין במוסדנו\nבין השנים: {{שנה}}\nבמגמת: {{מסלול}}\nבס"ך כולל של 2100 שעות\nהכל ונאיות לדיפלמה מטעם מה"ט לאחר שתגיש פרויקט גמר.\n\nבברכה,\nההנהלה',
+    'principal');
+  ins.run('אישור 12 שנות לימוד',
+    'לכל המעוניין,\n\nהתלמידה-{{שם}}\nמס\' זהות-{{תז}}\nסיימה במוסדנו, סמינר גור ירושלים\nאת 12 שנות תיכון בשנת תשפ"ו,\nסמל מוסד 142075.\n\nבברכה,\nהמנהלת-גב\' דינה כהן',
+    'principal');
+}
+
+app.get('/api/approval-types', (req, res) => {
+  res.json(db.prepare('SELECT * FROM approval_types ORDER BY id').all());
+});
+
+app.post('/api/approval-types', (req, res) => {
+  const { name, template, signature } = req.body;
+  if (!name || !template) return res.status(400).json({ error: 'שם ותבנית חובה' });
+  const result = db.prepare('INSERT INTO approval_types (name, template, signature) VALUES (?, ?, ?)')
+    .run(name, template, signature || 'principal');
+  res.json({ id: result.lastInsertRowid, name, template, signature: signature || 'principal' });
+});
+
+app.put('/api/approval-types/:id', (req, res) => {
+  const { name, template, signature } = req.body;
+  db.prepare('UPDATE approval_types SET name=?, template=?, signature=? WHERE id=?')
+    .run(name, template, signature, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/approval-types/:id', (req, res) => {
+  db.prepare('DELETE FROM approval_types WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Backend running on port ${port}`));
