@@ -136,7 +136,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
             </div>
 
             <div *ngIf="chargeResult()" class="alert alert-success" style="margin-top:12px;">✅ {{ chargeResult() }}</div>
-            <div *ngIf="pendingCharge() > 0" class="charge-block">
+            <div *ngIf="pendingCharge() > 0" class="charge-block" #paySection>
               <div class="charge-title">💳 נדרש תשלום לפני החזרה</div>
               <div class="charge-amount">{{ pendingCharge() }} ₪</div>
               <div class="charge-desc" *ngIf="isOverdue()">קנס איחור: {{ overduedays() }} ימים × {{ item()!.overdue_price_per_day }} ₪</div>
@@ -675,6 +675,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 })
 export class EquipmentDetailComponent implements OnInit, OnDestroy {
   @ViewChild('returnVideoEl') returnVideoEl?: ElementRef<HTMLVideoElement>;
+  @ViewChild('paySection') paySection?: ElementRef;
   item = signal<Equipment | null>(null);
   history = signal<Loan[]>([]);
   loanError = signal('');
@@ -722,7 +723,12 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   ngOnInit() {
     const id = +this.route.snapshot.params['id'];
     this.load(id);
-    this.api.getLoansByEquipment(id).subscribe(data => this.history.set(data));
+    this.api.getLoansByEquipment(id).subscribe(data => {
+      this.history.set(data);
+      if (this.route.snapshot.queryParams['pay']) {
+        setTimeout(() => this.paySection?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+      }
+    });
   }
 
   load(id: number) { this.api.getEquipmentById(id).subscribe(data => this.item.set(data)); }

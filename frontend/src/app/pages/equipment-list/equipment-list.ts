@@ -98,7 +98,7 @@ type View = 'categories' | 'subcategories' | 'items';
           </div>
         </div>
         <div style="display:flex; gap:8px;">
-          <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
+          <button *ngIf="selectedCategory() === 'מחשב נייד' || selectedCategory() === 'מחשבים ניידים'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
           <button *ngIf="selectedCategory() !== 'מחשב נייד' && selectedCategory() !== 'מחשבים ניידים'" class="btn btn-primary" (click)="addSubcategory()">＋ הוסף קטגורית-משנה</button>
@@ -140,7 +140,7 @@ type View = 'categories' | 'subcategories' | 'items';
           </div>
         </div>
         <div style="display:flex; gap:8px;">
-          <button *ngIf="selectedCategory() === 'מחשב נייד'" class="btn btn-ghost" (click)="printLaptopOverdue()">
+          <button *ngIf="selectedCategory() === 'מחשב נייד' || selectedCategory() === 'מחשבים ניידים'" class="btn btn-ghost" (click)="printLaptopOverdue()">
             🖨️ הדפס מחשבים שלא חזרו
           </button>
           <button *ngIf="selectedCategory() !== 'מחשב נייד' && selectedCategory() !== 'מחשבים ניידים'" class="btn btn-primary" (click)="addSubcategory()">＋ הוסף תת-קטגוריה</button>
