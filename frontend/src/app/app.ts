@@ -12,7 +12,7 @@ import { filter } from 'rxjs/operators';
     <nav class="navbar">
       <a routerLink="/" class="brand">
         <img src="/logo.png" class="brand-logo" alt="לוגו סמינר גור">
-        <span>Studio Gear</span>
+        <span>סמינר גור</span>
       </a>
       <div class="nav-links">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">🏠 בית</a>

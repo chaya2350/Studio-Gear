@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'app-approvals',
@@ -143,13 +144,15 @@ export class ApprovalsComponent implements OnInit {
 
   ngOnInit() {
     this.api.getStudents().subscribe(s => { this.all.set(s); this.filtered.set(s); });
-    this.api.getApprovalTypes().subscribe(types => {
+    combineLatest([
+      this.api.getApprovalTypes(),
+      this.route.queryParams
+    ]).subscribe(([types, p]) => {
       this.types.set(types);
-      this.route.queryParams.subscribe(p => {
-        const id = p['type'] ? +p['type'] : null;
-        const found = id ? types.find((t: any) => t.id === id) : types[0];
-        if (found) this.selectedType.set(found);
-      });
+      const id = p['type'] ? +p['type'] : null;
+      const regularTypes = types.filter((t: any) => t.type !== 'single');
+      const found = id ? types.find((t: any) => t.id === id) : regularTypes[0];
+      if (found) this.selectedType.set(found);
     });
   }
 
@@ -204,15 +207,12 @@ export class ApprovalsComponent implements OnInit {
 
       return `
         <div class="approval-page">
-          <div class="ap-watermark"></div>
-          <img src="/logo.png" class="ap-watermark-logo">
           <div class="ap-top">
             <div class="ap-top-left">
               <div class="ap-bsd">בס"ד</div>
               <div class="ap-date-he">${hebrewDate}</div>
               <div class="ap-date">${dateHe}</div>
             </div>
-            <img src="/logo.png" class="ap-logo">
           </div>
           <div class="ap-title">${type.name}</div>
           <div class="ap-body">${text}</div>
@@ -221,7 +221,6 @@ export class ApprovalsComponent implements OnInit {
               <img src="${sig}" class="ap-sig-img">
               <div class="ap-sig-name">${sigName}</div>
             </div>
-            <img src="/logo.png" class="ap-footer-logo">
           </div>
         </div>
       `;
@@ -236,14 +235,11 @@ export class ApprovalsComponent implements OnInit {
         body { font-family: 'Heebo', Arial, sans-serif; background: white; direction: rtl; }
         .approval-page {
           width: 210mm; min-height: 297mm; padding: 14mm 18mm 14mm 18mm;
-          display: flex; flex-direction: column; position: relative; background: white; overflow: hidden;
+          display: flex; flex-direction: column; position: relative; overflow: hidden;
+          background-image: url('/blank.png');
+          background-size: 100% 100%;
+          background-repeat: no-repeat;
         }
-        .ap-watermark {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 18mm;
-          background: linear-gradient(180deg, #f0ece8 0%, #d4c8bc 30%, #b8a898 60%, #d4c8bc 80%, #f0ece8 100%);
-          opacity: 0.6;
-        }
-        .ap-watermark-logo { position: absolute; left: 1mm; top: 50%; transform: translateY(-50%); width: 16mm; opacity: 0.15; }
         .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12mm; padding-bottom: 4mm; }
         .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: left; }
         .ap-bsd { font-size: 0.8rem; color: #333; font-weight: 700; }
