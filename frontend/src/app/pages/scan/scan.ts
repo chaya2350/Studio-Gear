@@ -215,7 +215,11 @@ export class ScanComponent implements AfterViewInit, OnDestroy {
     }
 
     this.api.getEquipmentByBarcode(trimmed).subscribe({
-      next: (item) => this.router.navigate(['/equipment', item.id], { queryParams: { fromScan: '1' } }),
+      next: (item) => {
+        const qp: any = { fromScan: '1' };
+        if (item.is_loaned && item.loan_id) qp['pay'] = '1';
+        this.router.navigate(['/equipment', item.id], { queryParams: qp });
+      },
       error: () => this.error.set(`ברקוד "${trimmed}" לא נמצא במערכת`)
     });
   }

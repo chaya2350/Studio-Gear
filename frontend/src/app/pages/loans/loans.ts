@@ -1,5 +1,5 @@
 import { Component, OnInit, signal, ElementRef, ViewChild } from '@angular/core';
-import { RouterLink, ActivatedRoute } from '@angular/router';
+import { RouterLink, ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrowserMultiFormatReader } from '@zxing/browser';
@@ -197,7 +197,7 @@ export class LoansComponent implements OnInit {
   private returnReader = new BrowserMultiFormatReader();
   @ViewChild('returnScanVideo') returnVideoEl?: ElementRef<HTMLVideoElement>;
 
-  constructor(private api: ApiService, private route: ActivatedRoute) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private router: Router) {}
 
   ngOnInit() {
     this.load();
@@ -301,8 +301,12 @@ export class LoansComponent implements OnInit {
         this.load();
       },
       error: (e) => {
-        this.returnMessageType.set('error');
-        this.returnMessage.set(e.error?.error || 'לא ניתן לסמן פריט זה כמוחזר');
+        if (e.status === 402) {
+          this.router.navigate(['/equipment', match.equipment_id], { queryParams: { pay: '1' } });
+        } else {
+          this.returnMessageType.set('error');
+          this.returnMessage.set(e.error?.error || 'לא ניתן לסמן פריט זה כמוחזר');
+        }
       }
     });
   }
