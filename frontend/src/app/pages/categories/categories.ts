@@ -114,11 +114,17 @@ const TOP_LEVEL_GROUPS = [
     .child-icon { color: var(--text-muted); font-size: 1rem; }
     .delete-btn {
       display: inline-flex; align-items: center; gap: 5px;
-      height: 32px; padding: 0 12px; border-radius: var(--radius-xs);
-      border: 1.5px solid #fca5a5; background: #fff5f5; color: #dc2626;
-      cursor: pointer; font-size: 0.78rem; font-weight: 700; line-height: 1;
-      transition: all var(--transition); flex-shrink: 0;
-      &:hover { background: #fee2e2; border-color: var(--danger); box-shadow: 0 2px 8px rgba(220,38,38,0.15); transform: translateY(-1px); }
+      height: 30px; padding: 0 11px; border-radius: 8px;
+      border: 1px solid #fca5a5; background: transparent; color: #dc2626;
+      cursor: pointer; font-size: 0.75rem; font-weight: 600; line-height: 1;
+      transition: all var(--transition); flex-shrink: 0; opacity: 0.85;
+      svg { opacity: 0.8; }
+      &:hover {
+        background: #fef2f2; border-color: #ef4444; opacity: 1;
+        box-shadow: 0 2px 8px rgba(220,38,38,0.12);
+        transform: translateY(-1px);
+        svg { opacity: 1; }
+      }
       &:active { transform: translateY(0); }
     }
   `]
