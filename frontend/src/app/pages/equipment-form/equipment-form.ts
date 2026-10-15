@@ -11,7 +11,7 @@ import { Category } from '../../models';
   template: `
     <div class="page-header">
       <div style="display:flex; align-items:center; gap:16px;">
-        <a routerLink="/equipment" class="back-btn">←</a>
+        <a routerLink="/equipment" class="back-btn">→</a>
         <div>
           <h1>{{ isEdit ? 'עריכת ציוד' : 'הוספת ציוד חדש' }}</h1>
           <p class="subtitle">{{ isEdit ? 'עדכן את פרטי הפריט' : 'הוסף פריט חדש למלאי' }}</p>
@@ -38,7 +38,7 @@ import { Category } from '../../models';
         </select>
       </div>
 
-      <div class="form-group" *ngIf="form.category">
+      <div class="form-group" *ngIf="form.category && form.category !== 'מחשב נייד' && !(form.category === 'ציוד צילום' && form.subcategory === 'מצלמות אישיות') && form.category !== 'מצלמות אישיות'">
         <label>תת-קטגוריה</label>
         <input [(ngModel)]="form.subcategory" placeholder="לדוגמה: עדשה 55" list="subcat-list">
         <datalist id="subcat-list">
@@ -52,7 +52,7 @@ import { Category } from '../../models';
         <textarea [(ngModel)]="form.description" rows="3" placeholder="תיאור קצר של הציוד..."></textarea>
       </div>
 
-      <div class="prices-row">
+      <div class="prices-row" *ngIf="form.category !== 'מחשב נייד'">
         <div class="form-group">
           <label>💰 מחיר השכרה ליום (₪)</label>
           <input type="number" [(ngModel)]="form.rental_price_per_day" placeholder="0" min="0">
@@ -125,8 +125,23 @@ export class EquipmentFormComponent implements OnInit {
     this.api.getCategories().subscribe(data => this.categories.set(data));
     this.id = +this.route.snapshot.params['id'];
     this.isEdit = !!this.id;
+    const presetCategory = this.route.snapshot.queryParamMap.get('category');
+    const presetSubcategory = this.route.snapshot.queryParamMap.get('subcategory');
     if (!this.isEdit) {
       this.api.getNewBarcode().subscribe(res => this.form.barcode = res.barcode);
+      if (presetCategory) {
+        this.form.category = presetCategory;
+        if (presetSubcategory) {
+          this.form.subcategory = presetSubcategory;
+        } else if (presetCategory === 'מחשב נייד') {
+          this.form.subcategory = '';
+        } else {
+          this.loadSubcategories(presetCategory);
+        }
+        if (presetCategory !== 'מחשב נייד' && !presetSubcategory) {
+          this.loadSubcategories(presetCategory);
+        }
+      }
     } else {
       this.api.getEquipmentById(this.id).subscribe(data => {
         this.form = { barcode: data.barcode, name: data.name, category: data.category, subcategory: data.subcategory || '', description: data.description, image_url: data.image_url, rental_price_per_day: data.rental_price_per_day || 0, overdue_price_per_day: data.overdue_price_per_day || 0 };
@@ -137,11 +152,21 @@ export class EquipmentFormComponent implements OnInit {
 
   onCategoryChange(cat: string) {
     this.form.subcategory = '';
+    if (cat === 'מחשב נייד') {
+      this.form.rental_price_per_day = 0;
+      this.form.overdue_price_per_day = 0;
+      this.subcategories.set([]);
+      return;
+    }
     if (cat) this.loadSubcategories(cat);
     else this.subcategories.set([]);
   }
 
   loadSubcategories(cat: string) {
+    if (cat === 'מחשב נייד') {
+      this.subcategories.set([]);
+      return;
+    }
     this.api.getSubcategories(cat).subscribe(data => this.subcategories.set(data));
   }
 
@@ -158,8 +183,19 @@ export class EquipmentFormComponent implements OnInit {
   }
 
   save() {
-    if (!this.form.barcode || !this.form.name) { this.error.set('ברקוד ושם הם שדות חובה'); return; }
-    const req = this.isEdit ? this.api.updateEquipment(this.id, this.form) : this.api.createEquipment(this.form);
+    const name = this.form.name.trim();
+    if (!this.form.barcode || !name) { this.error.set('ברקוד ושם הם שדות חובה'); return; }
+
+    const payload = { ...this.form, name, rental_price_per_day: this.form.category === 'מחשב נייד' ? 0 : this.form.rental_price_per_day, overdue_price_per_day: this.form.category === 'מחשב נייד' ? 0 : this.form.overdue_price_per_day };
+    if (payload.category === 'מצלמות אישיות' || payload.subcategory === 'מצלמות אישיות') {
+      payload.category = 'ציוד צילום';
+      payload.subcategory = 'מצלמות אישיות';
+    }
+    if (payload.category === 'מחשב נייד') {
+      payload.subcategory = '';
+    }
+
+    const req = this.isEdit ? this.api.updateEquipment(this.id, payload) : this.api.createEquipment(payload);
     req.subscribe({
       next: (res: any) => {
         const newId = this.isEdit ? this.id : res.id;

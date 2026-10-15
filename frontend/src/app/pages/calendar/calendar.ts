@@ -88,7 +88,7 @@ interface CalCell {
         </div>
         <div class="cal-loan-who">
           <span>👤 {{ l.borrower_name }}{{ l.track ? ' — ' + l.track : '' }}</span>
-          <span class="cal-loan-dates">{{ l.loan_date }} ← {{ l.expected_return }}</span>
+          <span class="cal-loan-dates">{{ l.loan_date }} → {{ l.expected_return }}</span>
         </div>
         <span class="cal-loan-status" [class.overdue]="isOverdue(l)">
           {{ isOverdue(l) ? '⚠ איחור' : 'מושאל' }}
@@ -244,6 +244,10 @@ export class CalendarComponent implements OnInit {
     this.selectedDay.set(null);
   }
 
+  private isHiddenFromGeneralView(l: Loan) {
+    return l.category === 'מצלמות אישיות' || (l.category === 'ציוד צילום' && (l as any).subcategory === 'מצלמות אישיות');
+  }
+
   calCells(): CalCell[] {
     const hm = this.heMonth(), hy = this.heYear();
     const daysInMonth = HDate.daysInMonth(hm, hy);
@@ -275,7 +279,7 @@ export class CalendarComponent implements OnInit {
         heDay: d, heDayStr: GEMATRIA[d],
         gregDay: greg.getDate(), gregMonth: greg.getMonth(), gregYear: greg.getFullYear(),
         dateStr, inMonth: true, isToday: dateStr === this.today,
-        loans: this.allLoans().filter(l => !l.actual_return && l.loan_date <= dateStr && l.expected_return >= dateStr && l.category !== 'מחשב נייד')
+        loans: this.allLoans().filter(l => !l.actual_return && l.loan_date <= dateStr && l.expected_return >= dateStr && !this.isHiddenFromGeneralView(l) && l.category !== 'מחשב נייד')
       });
     }
 
@@ -312,7 +316,7 @@ export class CalendarComponent implements OnInit {
   selectedDayLoans() {
     const d = this.selectedDay();
     if (!d) return [];
-    return this.allLoans().filter(l => !l.actual_return && l.loan_date <= d && l.expected_return >= d && l.category !== 'מחשב נייד');
+    return this.allLoans().filter(l => !l.actual_return && l.loan_date <= d && l.expected_return >= d && !this.isHiddenFromGeneralView(l) && l.category !== 'מחשב נייד');
   }
 
   selectedDayLabel() {
@@ -340,7 +344,7 @@ export class CalendarComponent implements OnInit {
     const start = cells[0].dateStr, end = cells[cells.length - 1].dateStr;
     const seen = new Set<number>();
     return this.allLoans()
-      .filter(l => !l.actual_return && l.loan_date <= end && l.expected_return >= start && l.category !== 'מחשב נייד')
+      .filter(l => !l.actual_return && l.loan_date <= end && l.expected_return >= start && !this.isHiddenFromGeneralView(l) && l.category !== 'מחשב נייד')
       .filter(l => { if (seen.has(l.equipment_id)) return false; seen.add(l.equipment_id); return true; })
       .map(l => ({ name: l.equipment_name!, color: this.loanColor(l) }));
   }

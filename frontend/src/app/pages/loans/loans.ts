@@ -211,6 +211,10 @@ export class LoansComponent implements OnInit {
     });
   }
 
+  private isHiddenFromGeneralView(l: Loan) {
+    return l.category === 'מצלמות אישיות' || (l.category === 'ציוד צילום' && (l as any).subcategory === 'מצלמות אישיות');
+  }
+
   activeCount() { return this.all().filter(l => !l.actual_return).length; }
 
   load() {
@@ -224,9 +228,10 @@ export class LoansComponent implements OnInit {
     const all = this.all();
     const orderId = this.orderFilter();
 
-    const visible = orderId
+    const visible = (orderId
       ? all.filter(l => this.matchesOrder(l, orderId))
-      : all;
+      : all
+    ).filter(l => !this.isHiddenFromGeneralView(l));
 
     if (this.filter() === 'active')       this.displayed.set(visible.filter(l => !l.actual_return && !this.isFuture(l)));
     else if (this.filter() === 'overdue') this.displayed.set(visible.filter(l => !l.actual_return && !this.isFuture(l) && l.expected_return < today));

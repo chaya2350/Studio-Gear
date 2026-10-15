@@ -92,6 +92,9 @@ const newLoanCols = [
   ['track', "ALTER TABLE loans ADD COLUMN track TEXT"],
   ['location', "ALTER TABLE loans ADD COLUMN location TEXT"],
   ['borrower_id_number', "ALTER TABLE loans ADD COLUMN borrower_id_number TEXT"],
+  ['deposit_check', "ALTER TABLE loans ADD COLUMN deposit_check INTEGER DEFAULT 0"],
+  ['deposit_scan_url', "ALTER TABLE loans ADD COLUMN deposit_scan_url TEXT"],
+  ['hebrew_year', "ALTER TABLE loans ADD COLUMN hebrew_year TEXT"],
 ];
 newLoanCols.forEach(([col, sql]) => { if (!loanCols.includes(col)) db.exec(sql); });
 
@@ -104,6 +107,8 @@ renameMap.forEach(([from, to]) => {
   db.prepare('UPDATE categories SET name=? WHERE name=?').run(to, from);
   db.prepare('UPDATE equipment SET category=? WHERE category=?').run(to, from);
 });
+
+db.prepare("UPDATE equipment SET category='ציוד צילום', subcategory='מצלמות אישיות' WHERE category='מצלמות אישיות'").run();
 
 // Migration: add equipment columns if missing
 const cols = db.prepare("PRAGMA table_info(equipment)").all();
@@ -130,11 +135,16 @@ defaultCategories.forEach(([n, i, p]) => ins.run(n, i, p));
 
 const photoGroupId = db.prepare("SELECT id FROM categories WHERE name = 'ציוד צילום'").get()?.id;
 if (photoGroupId) {
-  db.prepare("UPDATE categories SET parent_id = ? WHERE name IN ('מצלמות','עדשות','תאורה','שמע','חצובות','גימבל','נק','אחר') AND parent_id IS NULL").run(photoGroupId);
+  db.prepare("UPDATE categories SET parent_id = ? WHERE name IN ('מצלמות','עדשות','תאורה','שמע','חצובות','גימבל','נק','אחר','מצלמות אישיות') AND parent_id IS NULL").run(photoGroupId);
 }
 const laptopGroupId = db.prepare("SELECT id FROM categories WHERE name = 'מחשבים ניידים'").get()?.id;
 if (laptopGroupId) {
   db.prepare("UPDATE categories SET parent_id = ? WHERE name = 'מחשב נייד' AND parent_id IS NULL").run(laptopGroupId);
+}
+
+const legacyPhotoCategory = db.prepare("SELECT id FROM categories WHERE name = 'מצלמות אישיות'").get()?.id;
+if (legacyPhotoCategory && photoGroupId) {
+  db.prepare("UPDATE categories SET parent_id = ? WHERE id = ?").run(photoGroupId, legacyPhotoCategory);
 }
 
 // ── Students ───────────────────────────────────────────────
@@ -241,6 +251,8 @@ app.delete('/api/categories/:id', (req, res) => {
 function equipmentQuery(whereClause = '') {
   return `
     SELECT e.*,
+      CASE WHEN e.category = 'מצלמות אישיות' THEN 'ציוד צילום' ELSE e.category END as category,
+      CASE WHEN e.category = 'מצלמות אישיות' THEN 'מצלמות אישיות' ELSE e.subcategory END as subcategory,
       CASE WHEN active.id IS NOT NULL THEN 1 ELSE 0 END as is_loaned,
       active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
@@ -275,20 +287,53 @@ app.get('/api/equipment/:id', (req, res) => {
   res.json(row);
 });
 
+function normalizeEquipmentName(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function ensureUniqueEquipmentName(name, excludeId = null) {
+  const trimmed = normalizeEquipmentName(name);
+  if (!trimmed) return null;
+  const existing = db.prepare(
+    'SELECT id FROM equipment WHERE lower(name) = lower(?) AND (? IS NULL OR id != ?)' 
+  ).get(trimmed, excludeId, excludeId);
+  return existing ? 'שם הציוד כבר קיים במערכת' : null;
+}
+
 app.post('/api/equipment', (req, res) => {
   const { barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day } = req.body;
+  const normalizedName = normalizeEquipmentName(name);
+  if (!normalizedName) return res.status(400).json({ error: 'שם הציוד הוא שדה חובה' });
+  const duplicateError = ensureUniqueEquipmentName(normalizedName);
+  if (duplicateError) return res.status(409).json({ error: duplicateError });
+
   try {
+    const finalCategory = category === 'מחשב נייד' ? 'מחשב נייד' : category;
+    const finalSubcategory = finalCategory === 'מחשב נייד' ? null : (subcategory || null);
+    const finalRental = finalCategory === 'מחשב נייד' ? 0 : (rental_price_per_day || 0);
+    const finalOverdue = finalCategory === 'מחשב נייד' ? 0 : (overdue_price_per_day || 0);
+
     const result = db.prepare(
       'INSERT INTO equipment (barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(barcode, name, category, subcategory || null, description, image_url, rental_price_per_day || 0, overdue_price_per_day || 0);
+    ).run(barcode, normalizedName, finalCategory, finalSubcategory, description, image_url, finalRental, finalOverdue);
     res.json({ id: result.lastInsertRowid });
   } catch { res.status(400).json({ error: 'Barcode already exists' }); }
 });
 
 app.put('/api/equipment/:id', (req, res) => {
   const { barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day } = req.body;
+  const normalizedName = normalizeEquipmentName(name);
+  if (!normalizedName) return res.status(400).json({ error: 'שם הציוד הוא שדה חובה' });
+  const duplicateError = ensureUniqueEquipmentName(normalizedName, Number(req.params.id));
+  if (duplicateError) return res.status(409).json({ error: duplicateError });
+
+  const finalCategory = category === 'מחשב נייד' ? 'מחשב נייד' : category;
+  const finalSubcategory = finalCategory === 'מחשב נייד' ? null : (subcategory || null);
+  const finalRental = finalCategory === 'מחשב נייד' ? 0 : (rental_price_per_day || 0);
+  const finalOverdue = finalCategory === 'מחשב נייד' ? 0 : (overdue_price_per_day || 0);
+
   db.prepare('UPDATE equipment SET barcode=?, name=?, category=?, subcategory=?, description=?, image_url=?, rental_price_per_day=?, overdue_price_per_day=? WHERE id=?')
-    .run(barcode, name, category, subcategory || null, description, image_url, rental_price_per_day || 0, overdue_price_per_day || 0, req.params.id);
+    .run(barcode, normalizedName, finalCategory, finalSubcategory, description, image_url, finalRental, finalOverdue, req.params.id);
   res.json({ success: true });
 });
 
@@ -334,6 +379,10 @@ app.get('/api/loans', (req, res) => {
       CASE WHEN l.actual_return IS NULL AND l.loan_date > ? THEN 1 ELSE 0 END as is_future
     FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
+    WHERE NOT (
+      e.category = 'מצלמות אישיות' OR
+      (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+    )
     ORDER BY l.actual_return IS NULL DESC, l.loan_date ASC, l.expected_return ASC
   `).all(today);
   res.json(rows);
@@ -345,7 +394,13 @@ app.get('/api/loans/overdue', (req, res) => {
     SELECT l.*, e.name as equipment_name, e.barcode, e.category
     FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
-    WHERE l.actual_return IS NULL AND l.loan_date <= ? AND l.expected_return < ?
+    WHERE l.actual_return IS NULL
+      AND l.loan_date <= ?
+      AND l.expected_return < ?
+      AND NOT (
+        e.category = 'מצלמות אישיות' OR
+        (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+      )
     ORDER BY l.expected_return ASC
   `).all(today, today);
   res.json(rows);
@@ -361,24 +416,47 @@ app.get('/api/loans/equipment/:equipmentId', (req, res) => {
 
 app.post('/api/loans', (req, res) => {
   const { equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
-          loan_type, price_per_day, card_last4, card_expiry, card_holder, track, location } = req.body;
+          loan_type, price_per_day, card_last4, card_expiry, card_holder, track, location,
+          deposit_check, deposit_scan_url, hebrew_year } = req.body;
   const today = new Date().toISOString().split('T')[0];
+
+  const eq = db.prepare('SELECT category, subcategory FROM equipment WHERE id=?').get(equipment_id);
+  const isLaptop = eq && eq.category === 'מחשב נייד';
+  const isPersonalCamera = eq && (
+    eq.category === 'מצלמות אישיות' ||
+    (eq.category === 'ציוד צילום' && eq.subcategory === 'מצלמות אישיות')
+  );
+
+  if (isPersonalCamera) {
+    if (!borrower_name) return res.status(400).json({ error: 'שם השואל חובה' });
+    if (!notes || !String(notes).trim()) return res.status(400).json({ error: 'חובה לכתוב מה קיבלה בנוסף למצלמה' });
+    if (deposit_check && !deposit_scan_url) return res.status(400).json({ error: 'נא להעלות סריקת שיק/פיקדון' });
+
+    const active = db.prepare('SELECT id FROM loans WHERE equipment_id=? AND actual_return IS NULL').get(equipment_id);
+    if (active) return res.status(400).json({ error: 'המצלמה כבר הוזמנה' });
+
+    const loanStart = '2026-09-01';
+    const loanEnd = '2027-06-30';
+
+    const result = db.prepare(
+      `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
+        loan_type, payment_status, track, location, deposit_check, deposit_scan_url, hebrew_year)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'loan', 'none', ?, ?, ?, ?, ?)`
+    ).run(equipment_id, borrower_name, borrower_phone || '', borrower_id_number || null, loanStart, loanEnd, notes,
+      track || 'גרפיקה א', location || null, Number(Boolean(deposit_check)), deposit_scan_url || null, hebrew_year || 'תשפ"ז');
+    return res.json({ id: result.lastInsertRowid });
+  }
 
   if (!loan_date || !expected_return) return res.status(400).json({ error: 'תאריכים חסרים' });
   if (loan_date < today) return res.status(400).json({ error: 'תאריך ההתחלה לא יכול להיות בעבר' });
   if (expected_return < loan_date) return res.status(400).json({ error: 'תאריך ההחזרה חייב להיות אחרי תאריך ההתחלה' });
 
-  // Max 14 days
   const start = new Date(loan_date), end = new Date(expected_return);
   const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
   if (days > 14) return res.status(400).json({ error: 'לא ניתן להשאיל/להשכיר ליותר מ-14 יום' });
 
-  // Credit card required (not for laptops)
-  const eq = db.prepare('SELECT category FROM equipment WHERE id=?').get(equipment_id);
-  const isLaptop = eq && eq.category === 'מחשב נייד';
   if (!isLaptop && (!card_last4 || !card_expiry || !card_holder)) return res.status(400).json({ error: 'פרטי אשראי חובה' });
 
-  // Laptop: same-day only, no overlap check needed beyond active loan
   if (isLaptop) {
     const active = db.prepare('SELECT id FROM loans WHERE equipment_id=? AND actual_return IS NULL').get(equipment_id);
     if (active) return res.status(400).json({ error: 'המחשב כבר מושאל' });

@@ -11,7 +11,7 @@ import { Student } from '../../models';
     <div *ngIf="student()">
       <div class="page-header">
         <div style="display:flex; align-items:center; gap:16px;">
-          <a routerLink="/equipment" class="back-btn">←</a>
+          <a routerLink="/equipment" class="back-btn">→</a>
           <div>
             <h1>{{ student()!.name }}</h1>
             <p class="subtitle">🪪 {{ student()!.id_number }}

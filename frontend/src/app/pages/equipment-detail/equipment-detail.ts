@@ -14,7 +14,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
     <div *ngIf="item()">
       <div class="page-header">
         <div class="header-top">
-          <a routerLink="/equipment" class="back-btn">←</a>
+          <a routerLink="/equipment" class="back-btn">→</a>
           <div class="header-info">
             <h1>{{ item()!.name }}</h1>
             <p class="subtitle">{{ item()!.category }}<span *ngIf="item()!.subcategory"> › {{ item()!.subcategory }}</span> · ברקוד {{ item()!.barcode }}</p>
@@ -165,17 +165,18 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
           </div>
 
           <ng-template #loanForm>
-            <!-- Type tabs — hidden for laptops -->
-            <div class="type-tabs" *ngIf="!isLaptop()">
+            <!-- Type tabs — hidden for laptops and personal camera -->
+            <div class="type-tabs" *ngIf="!isLaptop() && !isPersonalCamera()">
               <button [class.active]="loanType() === 'loan'" (click)="loanType.set('loan')">🤝 השאלה</button>
               <button [class.active]="loanType() === 'rental'" (click)="loanType.set('rental')">💰 השכרה</button>
             </div>
             <div *ngIf="isLaptop()" class="laptop-badge">💻 תפיסת מחשב נייד — ליום אחד</div>
+            <div *ngIf="isPersonalCamera()" class="laptop-badge" style="background:#fff7ed;border-color:#fdba74;color:#9a4d00;">📷 ציוד צילום — שנת השאלה: {{ loan.hebrew_year || currentHebrewYear() }}</div>
 
-            <div class="form-group" *ngIf="isLaptop(); else borrowerManual">
-              <label>מז *</label>
+            <div class="form-group" *ngIf="isLaptop() || isPersonalCamera(); else borrowerManual">
+              <label>{{ isPersonalCamera() ? 'ת.ז * — מסלול גרפיקה, שנה א' : 'מז *' }}</label>
               <div style="position:relative;">
-                <input [(ngModel)]="studentQuery" placeholder="הקלד מז או שם לחיפוש..." (input)="onStudentSearch()" autocomplete="off">
+                <input [(ngModel)]="studentQuery" [placeholder]="isPersonalCamera() ? 'הקלד ת.ז...' : 'הקלד מז או שם לחיפוש...'" (input)="onStudentSearch()" autocomplete="off">
                 <div *ngIf="studentSuggestions().length" class="suggestions">
                   <div *ngFor="let s of studentSuggestions()" class="suggestion-item" (click)="selectStudent(s)">
                     <strong>{{ s.name }}</strong>
@@ -287,8 +288,8 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
               </div>
             </div>
 
-            <!-- Dates — only for non-laptops -->
-            <ng-container *ngIf="!isLaptop()">
+            <!-- Dates — only for standard equipment -->
+            <ng-container *ngIf="!isLaptop() && !isPersonalCamera()">
               <div class="form-group">
                 <label>תאריך התחלה *</label>
                 <input type="date" [(ngModel)]="loan.loan_date" [min]="today" (ngModelChange)="onDateChange()">
@@ -312,9 +313,28 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
             <div *ngIf="isLaptop()" class="laptop-date-info">
               <span>📅 תאריך :</span><strong>{{ today }}</strong>
             </div>
+            <div *ngIf="isPersonalCamera()" class="laptop-date-info">
+              <span>📅 שנת השאלה:</span><strong>{{ loan.hebrew_year || currentHebrewYear() }}</strong>
+            </div>
 
-            <!-- Credit card — only for non-laptops -->
-            <ng-container *ngIf="!isLaptop()">
+            <!-- Personal camera: annual booking with deposit checkbox + scan -->
+            <ng-container *ngIf="isPersonalCamera()">
+              <div class="card-section">
+                <div class="section-title" style="font-size:0.9rem; margin-bottom:10px;">💳 שיק / פיקדון</div>
+                <label class="checkbox-row" style="display:flex; align-items:center; gap:10px; margin-bottom:12px; font-weight:600; color:var(--text);">
+                  <input type="checkbox" [(ngModel)]="loan.deposit_check" [disabled]="true" checked>
+                  <span>יש שיק / פיקדון (חובה)</span>
+                </label>
+                <div *ngIf="loan.deposit_check" class="form-group">
+                  <label>סריקת שיק / פיקדון</label>
+                  <input type="file" accept="image/*" (change)="uploadDepositScan($event)">
+                  <img *ngIf="loan.deposit_scan_url" [src]="loan.deposit_scan_url" style="width:100%; max-height:180px; object-fit:contain; margin-top:10px; border-radius:8px; border:1px solid var(--border); background:#fff;">
+                </div>
+              </div>
+            </ng-container>
+
+            <!-- Credit card — only for standard equipment -->
+            <ng-container *ngIf="!isLaptop() && !isPersonalCamera()">
               <div class="card-section">
                 <div class="section-title" style="font-size:0.9rem; margin-bottom:10px;">💳 פרטי אשראי</div>
                 <div class="form-group">
@@ -341,12 +361,12 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
             </ng-container>
 
             <div class="form-group">
-              <label>הערות</label>
-              <textarea [(ngModel)]="loan.notes" rows="2" placeholder="הערות נוספות..."></textarea>
+              <label>{{ isPersonalCamera() ? 'הערות *' : 'הערות' }}</label>
+              <textarea [(ngModel)]="loan.notes" rows="2" [placeholder]="isPersonalCamera() ? 'מה קיבלה בנוסף למצלמה?' : 'הערות נוספות...'"></textarea>
             </div>
             <p *ngIf="loanError()" class="alert alert-error">{{ loanError() }}</p>
             <button class="btn btn-primary" style="width:100%;" (click)="createLoan()">
-              {{ isLaptop() ? '💻 תפוס מחשב' : (loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד') }}
+              {{ isPersonalCamera() ? '📷 הזמנת מצלמה' : (isLaptop() ? '💻 תפוס מחשב' : (loanType() === 'rental' ? '💰 השכר ציוד' : '📤 השאל ציוד')) }}
             </button>
           </ng-template>
         </div>
@@ -667,7 +687,7 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   studentSuggestions = signal<any[]>([]);
   selectedStudent = signal<any | null>(null);
 
-  loan: any = { borrower_name: '', borrower_phone: '', borrower_id_number: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '' };
+  loan: any = { borrower_name: '', borrower_phone: '', borrower_id_number: '', loan_date: this.today, expected_return: '', notes: '', price_per_day: 0, card_holder: '', card_expiry: '', track: '', trackName: '', trackYear: '', location: '', hebrew_year: this.currentHebrewYear(), deposit_check: true };
   returnBarcode = '';
   returnBarcodeError = signal(false);
   returnScanning = signal(false);
@@ -688,7 +708,15 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   }
 
   showAddToCart(): boolean {
-    return !this.isLaptop();
+    return !this.isLaptop() && !this.isPersonalCamera();
+  }
+
+  isPersonalCamera() {
+    const item = this.item();
+    return !!item && (
+      item.category === 'מצלמות אישיות' ||
+      (item.category === 'ציוד צילום' && item.subcategory === 'מצלמות אישיות')
+    );
   }
 
   ngOnInit() {
@@ -703,14 +731,40 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
   futureLoans() { return this.history().filter(l => l.is_future).sort((a,b) => a.loan_date.localeCompare(b.loan_date)); }
   activeLoan()  { return this.history().find(l => !l.actual_return && !l.is_future) ?? null; }
 
+  matchesPersonalCameraStudent(student: any): boolean {
+    const track = String(student?.track || '').trim();
+    const year = String(student?.year || '').trim();
+    const isGraphicsTrack = /(גרפיקה|מגרפיקה|graphic|graphics)/i.test(track);
+    const isGraphicsYear = ['ה', 'שנה ה', 'שנה ה\u05F3', 'ה\u05F3'].includes(year) || /^שנה\s*ה\s*$|^ה\s*$|^ה\u05F3$/.test(year);
+    return isGraphicsTrack && isGraphicsYear;
+  }
+
   onStudentSearch() {
     this.selectedStudent.set(null);
     const q = this.studentQuery.trim();
-    if (q.length < 2) {
+    if (!q) {
       this.studentSuggestions.set([]);
       return;
     }
-    this.api.getStudents(q).subscribe(s => this.studentSuggestions.set(s.slice(0, 8)));
+
+    const request$ = this.isPersonalCamera()
+      ? this.api.getStudents()
+      : this.api.getStudents(q);
+
+    request$.subscribe(s => {
+      let filtered = this.isPersonalCamera()
+        ? s.filter(student => this.matchesPersonalCameraStudent(student))
+        : s;
+
+      if (this.isPersonalCamera()) {
+        filtered = filtered.filter(student => {
+          const hay = `${student?.id_number || ''} ${student?.name || ''}`.toLowerCase();
+          return hay.includes(q.toLowerCase());
+        });
+      }
+
+      this.studentSuggestions.set(filtered.slice(0, 5));
+    });
   }
 
   selectStudent(s: any) {
@@ -720,9 +774,12 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
     this.loan.borrower_name = s.name;
     this.loan.borrower_phone = s.phone || '';
     this.loan.borrower_id_number = s.id_number;
-    this.loan.trackName = s.track || '';
-    this.loan.trackYear = s.year || '';
-    this.loan.track = s.track && s.year ? `${s.track} ${s.year}` : (s.track || '');
+    this.loan.trackName = this.isPersonalCamera() ? 'גרפיקה' : (s.track || '');
+    this.loan.trackYear = this.isPersonalCamera() ? 'ה' : (s.year || '');
+    this.loan.track = this.isPersonalCamera() ? 'גרפיקה ה' : (s.track && s.year ? `${s.track} ${s.year}` : (s.track || ''));
+    if (this.isPersonalCamera()) {
+      this.loan.hebrew_year = this.currentHebrewYear();
+    }
   }
 
   maxReturnDate(): string {
@@ -843,6 +900,17 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
     this.cvv = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 3);
   }
 
+  uploadDepositScan(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    this.api.uploadImage(fd).subscribe({
+      next: (res) => this.loan.deposit_scan_url = res.url,
+      error: () => this.loanError.set('שגיאה בהעלאת סריקת הפיקדון')
+    });
+  }
+
   isOverdue() {
     const item = this.item();
     return item?.is_loaned && item.expected_return && item.expected_return < this.today;
@@ -867,6 +935,27 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
 
   isLaptop() { return this.item()?.category === 'מחשב נייד'; }
 
+  currentHebrewYear(): string {
+    const now = new Date();
+    const academicStart = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+    const values = ['תשפ"ז', 'תשפ"ח', 'תשפ"ט', 'תשפ"כ', 'תשפ"ל', 'תשפ"מ'];
+    const index = Math.max(0, Math.min(values.length - 1, academicStart - 2026));
+    return values[index];
+  }
+
+  personalCameraDates() {
+    const year = this.loan.hebrew_year || this.currentHebrewYear();
+    const map: Record<string, { loan_date: string; expected_return: string }> = {
+      'תשפ"ז': { loan_date: '2026-09-01', expected_return: '2027-06-30' },
+      'תשפ"ח': { loan_date: '2027-09-01', expected_return: '2028-06-30' },
+      'תשפ"ט': { loan_date: '2028-09-01', expected_return: '2029-06-30' },
+      'תשפ"כ': { loan_date: '2029-09-01', expected_return: '2030-06-30' },
+      'תשפ"ל': { loan_date: '2030-09-01', expected_return: '2031-06-30' },
+      'תשפ"מ': { loan_date: '2031-09-01', expected_return: '2032-06-30' }
+    };
+    return map[year] || map['תשפ"ז'];
+  }
+
   createLoan() {
     const item = this.item()!;
     if (this.isLaptop()) {
@@ -890,6 +979,44 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
         card_last4: null, card_expiry: null, card_holder: null
       }).subscribe({
         next: () => { this.loanError.set(''); this.load(item.id); this.api.getLoansByEquipment(item.id).subscribe(d => this.history.set(d)); },
+        error: (e) => this.loanError.set(e.error?.error || 'שגיאה')
+      });
+      return;
+    }
+
+    if (this.isPersonalCamera()) {
+      this.loan.deposit_check = true;
+      if (!this.loan.borrower_name) {
+        this.loanError.set('נא למלא שם שואל'); return;
+      }
+      if (!this.loan.notes || !this.loan.notes.trim()) {
+        this.loanError.set('חובה לכתוב מה קיבלה בנוסף למצלמה'); return;
+      }
+      if (!this.loan.deposit_scan_url) {
+        this.loanError.set('נא להעלות סריקת שיק/פיקדון'); return;
+      }
+      const dates = this.personalCameraDates();
+      this.api.createLoan({
+        equipment_id: item.id,
+        borrower_name: this.loan.borrower_name,
+        borrower_phone: this.loan.borrower_phone || '',
+        borrower_id_number: this.loan.borrower_id_number || null,
+        loan_date: dates.loan_date,
+        expected_return: dates.expected_return,
+        notes: this.loan.notes,
+        loan_type: 'loan',
+        payment_status: 'none',
+        track: this.loan.track || 'גרפיקה א',
+        location: this.loan.location || null,
+        deposit_check: !!this.loan.deposit_check,
+        deposit_scan_url: this.loan.deposit_scan_url || null,
+        hebrew_year: this.loan.hebrew_year || 'תשפ"ז'
+      }).subscribe({
+        next: () => {
+          this.loanError.set('');
+          this.load(item.id);
+          this.api.getLoansByEquipment(item.id).subscribe(d => this.history.set(d));
+        },
         error: (e) => this.loanError.set(e.error?.error || 'שגיאה')
       });
       return;
