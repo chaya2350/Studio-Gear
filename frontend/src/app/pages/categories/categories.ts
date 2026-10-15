@@ -5,12 +5,6 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Category } from '../../models';
 
-const EMOJI_OPTIONS = ['📷','🔭','💡','🎙️','🎬','📦','🎥','🔋','🖥️','🎞️','🔌','🎚️','🎛️','📡','🔦','🧰','🎤','📻'];
-const TOP_LEVEL_GROUPS = [
-  { name: 'ציוד צילום', icon: '📷' },
-  { name: 'מחשבים ניידים', icon: '🖥️' }
-];
-
 @Component({
   selector: 'app-categories',
   imports: [CommonModule, RouterLink, FormsModule],
@@ -135,7 +129,7 @@ export class CategoriesComponent implements OnInit {
   newName = '';
   newIcon = '📦';
   newParentId: number | null = null;
-  emojis = EMOJI_OPTIONS;
+  emojis = ['📷','🔭','💡','🎙️','🎬','📦','🎥','🔋','🖥️','🎞️','🔌','🎚️','🎛️','📡','🔦','🧰','🎤','📻'];
 
   constructor(private api: ApiService) {}
 

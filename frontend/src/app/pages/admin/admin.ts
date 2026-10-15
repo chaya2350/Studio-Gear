@@ -88,10 +88,7 @@ import { ApiService } from '../../services/api.service';
         </div>
         <div class="form-group">
           <label>תבנית טקסט</label>
-          <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;">
-            משתנים זמינים: <code>{{שם}}</code> <code>{{תז}}</code> <code>{{שנה}}</code> <code>{{מסלול}}</code>
-            <span *ngIf="editingApproval()!.type === 'single'"> <code>{{תאריך לידה}}</code> <code>{{כתובת}}</code></span>
-          </div>
+          <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;" [innerHTML]="varsHint(editingApproval()!.type)"></div>
           <textarea [(ngModel)]="editingApproval()!.template" rows="8" style="font-family:monospace; font-size:0.82rem;"></textarea>
         </div>
         <div style="display:flex; gap:10px;">
@@ -184,6 +181,12 @@ export class AdminComponent {
   deleteApproval(id: number) {
     if (!confirm('למחוק סוג אישור זה?')) return;
     this.api.deleteApprovalType(id).subscribe(() => this.loadApprovals());
+  }
+
+  varsHint(type: string): string {
+    const base = 'משתנים זמינים: <code>{{\u05e9\u05dd}}</code> <code>{{\u05ea\u05d6}}</code> <code>{{\u05e9\u05e0\u05d4}}</code> <code>{{\u05de\u05e1\u05dc\u05d5\u05dc}}</code>';
+    const extra = ' <code>{{\u05ea\u05d0\u05e8\u05d9\u05da \u05dc\u05d9\u05d3\u05d4}}</code> <code>{{\u05db\u05ea\u05d5\u05d1\u05ea}}</code>';
+    return type === 'single' ? base + extra : base;
   }
 
   onFileChange(e: Event) {
