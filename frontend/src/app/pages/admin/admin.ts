@@ -64,7 +64,7 @@ interface UserAccount {
     <div class="card" style="max-width:560px;">
       <div class="section-title">📥 ייבוא תלמידות מאקסל</div>
       <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
-        העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה</strong><br>
+        העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה, ת. לידה לועזי/עברית, כתובת, מספר בית, עיר</strong><br>
         ניתן להעלות מספר קבצים (שנה א + שנה ב). רשומות קיימות יתעדכנו לפי ת.ז.
       </p>
 
@@ -86,6 +86,7 @@ interface UserAccount {
 
       <div *ngFor="let r of results()" class="import-status" [class.success]="r.ok" [class.error]="!r.ok">
         <span *ngIf="r.ok">✅ <strong>{{ r.filename }}</strong> — יובאו {{ r.imported }} תלמידות
+          (תאריך לידה: {{ r.withBirthDate || 0 }}, כתובת: {{ r.withAddress || 0 }})
           <span *ngIf="r.skipped">({{ r.skipped }} דולגו)</span>
         </span>
         <span *ngIf="!r.ok">❌ <strong>{{ r.filename }}</strong> — {{ r.error }}</span>
@@ -137,9 +138,12 @@ interface UserAccount {
           <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;" [innerHTML]="varsHint(editingApproval()!.type)"></div>
           <textarea [(ngModel)]="editingApproval()!.template" rows="8" style="font-family:monospace; font-size:0.82rem;"></textarea>
         </div>
+        <p *ngIf="approvalSaveError()" class="approval-save-error">{{ approvalSaveError() }}</p>
         <div style="display:flex; gap:10px;">
-          <button class="btn btn-primary" (click)="saveApproval()">💾 שמור</button>
-          <button class="btn btn-secondary" (click)="editingApproval.set(null)">ביטול</button>
+          <button class="btn btn-primary" [disabled]="savingApproval()" (click)="saveApproval()">
+            {{ savingApproval() ? 'שומר...' : '💾 שמור' }}
+          </button>
+          <button class="btn btn-secondary" [disabled]="savingApproval()" (click)="editingApproval.set(null)">ביטול</button>
         </div>
       </div>
 
@@ -188,6 +192,7 @@ interface UserAccount {
     }
     .approval-row-actions { display: flex; gap: 6px; }
     .approval-form { margin-top: 4px; }
+    .approval-save-error { color: #991b1b; margin-bottom: 10px; }
     code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
     .user-management { max-width: 1000px; margin-bottom: 24px; }
     .user-help { color: var(--text-muted); font-size: 0.85rem; margin: -4px 0 14px; }
@@ -207,7 +212,15 @@ interface UserAccount {
 export class AdminComponent {
   dragging = signal(false);
   importing = signal(false);
-  results = signal<{ filename: string; ok: boolean; imported?: number; skipped?: number; error?: string }[]>([]);
+  results = signal<{
+    filename: string;
+    ok: boolean;
+    imported?: number;
+    skipped?: number;
+    withBirthDate?: number;
+    withAddress?: number;
+    error?: string;
+  }[]>([]);
   totalImported = signal(0);
   approvalTypes = signal<any[]>([]);
   editingApproval = signal<any | null>(null);
@@ -216,6 +229,8 @@ export class AdminComponent {
   newUser: { name: string; email: string; password: string; role: UserRole } = {
     name: '', email: '', password: '', role: 'laborant'
   };
+  approvalSaveError = signal('');
+  savingApproval = signal(false);
 
   constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
     this.loadTotal();
@@ -258,15 +273,31 @@ export class AdminComponent {
   }
 
   newApproval() {
+    this.approvalSaveError.set('');
     this.editingApproval.set({ id: null, name: '', template: '', signature: 'principal', type: 'regular' });
   }
 
-  editApproval(t: any) { this.editingApproval.set({ ...t }); }
+  editApproval(t: any) {
+    this.approvalSaveError.set('');
+    this.editingApproval.set({ ...t });
+  }
 
   saveApproval() {
     const t = this.editingApproval()!;
+    this.approvalSaveError.set('');
+    this.savingApproval.set(true);
     const obs = t.id ? this.api.updateApprovalType(t.id, t) : this.api.createApprovalType(t);
-    obs.subscribe(() => { this.loadApprovals(); this.editingApproval.set(null); });
+    obs.subscribe({
+      next: () => {
+        this.savingApproval.set(false);
+        this.loadApprovals();
+        this.editingApproval.set(null);
+      },
+      error: (error) => {
+        this.savingApproval.set(false);
+        this.approvalSaveError.set(error.error?.error || 'שמירת האישור נכשלה. נסי שוב.');
+      }
+    });
   }
 
   deleteApproval(id: number) {
@@ -296,14 +327,29 @@ export class AdminComponent {
     this.results.set([]);
     this.importing.set(true);
     let done = 0;
-    const newResults: { filename: string; ok: boolean; imported?: number; skipped?: number; error?: string }[] = [];
+    const newResults: {
+      filename: string;
+      ok: boolean;
+      imported?: number;
+      skipped?: number;
+      withBirthDate?: number;
+      withAddress?: number;
+      error?: string;
+    }[] = [];
 
     files.forEach(file => {
       const fd = new FormData();
       fd.append('file', file);
       this.http.post<any>('/api/students/import', fd).subscribe({
         next: (r) => {
-          newResults.push({ filename: file.name, ok: true, imported: r.imported, skipped: r.skipped });
+          newResults.push({
+            filename: file.name,
+            ok: true,
+            imported: r.imported,
+            skipped: r.skipped,
+            withBirthDate: r.withBirthDate,
+            withAddress: r.withAddress
+          });
           if (++done === files.length) { this.importing.set(false); this.results.set([...newResults]); this.loadTotal(); }
         },
         error: (e) => {

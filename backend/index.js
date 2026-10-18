@@ -314,9 +314,15 @@ db.exec(`
     name TEXT NOT NULL,
     phone TEXT,
     track TEXT,
-    year TEXT
+    year TEXT,
+    birth_date TEXT,
+    address TEXT
   );
 `);
+
+const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
+if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
+if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
 
 app.get('/api/students', (req, res) => {
   const { q } = req.query;
@@ -351,10 +357,16 @@ app.put('/api/students/:id_number', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/students/:id_number/details', (req, res) => {
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'לא נמצא' });
+  res.json(student);
+});
+
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   try {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
     let allRows = [];
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
@@ -363,30 +375,86 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       allRows = allRows.concat(rows);
     }
     const rows = allRows;
+    const normalizeHeader = (value) => String(value || '')
+      .replace(/[\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLocaleLowerCase();
+    const compactHeader = (value) => normalizeHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
 
     const insert = db.prepare(`
-      INSERT INTO students (id_number, name, phone, track, year)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(id_number) DO UPDATE SET name=excluded.name, phone=excluded.phone, track=excluded.track, year=excluded.year
+      INSERT INTO students (id_number, name, phone, track, year, birth_date, address)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id_number) DO UPDATE SET
+        name=excluded.name,
+        phone=excluded.phone,
+        track=excluded.track,
+        year=excluded.year,
+        birth_date=COALESCE(excluded.birth_date, students.birth_date),
+        address=COALESCE(excluded.address, students.address)
     `);
 
-    let imported = 0, skipped = 0;
+    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0;
     const importMany = db.transaction((rows) => {
       for (const row of rows) {
-        const id_number = String(row["מס' זהות"] || row['ת. זהות'] || row['ת.ז'] || row['ת.ז.'] || row['תז'] || row['id_number'] || row['ID'] || '').trim();
-        const firstName = String(row['שם פרטי'] || '').trim();
-        const lastName = String(row['משפחה'] || '').trim();
-        const name = [lastName, firstName].filter(Boolean).join(' ') || String(row['שם'] || row['שם מלא'] || row['name'] || '').trim();
-        const phone = String(row['נייד אישי'] || row['טלפון'] || row['phone'] || '').trim();
-        const track = String(row['התמחות'] ||  row['מסלול'] || row['התמחות 1'] || row['מגמה'] || row['מגמה '] || row['track'] || '').trim();
-        const year = String(row['כיתה'] || row['שנה'] || row['year'] || '').trim();
+        const getValue = (...headers) => {
+          for (const header of headers) {
+            const normalized = normalizeHeader(header);
+            const compact = compactHeader(header);
+            const key = Object.keys(row).find((column) =>
+              normalizeHeader(column) === normalized || compactHeader(column) === compact
+            );
+            if (key !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+              return row[key];
+            }
+          }
+          return '';
+        };
+        const id_number = String(getValue("מס' זהות", 'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'id_number', 'ID')).trim();
+        const firstName = String(getValue('שם פרטי')).trim();
+        const lastName = String(getValue('משפחה')).trim();
+        const name = [lastName, firstName].filter(Boolean).join(' ') || String(getValue('שם', 'שם מלא', 'name')).trim();
+        const phone = String(getValue('נייד אישי', 'טלפון', 'phone')).trim();
+        const track = String(getValue('התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track')).trim();
+        const year = String(getValue('כיתה', 'שנה', 'year')).trim();
+        const birthDateValue = getValue(
+          'ת. לידה לועזי',
+          'תאריך לידה',
+          'birth_date',
+          'date_of_birth',
+          'ת. לידה עברי'
+        ) || Object.keys(row)
+          .filter((header) => compactHeader(header).includes('לידה'))
+          .sort((a, b) => Number(compactHeader(b).includes('לועזי')) - Number(compactHeader(a).includes('לועזי')))
+          .map((header) => row[header])
+          .find((value) => value !== null && String(value).trim() !== '') || '';
+        const parsedBirthDate = typeof birthDateValue === 'number'
+          ? XLSX.SSF.parse_date_code(birthDateValue, {
+            date1904: Boolean(wb.Workbook?.WBProps?.date1904)
+          })
+          : null;
+        const birthDate = birthDateValue instanceof Date
+          ? birthDateValue
+          : parsedBirthDate
+            ? new Date(Date.UTC(parsedBirthDate.y, parsedBirthDate.m - 1, parsedBirthDate.d))
+            : null;
+        const birth_date = birthDate && !Number.isNaN(birthDate.getTime())
+          ? `${String(birthDate.getUTCDate()).padStart(2, '0')}/${String(birthDate.getUTCMonth() + 1).padStart(2, '0')}/${birthDate.getUTCFullYear()}`
+          : String(birthDateValue || '').trim();
+        const address = [
+          getValue('כתובת', 'כתובת מגורים', 'address'),
+          getValue('מספר בית', 'מספר'),
+          getValue('עיר', 'יישוב')
+        ].map(value => String(value || '').trim()).filter(Boolean).join(' ');
         if (!id_number || !name) { skipped++; continue; }
-        insert.run(id_number, name, phone, track, year);
+        insert.run(id_number, name, phone, track, year, birth_date || null, address || null);
         imported++;
+        if (birth_date) withBirthDate++;
+        if (address) withAddress++;
       }
     });
     importMany(rows);
-    res.json({ imported, skipped, total: rows.length });
+    res.json({ imported, skipped, withBirthDate, withAddress, total: rows.length });
   } catch (e) {
     console.error('Import error:', e);
     res.status(500).json({ error: 'שגיאה בקריאת הקובץ: ' + e.message });
@@ -763,7 +831,7 @@ if (approvalCount === 0) {
     'לכל המעוניין,\n\nהנני לאשר שהתלמידה:\n\n{{שם}}\nמספר זהות: {{תז}}\nסטודנטית במוסדנו\nבשנת הלימודים {{שנה}}\nבסמינר גור ירושלים',
     'principal');
   ins.run('אישור לימודים',
-    'לכל המעוניין,\n\nהרני לאשר בי התלמידה: {{שם}} מס\' ת.ז: {{תז}}\nלומדת כתלמידה מן המנין במוסדנו\nבין השנים: {{שנה}}\nבמגמת: {{מסלול}}\nבס"ך כולל של 2100 שעות\nהכל ונאיות לדיפלמה מטעם מה"ט לאחר שתגיש פרויקט גמר.\n\nבברכה,\nההנהלה',
+    'לכל המעוניין,\n\nהרני לאשר בי התלמידה: {{שם}} מס\' ת.ז: {{תז}}\nלומדת כתלמידה מן המנין במוסדנו\nבין השנים: {{שנה}}\nבמגמת: {{מסלול}}\nבס"ך כולל של 2100 שעות\ל"הנ זכאית לדיפלמה מטעם מה"ט לאחר שתגיש פרויקט גמר.\n\nבברכה,\nההנהלה',
     'principal');
   db.prepare('INSERT INTO approval_types (name, template, signature, type) VALUES (?, ?, ?, ?)').run(
     'אישור 12 שנות לימוד',
@@ -776,17 +844,21 @@ app.get('/api/approval-types', (req, res) => {
 });
 
 app.post('/api/approval-types', (req, res) => {
-  const { name, template, signature } = req.body;
+  const { name, template, signature, type } = req.body;
   if (!name || !template) return res.status(400).json({ error: 'שם ותבנית חובה' });
-  const result = db.prepare('INSERT INTO approval_types (name, template, signature) VALUES (?, ?, ?)')
-    .run(name, template, signature || 'principal');
-  res.json({ id: result.lastInsertRowid, name, template, signature: signature || 'principal' });
+  const approvalType = type === 'single' ? 'single' : 'regular';
+  const selectedSignature = signature || 'principal';
+  const result = db.prepare('INSERT INTO approval_types (name, template, signature, type) VALUES (?, ?, ?, ?)')
+    .run(name, template, selectedSignature, approvalType);
+  res.json({ id: result.lastInsertRowid, name, template, signature: selectedSignature, type: approvalType });
 });
 
 app.put('/api/approval-types/:id', (req, res) => {
-  const { name, template, signature } = req.body;
-  db.prepare('UPDATE approval_types SET name=?, template=?, signature=? WHERE id=?')
-    .run(name, template, signature, req.params.id);
+  const { name, template, signature, type } = req.body;
+  if (!name || !template) return res.status(400).json({ error: 'שם ותבנית חובה' });
+  const result = db.prepare('UPDATE approval_types SET name=?, template=?, signature=?, type=? WHERE id=?')
+    .run(name, template, signature || 'principal', type === 'single' ? 'single' : 'regular', req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'סוג האישור לא נמצא' });
   res.json({ success: true });
 });
 

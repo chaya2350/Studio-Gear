@@ -41,7 +41,11 @@ export class ApiService {
   }
 
   getApprovalTypes() { return this.http.get<any[]>(`${this.base}/approval-types`); }
-  createApprovalType(data: any) { return this.http.post<any>(`${this.base}/approval-types`, data); }
-  updateApprovalType(id: number, data: any) { return this.http.put(`${this.base}/approval-types/${id}`, data); }
+  createApprovalType(data: { name: string; template: string; signature: string; type: 'single' | 'regular' }) {
+    return this.http.post<any>(`${this.base}/approval-types`, data);
+  }
+  updateApprovalType(id: number, data: { name: string; template: string; signature: string; type: 'single' | 'regular' }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/approval-types/${id}`, data);
+  }
   deleteApprovalType(id: number) { return this.http.delete(`${this.base}/approval-types/${id}`); }
 }
