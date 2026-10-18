@@ -22,30 +22,34 @@ export class AuthService {
     if (this.user()) return Promise.resolve(this.user());
     if (!this.loadRequest) {
       this.loadRequest = firstValueFrom(
-        this.http.get<AuthUser>('/api/auth/me').pipe(
-          catchError((error: HttpErrorResponse) =>
-            error.status === 401 ? of(null) : throwError(() => error)
-          )
-        )
-      ).then(user => {
-        this.user.set(user);
-        return user;
-      }).finally(() => {
-        this.loadRequest = null;
-      });
+        this.http
+          .get<AuthUser>('/api/auth/me')
+          .pipe(
+            catchError((error: HttpErrorResponse) =>
+              error.status === 401 ? of(null) : throwError(() => error),
+            ),
+          ),
+      )
+        .then((user) => {
+          this.user.set(user);
+          return user;
+        })
+        .finally(() => {
+          this.loadRequest = null;
+        });
     }
     return this.loadRequest;
   }
 
   login(email: string, password: string): Observable<AuthUser> {
-    return this.http.post<AuthUser>('/api/auth/login', { email, password }).pipe(
-      tap(user => this.user.set(user))
-    );
+    return this.http
+      .post<AuthUser>('/api/auth/login', { email, password })
+      .pipe(tap((user) => this.user.set(user)));
   }
 
   logout(): Observable<{ success: boolean }> {
-    return this.http.post<{ success: boolean }>('/api/auth/logout', {}).pipe(
-      tap(() => this.user.set(null))
-    );
+    return this.http
+      .post<{ success: boolean }>('/api/auth/logout', {})
+      .pipe(tap(() => this.user.set(null)));
   }
 }
