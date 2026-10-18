@@ -366,7 +366,7 @@ app.get('/api/students/:id_number/details', (req, res) => {
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   try {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false });
     let allRows = [];
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
@@ -433,14 +433,11 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
             date1904: Boolean(wb.Workbook?.WBProps?.date1904)
           })
           : null;
-        const birthDate = birthDateValue instanceof Date
-          ? birthDateValue
+        const birth_date = birthDateValue instanceof Date && !Number.isNaN(birthDateValue.getTime())
+          ? `${String(birthDateValue.getDate()).padStart(2, '0')}/${String(birthDateValue.getMonth() + 1).padStart(2, '0')}/${birthDateValue.getFullYear()}`
           : parsedBirthDate
-            ? new Date(Date.UTC(parsedBirthDate.y, parsedBirthDate.m - 1, parsedBirthDate.d))
-            : null;
-        const birth_date = birthDate && !Number.isNaN(birthDate.getTime())
-          ? `${String(birthDate.getUTCDate()).padStart(2, '0')}/${String(birthDate.getUTCMonth() + 1).padStart(2, '0')}/${birthDate.getUTCFullYear()}`
-          : String(birthDateValue || '').trim();
+            ? `${String(parsedBirthDate.d).padStart(2, '0')}/${String(parsedBirthDate.m).padStart(2, '0')}/${parsedBirthDate.y}`
+            : String(birthDateValue || '').trim();
         const address = [
           getValue('כתובת', 'כתובת מגורים', 'address'),
           getValue('מספר בית', 'מספר'),
@@ -835,9 +832,16 @@ if (approvalCount === 0) {
     'principal');
   db.prepare('INSERT INTO approval_types (name, template, signature, type) VALUES (?, ?, ?, ?)').run(
     'אישור 12 שנות לימוד',
-    'לכל המעוניין,\n\nהתלמידה-{{שם}}\nמס\' זהות-{{תז}}\nסיימה במוסדנו, סמינר גור ירושלים\nאת 12 שנות תיכון בשנת תשפ"ו,\nסמל מוסד 142075.\n\nבברכה,\nהמנהלת-גב\' דינה כהן',
+    'לכל המעוניין,\n\nהתלמידה-{{שם}}\nמס\' זהות-{{תז}}\nסיימה במוסדנו, סמינר גור ירושלים\nאת 12 שנות תיכון בשנת {{שנה}},\nסמל מוסד 142075.\n\nבברכה,\nהמנהלת-גב\' דינה כהן',
     'principal', 'regular');
 }
+
+db.prepare(`
+  UPDATE approval_types
+  SET template = REPLACE(template, 'תשפ"ו', '{{שנה}}')
+  WHERE name = 'אישור 12 שנות לימוד'
+    AND template LIKE '%תשפ"ו%'
+`).run();
 
 app.get('/api/approval-types', (req, res) => {
   res.json(db.prepare('SELECT * FROM approval_types ORDER BY id').all());

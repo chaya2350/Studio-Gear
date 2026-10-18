@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { formatHebrewDate } from './hebrew-date';
+import { toStudyYear } from './study-year';
 
 @Component({
   selector: 'app-approvals',
@@ -34,10 +35,10 @@ import { formatHebrewDate } from './hebrew-date';
 
         <div class="students-list">
           <div *ngFor="let s of filtered()" class="student-row" [class.selected]="selected().has(s.id_number)" (click)="toggle(s.id_number)">
-            <input type="checkbox" [checked]="selected().has(s.id_number)" (click)="$event.stopPropagation()">
+            <input type="checkbox" [checked]="selected().has(s.id_number)" (click)="$event.stopPropagation()" (change)="toggle(s.id_number)">
             <div class="student-row-info">
               <strong>{{ s.name }}</strong>
-              <span>{{ s.id_number }} · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span>
+              <span>{{ s.id_number }} · {{ s.track }}{{ toStudyYear(s.year) ? ' ' + toStudyYear(s.year) : '' }}</span>
             </div>
           </div>
           <div *ngIf="!filtered().length" class="empty-state" style="padding:20px 0;">
@@ -159,6 +160,7 @@ export class ApprovalsComponent implements OnInit {
   todayStr = new Date().toLocaleDateString('he-IL');
   approvalText = '';
   useBlankBackground = true;
+  toStudyYear = toStudyYear;
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
@@ -206,7 +208,8 @@ export class ApprovalsComponent implements OnInit {
   }
 
   fillTemplate(template: string, student: any): string {
-    const track = student ? `${student.track || ''}${student.year ? ' ' + student.year : ''}` : '';
+    const studyYear = toStudyYear(student?.year);
+    const track = student ? `${student.track || ''}${studyYear ? ' ' + studyYear : ''}` : '';
     return template
       .replace(/{{שם}}/g, student?.name || 'שם התלמידה')
       .replace(/{{תז}}/g, student?.id_number || '000000000')

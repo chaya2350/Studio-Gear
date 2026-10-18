@@ -6,6 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { Student } from '../../models';
 import { formatHebrewDate } from './hebrew-date';
+import { toStudyYear } from './study-year';
 
 @Component({
   selector: 'app-single-approval',
@@ -28,7 +29,7 @@ import { formatHebrewDate } from './hebrew-date';
         <div *ngIf="studentSuggestions.length" class="student-suggestions">
           <button type="button" *ngFor="let student of studentSuggestions" class="student-suggestion" (click)="selectStudent(student)">
             <span class="student-name">{{ student.name }}</span>
-            <span class="student-meta">{{ student.id_number }} · {{ student.track || 'ללא מסלול' }}{{ student.year ? ' ' + student.year : '' }}</span>
+            <span class="student-meta">{{ student.id_number }} · {{ student.track || 'ללא מסלול' }}{{ toStudyYear(student.year) ? ' ' + toStudyYear(student.year) : '' }}</span>
           </button>
         </div>
 
@@ -160,6 +161,8 @@ export class SingleApprovalComponent implements OnInit {
   selectedStudent: Student | null = null;
   useBlankBackground = true;
 
+  toStudyYear = toStudyYear;
+
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
   ngOnInit() {
@@ -210,7 +213,7 @@ export class SingleApprovalComponent implements OnInit {
     this.name = student.name;
     this.idNumber = student.id_number;
     this.track = student.track || '';
-    this.academicYear = student.year || this.academicYear;
+    this.academicYear = toStudyYear(student.year) || this.academicYear;
     this.birthDate = student.birth_date || this.birthDate || '';
     this.address = student.address || this.address || '';
   }
