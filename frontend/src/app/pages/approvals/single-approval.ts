@@ -1,9 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+﻿import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
+import { Student } from '../../models';
 
 @Component({
   selector: 'app-single-approval',
@@ -18,13 +19,36 @@ import { combineLatest } from 'rxjs';
 
     <div class="single-grid">
       <div class="card">
-        <div class="section-title">✏️ פרטי התלמידה</div>
+        <div class="section-title">🪪 בחירה מתלמידות קיימות</div>
+        <div class="student-search-box">
+          <input [(ngModel)]="studentQuery" (input)="searchStudents()" placeholder="חיפוש לפי שם או ת.ז...">
+        </div>
+
+        <div *ngIf="studentSuggestions.length" class="student-suggestions">
+          <button type="button" *ngFor="let student of studentSuggestions" class="student-suggestion" (click)="selectStudent(student)">
+            <span class="student-name">{{ student.name }}</span>
+            <span class="student-meta">{{ student.id_number }} · {{ student.track || 'ללא מסלול' }}{{ student.year ? ' ' + student.year : '' }}</span>
+          </button>
+        </div>
+
+        <div *ngIf="selectedStudent" class="selected-student-box">
+          <strong>{{ selectedStudent.name }}</strong>
+          <span>{{ selectedStudent.id_number }}</span>
+          <small>{{ selectedStudent.track || 'ללא מסלול' }}{{ selectedStudent.year ? ' • ' + selectedStudent.year : '' }}</small>
+        </div>
+
+        <div class="section-title" style="margin-top:20px;">✏️ פרטי התלמידה</div>
         <div class="form-group"><label>שם מלא</label><input [(ngModel)]="name" placeholder="שם התלמידה"></div>
         <div class="form-group"><label>מספר תעודת זהות</label><input [(ngModel)]="idNumber" placeholder="000000000"></div>
         <div class="form-group"><label>תאריך לידה</label><input [(ngModel)]="birthDate" placeholder="01/01/2000"></div>
         <div class="form-group"><label>כתובת מגורים</label><input [(ngModel)]="address" placeholder="רחוב, עיר"></div>
         <div class="form-group"><label>שנת לימודים</label><input [(ngModel)]="academicYear" placeholder='תשפ"ז'></div>
         <div class="form-group"><label>מסלול לימודים</label><input [(ngModel)]="track" placeholder="גרפיקה / בימוי / ..."></div>
+        <div class="form-group">
+          <label>נוסח האישור — ניתן לעריכה לפני ההדפסה</label>
+          <textarea [(ngModel)]="approvalText" rows="9"></textarea>
+          <small class="template-hint">המשתנים שבנוסח יוחלפו אוטומטית בפרטים שמולאו.</small>
+        </div>
       </div>
 
       <div class="card">
@@ -60,6 +84,34 @@ import { combineLatest } from 'rxjs';
   styles: [`
     .single-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
     @media (max-width: 700px) { .single-grid { grid-template-columns: 1fr; } }
+    .student-search-box { margin-bottom: 12px; }
+    .student-search-box input {
+      width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface-2); padding: 10px 12px; font-size: 0.95rem;
+    }
+    .form-group textarea {
+      width: 100%; min-height: 150px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface-2);
+      padding: 10px 12px; font: inherit; line-height: 1.7; resize: vertical;
+    }
+    .template-hint { display: block; margin-top: 5px; color: var(--text-muted); line-height: 1.5; }
+    .student-suggestions {
+      display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 220px; overflow-y: auto;
+    }
+    .student-suggestion {
+      text-align: right; border: 1px solid var(--border); background: white; border-radius: var(--radius-sm);
+      padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+    }
+    .student-suggestion:hover { border-color: var(--primary); background: var(--primary-light); }
+    .student-name { font-weight: 700; }
+    .student-meta { font-size: 0.76rem; color: var(--text-muted); }
+    .selected-student-box {
+      display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--border);
+      background: linear-gradient(145deg, #f7f7ff, #f0f4ff); border-radius: var(--radius-sm);
+      padding: 10px 12px; margin-bottom: 14px;
+    }
+    .selected-student-box strong { font-size: 0.95rem; }
+    .selected-student-box span, .selected-student-box small { color: var(--text-muted); }
     .doc-preview {
       position: relative; background: white; border: 1px solid var(--border);
       border-radius: var(--radius-sm); padding: 18px 20px 14px 20px;
@@ -94,7 +146,11 @@ export class SingleApprovalComponent implements OnInit {
   address = '';
   academicYear = 'תשפ"ז';
   track = '';
+  approvalText = '';
   todayStr = new Date().toLocaleDateString('he-IL');
+  studentQuery = '';
+  studentSuggestions: Student[] = [];
+  selectedStudent: Student | null = null;
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
@@ -105,8 +161,50 @@ export class SingleApprovalComponent implements OnInit {
     ]).subscribe(([types, p]) => {
       const id = p['type'] ? +p['type'] : null;
       const singleTypes = types.filter((t: any) => t.type === 'single');
-      this.approvalType = id ? types.find((t: any) => t.id === id) : singleTypes[0];
+      const approvalType = id ? types.find((t: any) => t.id === id) : singleTypes[0];
+      if (approvalType?.id !== this.approvalType?.id) {
+        this.approvalText = approvalType?.template || '';
+      }
+      this.approvalType = approvalType;
+
+      const studentRef = p['studentId'] || p['id_number'] || p['student'];
+      if (!studentRef) return;
+      this.loadStudent(studentRef);
     });
+  }
+
+  searchStudents() {
+    const q = this.studentQuery.trim();
+    if (!q) {
+      this.studentSuggestions = [];
+      return;
+    }
+    this.api.getStudents(q).subscribe((students) => {
+      this.studentSuggestions = students.slice(0, 8);
+    });
+  }
+
+  loadStudent(studentRef: string) {
+    this.api.getStudent(studentRef).subscribe({
+      next: (student) => this.selectStudent(student),
+      error: () => {
+        this.api.getStudents(studentRef).subscribe((students) => {
+          if (students.length) this.selectStudent(students[0]);
+        });
+      }
+    });
+  }
+
+  selectStudent(student: Student) {
+    this.selectedStudent = student;
+    this.studentQuery = student.name;
+    this.studentSuggestions = [];
+    this.name = student.name;
+    this.idNumber = student.id_number;
+    this.track = student.track || '';
+    this.academicYear = student.year || this.academicYear;
+    this.birthDate = student.birth_date || this.birthDate || '';
+    this.address = student.address || this.address || '';
   }
 
   fillTemplate(template: string): string {
@@ -121,71 +219,94 @@ export class SingleApprovalComponent implements OnInit {
 
   previewHtml(): string {
     if (!this.approvalType) return '';
-    return this.fillTemplate(this.approvalType.template)
+    return this.fillTemplate(this.approvalText)
       .split('\n').map((line: string) => `<p>${line || '&nbsp;'}</p>`).join('');
   }
 
   print() {
     if (!this.approvalType) return;
+
     const today = new Date();
     const dateHe = today.toLocaleDateString('he-IL');
     let hebrewDate = '';
-    try { hebrewDate = today.toLocaleDateString('he-IL-u-ca-hebrew', { year: 'numeric', month: 'long', day: 'numeric' }); } catch {}
+    try {
+      hebrewDate = today.toLocaleDateString('he-IL-u-ca-hebrew', {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+    } catch {}
 
     const sig = this.approvalType.signature === 'principal' ? '/sig-principal.png' : '/sig-secretary.png';
     const sigName = this.approvalType.signature === 'principal' ? 'המנהלת' : 'המזכירות';
-    const bodyHtml = this.fillTemplate(this.approvalType.template)
-      .split('\n').map((line: string) => `<p>${line || '&nbsp;'}</p>`).join('');
+    const assetUrl = (path: string) => new URL(path, window.location.origin).href;
+    const bodyHtml = this.fillTemplate(this.approvalText)
+      .split('\n')
+      .map((line: string) => `<p>${line || '&nbsp;'}</p>`)
+      .join('');
 
-    const win = window.open('', '_blank', 'width=800,height=900')!;
+    const win = window.open('', '_blank', 'width=800,height=900');
+    if (!win) {
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
       <title>${this.approvalType.name}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Heebo', Arial, sans-serif; background: white; direction: rtl; }
+        html, body { width: 148mm; height: 210mm; margin: 0; }
         .approval-page {
-          width: 210mm; min-height: 297mm; padding: 14mm 18mm 14mm 18mm;
+          width: 148mm; height: 210mm; padding: 10mm 12mm;
           display: flex; flex-direction: column; position: relative; overflow: hidden;
-          background-image: url('/blank.png');
-          background-size: 100% 100%;
-          background-repeat: no-repeat;
+          break-inside: avoid; page-break-inside: avoid; isolation: isolate;
         }
-        .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12mm; }
+        .ap-background { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: fill; }
+        .ap-content { position: relative; z-index: 1; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; }
         .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: left; }
         .ap-bsd { font-size: 0.8rem; color: #333; font-weight: 700; }
         .ap-date { font-size: 0.78rem; color: #444; }
         .ap-date-he { font-size: 0.75rem; color: #555; }
-        .ap-logo { height: 75px; width: auto; }
-        .ap-title { font-size: 1.9rem; font-weight: 900; text-align: center; margin-bottom: 10mm; color: #1a1a1a; }
-        .ap-body { font-size: 1rem; line-height: 2.3; color: #1a1a1a; flex: 1; padding-right: 4mm; }
+        .ap-title { font-size: 1.45rem; font-weight: 900; text-align: center; margin-bottom: 7mm; color: #1a1a1a; }
+        .ap-body { font-size: 0.88rem; line-height: 1.9; color: #1a1a1a; flex: 1; padding-right: 3mm; }
         .ap-body p { margin-bottom: 2px; }
-        .ap-footer { margin-top: 12mm; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
-        .ap-sig-block { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-        .ap-sig-img { height: 65px; width: auto; }
-        .ap-sig-name { font-size: 0.8rem; color: #444; }
-        .ap-footer-logo { height: 45px; width: auto; opacity: 0.7; margin-right: auto; }
-        @media print { @page { size: A4; margin: 0; } }
+        .ap-footer { margin-top: 10mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
+        .ap-sig { display: flex; flex-direction: column; align-items: center; }
+        .ap-sig-img { height: 46px; width: auto; }
+        .ap-sig-name { font-size: 0.68rem; color: #555; margin-top: 3px; }
+        @media print {
+          @page { size: A5 portrait; margin: 0; }
+          html, body { width: 148mm; height: 210mm; margin: 0; }
+          .approval-page { width: 148mm; height: 210mm; margin: 0; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       </style></head><body>
       <div class="approval-page">
+        <img src="${assetUrl('/blank-background.png')}" class="ap-background" alt="">
+        <div class="ap-content">
         <div class="ap-top">
           <div class="ap-top-left">
             <div class="ap-bsd">בס"ד</div>
-            <div class="ap-date-he">${hebrewDate}</div>
             <div class="ap-date">${dateHe}</div>
+            <div class="ap-date-he">${hebrewDate || ''}</div>
           </div>
         </div>
         <div class="ap-title">${this.approvalType.name}</div>
         <div class="ap-body">${bodyHtml}</div>
         <div class="ap-footer">
-          <div class="ap-sig-block">
-            <img src="${sig}" class="ap-sig-img">
+          <div class="ap-sig">
+            <img src="${assetUrl(sig)}" class="ap-sig-img">
             <div class="ap-sig-name">${sigName}</div>
           </div>
         </div>
+        </div>
       </div>
-      <script>window.onload = () => { window.print(); }<\/script>
-      </body></html>`);
+    </body></html>`);
     win.document.close();
+    Promise.all(Array.from(win.document.images).map(image => image.decode()))
+      .then(() => win.print())
+      .catch(error => {
+        console.error('Could not load approval print images', error);
+        win.alert('לא ניתן לטעון את תמונת הרקע או החתימה. בדקי שהקבצים קיימים בתיקיית public והדפיסי שוב.');
+      });
   }
 }

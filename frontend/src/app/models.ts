@@ -62,5 +62,7 @@ export interface Student {
   phone?: string;
   track?: string;
   year?: string;
+  birth_date?: string;
+  address?: string;
   loans?: Loan[];
 }
