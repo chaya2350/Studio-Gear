@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
+import { formatHebrewDate } from './hebrew-date';
 
 @Component({
   selector: 'app-approvals',
@@ -49,6 +50,16 @@ import { combineLatest } from 'rxjs';
           <label>שנת לימודים:</label>
           <input [(ngModel)]="academicYear" placeholder='תשפ"ז' style="width:120px;">
         </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label>נוסח האישור — ניתן לעריכה לפני ההדפסה</label>
+          <textarea [(ngModel)]="approvalText" rows="8"></textarea>
+          <small class="template-hint">המשתנים שבנוסח יוחלפו אוטומטית בפרטים של כל תלמידה.</small>
+        </div>
+        <label class="background-option">
+          <input type="checkbox" [(ngModel)]="useBlankBackground">
+          הדפסה על נייר המכתבים (blank)
+        </label>
 
         <button class="btn btn-primary" style="width:100%; margin-top:16px; padding:14px;"
           [disabled]="!selected().size || !selectedType()"
@@ -119,8 +130,9 @@ import { combineLatest } from 'rxjs';
     .doc-date { font-size: 0.7rem; color: #555; }
     .doc-logo { height: 48px; width: auto; }
     .doc-title { font-size: 1.2rem; font-weight: 900; text-align: center; margin-bottom: 12px; color: #1a1a1a; }
-    .doc-body { font-size: 0.82rem; line-height: 2; color: #1a1a1a; flex: 1; }
-    .doc-body p { margin-bottom: 1px; }
+    .doc-body { font-size: 0.88rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; }
+    .doc-body p { margin: 0; }
+    .doc-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
     .doc-footer { margin-top: 14px; display: flex; justify-content: flex-start; align-items: flex-end; gap: 12px; }
     .doc-sig-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .doc-sig-img { height: 40px; width: auto; }
@@ -128,6 +140,12 @@ import { combineLatest } from 'rxjs';
     .doc-footer-logo { height: 28px; width: auto; opacity: 0.6; margin-right: auto; }
 
     .year-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 0.875rem; font-weight: 600; }
+    .form-group textarea {
+      width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface-2); padding: 10px 12px; font: inherit; line-height: 1.7; resize: vertical;
+    }
+    .template-hint { display: block; margin-top: 5px; color: var(--text-muted); line-height: 1.5; }
+    .background-option { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 0.85rem; }
   `]
 })
 export class ApprovalsComponent implements OnInit {
@@ -139,6 +157,8 @@ export class ApprovalsComponent implements OnInit {
   searchQ = '';
   academicYear = 'תשפ"ז';
   todayStr = new Date().toLocaleDateString('he-IL');
+  approvalText = '';
+  useBlankBackground = true;
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
@@ -152,7 +172,10 @@ export class ApprovalsComponent implements OnInit {
       const id = p['type'] ? +p['type'] : null;
       const regularTypes = types.filter((t: any) => t.type !== 'single');
       const found = id ? types.find((t: any) => t.id === id) : regularTypes[0];
-      if (found) this.selectedType.set(found);
+      if (found) {
+        if (found.id !== this.selectedType()?.id) this.approvalText = found.template || '';
+        this.selectedType.set(found);
+      }
     });
   }
 
@@ -174,15 +197,23 @@ export class ApprovalsComponent implements OnInit {
     const t = this.selectedType();
     if (!t) return '';
     const first = this.all().find(s => this.selected().has(s.id_number));
-    const name = first?.name || 'שם התלמידה';
-    const id = first?.id_number || '000000000';
-    const track = first ? `${first.track || ''}${first.year ? ' ' + first.year : ''}` : 'מסלול לימודים';
-    return t.template
-      .replace(/{{שם}}/g, name)
-      .replace(/{{תז}}/g, id)
+    return this.fillTemplate(this.approvalText, first)
+      .split('\n')
+      .map((line: string) => line.trim()
+        ? `<p>${this.escapeHtml(line.trim())}</p>`
+        : '<p class="ap-spacer"></p>')
+      .join('');
+  }
+
+  fillTemplate(template: string, student: any): string {
+    const track = student ? `${student.track || ''}${student.year ? ' ' + student.year : ''}` : '';
+    return template
+      .replace(/{{שם}}/g, student?.name || 'שם התלמידה')
+      .replace(/{{תז}}/g, student?.id_number || '000000000')
       .replace(/{{שנה}}/g, this.academicYear)
-      .replace(/{{מסלול}}/g, track)
-      .split('\n').map((line: string) => `<p>${line || '&nbsp;'}</p>`).join('');
+      .replace(/{{מסלול}}/g, track || 'מסלול לימודים')
+      .replace(/{{תאריך לידה}}/g, student?.birth_date || '___')
+      .replace(/{{כתובת}}/g, student?.address || '___');
   }
 
   printApprovals() {
@@ -190,23 +221,27 @@ export class ApprovalsComponent implements OnInit {
     if (!type || !this.selected().size) return;
 
     const students = this.all().filter(s => this.selected().has(s.id_number));
+    if (!students.length) return;
     const today = new Date();
     const dateHe = today.toLocaleDateString('he-IL');
     const hebrewDate = this.getHebrewDate();
 
+    const assetUrl = (path: string) => new URL(path, window.location.origin).href;
     const pages = students.map(s => {
-      const text = type.template
-        .replace(/{{שם}}/g, s.name)
-        .replace(/{{תז}}/g, s.id_number)
-        .replace(/{{שנה}}/g, this.academicYear)
-        .replace(/{{מסלול}}/g, s.track ? `${s.track}${s.year ? ' ' + s.year : ''}` : '')
-        .split('\n').map((line: string) => `<p>${line || '&nbsp;'}</p>`).join('');
+      const text = this.fillTemplate(this.approvalText, s)
+        .split('\n')
+        .map((line: string) => line.trim()
+          ? `<p>${this.escapeHtml(line.trim())}</p>`
+          : '<p class="ap-spacer"></p>')
+        .join('');
 
       const sig = type.signature === 'principal' ? '/sig-principal.png' : '/sig-secretary.png';
       const sigName = type.signature === 'principal' ? 'המנהלת' : 'המזכירות';
 
       return `
         <div class="approval-page">
+          ${this.useBlankBackground ? `<img src="${assetUrl('/blank-background.png')}" class="ap-background" alt="">` : ''}
+          <div class="ap-content">
           <div class="ap-top">
             <div class="ap-top-left">
               <div class="ap-bsd">בס"ד</div>
@@ -214,59 +249,82 @@ export class ApprovalsComponent implements OnInit {
               <div class="ap-date">${dateHe}</div>
             </div>
           </div>
-          <div class="ap-title">${type.name}</div>
+          <div class="ap-title">${this.escapeHtml(type.name)}</div>
           <div class="ap-body">${text}</div>
           <div class="ap-footer">
             <div class="ap-sig-block">
-              <img src="${sig}" class="ap-sig-img">
+              <img src="${assetUrl(sig)}" class="ap-sig-img">
               <div class="ap-sig-name">${sigName}</div>
             </div>
+          </div>
           </div>
         </div>
       `;
     }).join('<div class="page-break"></div>');
+    const firstStudentName = students[0].name;
+    const additionalStudents = students.length - 1;
+    const documentTitle = `${type.name} - ${firstStudentName}${additionalStudents ? ` ועוד ${additionalStudents}` : ''}`;
 
-    const win = window.open('', '_blank', 'width=800,height=900')!;
+    const win = window.open('', '_blank', 'width=800,height=900');
+    if (!win) return;
     win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
-      <title>אישורים</title>
+      <title>${this.escapeHtml(documentTitle)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Heebo', Arial, sans-serif; background: white; direction: rtl; }
+        html, body { margin: 0; }
         .approval-page {
-          width: 210mm; min-height: 297mm; padding: 14mm 18mm 14mm 18mm;
+          width: 148mm; height: 210mm; padding: 10mm 12mm;
           display: flex; flex-direction: column; position: relative; overflow: hidden;
-          background-image: url('/blank.png');
-          background-size: 100% 100%;
-          background-repeat: no-repeat;
+          break-inside: avoid; page-break-inside: avoid; isolation: isolate;
         }
-        .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12mm; padding-bottom: 4mm; }
-        .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: left; }
+        .ap-background { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: fill; }
+        .ap-content { position: relative; z-index: 1; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; padding-bottom: 4mm; }
+        .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: right; }
         .ap-bsd { font-size: 0.8rem; color: #333; font-weight: 700; }
         .ap-date { font-size: 0.78rem; color: #444; }
-        .ap-date-he { font-size: 0.75rem; color: #555; }
-        .ap-logo { height: 75px; width: auto; }
-        .ap-title { font-size: 1.9rem; font-weight: 900; text-align: center; margin-bottom: 10mm; color: #1a1a1a; letter-spacing: -0.5px; }
-        .ap-body { font-size: 1rem; line-height: 2.3; color: #1a1a1a; flex: 1; padding-right: 4mm; }
-        .ap-body p { margin-bottom: 1px; }
-        .ap-footer { margin-top: 12mm; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
+        .ap-date-he { direction: rtl; unicode-bidi: isolate; text-align: right; font-size: 0.75rem; color: #555; }
+        .ap-title { font-size: 1.45rem; font-weight: 900; text-align: center; margin-bottom: 5mm; color: #1a1a1a; letter-spacing: -0.5px; }
+        .ap-body { font-size: 0.92rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; padding-right: 3mm; }
+        .ap-body p { margin: 0; }
+        .ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
+        .ap-footer { margin-top: 7mm; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
         .ap-sig-block { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-        .ap-sig-img { height: 65px; width: auto; }
-        .ap-sig-name { font-size: 0.8rem; color: #444; }
-        .ap-footer-logo { height: 45px; width: auto; opacity: 0.7; margin-right: auto; }
+        .ap-sig-img { height: 46px; width: auto; }
+        .ap-sig-name { font-size: 0.68rem; color: #444; }
         .page-break { page-break-after: always; }
-        @media print { @page { size: A4; margin: 0; } .page-break { page-break-after: always; } }
+        @media print {
+          @page { size: A5 portrait; margin: 0; }
+          html, body { width: 148mm; margin: 0; }
+          .approval-page { width: 148mm; height: 210mm; margin: 0; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .page-break { page-break-after: always; break-after: page; }
+        }
       </style></head><body>
       ${pages}
-      <script>window.onload = () => { window.print(); }<\/script>
       </body></html>`);
     win.document.close();
+    Promise.all(Array.from(win.document.images).map(image => image.decode()))
+      .then(() => win.print())
+      .catch(error => {
+        console.error('Could not load approval print images', error);
+        win.alert('לא ניתן לטעון את תמונת הרקע או החתימה. בדקי שהקבצים קיימים בתיקיית public והדפיסי שוב.');
+      });
+  }
+
+  escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[char]!);
   }
 
   getHebrewDate(): string {
-    const d = new Date();
-    try {
-      return d.toLocaleDateString('he-IL-u-ca-hebrew', { year: 'numeric', month: 'long', day: 'numeric' });
-    } catch { return ''; }
+    return formatHebrewDate(new Date());
   }
 }

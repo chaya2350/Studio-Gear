@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { Student } from '../../models';
+import { formatHebrewDate } from './hebrew-date';
 
 @Component({
   selector: 'app-single-approval',
@@ -49,6 +50,10 @@ import { Student } from '../../models';
           <textarea [(ngModel)]="approvalText" rows="9"></textarea>
           <small class="template-hint">המשתנים שבנוסח יוחלפו אוטומטית בפרטים שמולאו.</small>
         </div>
+        <label class="background-option">
+          <input type="checkbox" [(ngModel)]="useBlankBackground">
+          הדפסה על נייר המכתבים (blank)
+        </label>
       </div>
 
       <div class="card">
@@ -95,6 +100,7 @@ import { Student } from '../../models';
       padding: 10px 12px; font: inherit; line-height: 1.7; resize: vertical;
     }
     .template-hint { display: block; margin-top: 5px; color: var(--text-muted); line-height: 1.5; }
+    .background-option { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 0.85rem; }
     .student-suggestions {
       display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 220px; overflow-y: auto;
     }
@@ -129,8 +135,9 @@ import { Student } from '../../models';
     .doc-date { font-size: 0.7rem; color: #555; }
     .doc-logo { height: 48px; width: auto; }
     .doc-title { font-size: 1.2rem; font-weight: 900; text-align: center; margin-bottom: 12px; color: #1a1a1a; }
-    .doc-body { font-size: 0.82rem; line-height: 2; color: #1a1a1a; flex: 1; }
-    .doc-body p { margin-bottom: 1px; }
+    .doc-body { font-size: 0.88rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; }
+    .doc-body p { margin: 0; }
+    .doc-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
     .doc-footer { margin-top: 14px; display: flex; justify-content: flex-start; align-items: flex-end; gap: 12px; }
     .doc-sig-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .doc-sig-img { height: 40px; width: auto; }
@@ -151,6 +158,7 @@ export class SingleApprovalComponent implements OnInit {
   studentQuery = '';
   studentSuggestions: Student[] = [];
   selectedStudent: Student | null = null;
+  useBlankBackground = true;
 
   constructor(private api: ApiService, private route: ActivatedRoute) {}
 
@@ -220,7 +228,11 @@ export class SingleApprovalComponent implements OnInit {
   previewHtml(): string {
     if (!this.approvalType) return '';
     return this.fillTemplate(this.approvalText)
-      .split('\n').map((line: string) => `<p>${line || '&nbsp;'}</p>`).join('');
+      .split('\n')
+      .map((line: string) => line.trim()
+        ? `<p>${this.escapeHtml(line.trim())}</p>`
+        : '<p class="ap-spacer"></p>')
+      .join('');
   }
 
   print() {
@@ -228,27 +240,25 @@ export class SingleApprovalComponent implements OnInit {
 
     const today = new Date();
     const dateHe = today.toLocaleDateString('he-IL');
-    let hebrewDate = '';
-    try {
-      hebrewDate = today.toLocaleDateString('he-IL-u-ca-hebrew', {
-        year: 'numeric', month: 'long', day: 'numeric'
-      });
-    } catch {}
+    const hebrewDate = formatHebrewDate(today);
 
     const sig = this.approvalType.signature === 'principal' ? '/sig-principal.png' : '/sig-secretary.png';
     const sigName = this.approvalType.signature === 'principal' ? 'המנהלת' : 'המזכירות';
     const assetUrl = (path: string) => new URL(path, window.location.origin).href;
     const bodyHtml = this.fillTemplate(this.approvalText)
       .split('\n')
-      .map((line: string) => `<p>${line || '&nbsp;'}</p>`)
+      .map((line: string) => line.trim()
+        ? `<p>${this.escapeHtml(line.trim())}</p>`
+        : '<p class="ap-spacer"></p>')
       .join('');
+    const documentTitle = `${this.approvalType.name} - ${this.name}`;
 
     const win = window.open('', '_blank', 'width=800,height=900');
     if (!win) {
       return;
     }
     win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
-      <title>${this.approvalType.name}</title>
+      <title>${this.escapeHtml(documentTitle)}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -262,14 +272,15 @@ export class SingleApprovalComponent implements OnInit {
         .ap-background { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: fill; }
         .ap-content { position: relative; z-index: 1; display: flex; flex-direction: column; flex: 1; min-height: 0; }
         .ap-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; }
-        .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: left; }
+        .ap-top-left { display: flex; flex-direction: column; gap: 3px; text-align: right; }
         .ap-bsd { font-size: 0.8rem; color: #333; font-weight: 700; }
         .ap-date { font-size: 0.78rem; color: #444; }
-        .ap-date-he { font-size: 0.75rem; color: #555; }
-        .ap-title { font-size: 1.45rem; font-weight: 900; text-align: center; margin-bottom: 7mm; color: #1a1a1a; }
-        .ap-body { font-size: 0.88rem; line-height: 1.9; color: #1a1a1a; flex: 1; padding-right: 3mm; }
-        .ap-body p { margin-bottom: 2px; }
-        .ap-footer { margin-top: 10mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
+        .ap-date-he { direction: rtl; unicode-bidi: isolate; text-align: right; font-size: 0.75rem; color: #555; }
+        .ap-title { font-size: 1.45rem; font-weight: 900; text-align: center; margin-bottom: 5mm; color: #1a1a1a; }
+        .ap-body { font-size: 0.92rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; padding-right: 3mm; }
+        .ap-body p { margin: 0; }
+        .ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
+        .ap-footer { margin-top: 7mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
         .ap-sig { display: flex; flex-direction: column; align-items: center; }
         .ap-sig-img { height: 46px; width: auto; }
         .ap-sig-name { font-size: 0.68rem; color: #555; margin-top: 3px; }
@@ -281,7 +292,7 @@ export class SingleApprovalComponent implements OnInit {
         }
       </style></head><body>
       <div class="approval-page">
-        <img src="${assetUrl('/blank-background.png')}" class="ap-background" alt="">
+        ${this.useBlankBackground ? `<img src="${assetUrl('/blank-background.png')}" class="ap-background" alt="">` : ''}
         <div class="ap-content">
         <div class="ap-top">
           <div class="ap-top-left">
@@ -290,7 +301,7 @@ export class SingleApprovalComponent implements OnInit {
             <div class="ap-date-he">${hebrewDate || ''}</div>
           </div>
         </div>
-        <div class="ap-title">${this.approvalType.name}</div>
+        <div class="ap-title">${this.escapeHtml(this.approvalType.name)}</div>
         <div class="ap-body">${bodyHtml}</div>
         <div class="ap-footer">
           <div class="ap-sig">
@@ -308,5 +319,15 @@ export class SingleApprovalComponent implements OnInit {
         console.error('Could not load approval print images', error);
         win.alert('לא ניתן לטעון את תמונת הרקע או החתימה. בדקי שהקבצים קיימים בתיקיית public והדפיסי שוב.');
       });
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[char]!);
   }
 }
