@@ -3,6 +3,16 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
+import { AuthService, UserRole } from '../../services/auth.service';
+
+interface UserAccount {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  active: number;
+  created_at: string;
+}
 
 @Component({
   selector: 'app-admin',
@@ -12,6 +22,42 @@ import { ApiService } from '../../services/api.service';
       <div>
         <h1>⚙️ ניהול מערכת</h1>
         <p class="subtitle">ייבוא נתוני תלמידות מקובץ אקסל</p>
+      </div>
+    </div>
+
+    <div *ngIf="auth.user()?.role === 'admin'" class="card user-management">
+      <div class="section-title">👥 ניהול משתמשות והרשאות</div>
+      <p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
+      <div class="user-form">
+        <input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
+        <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
+        <input [(ngModel)]="newUser.password" type="password" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
+        <select [(ngModel)]="newUser.role" aria-label="תפקיד">
+          <option value="laborant">לבורנטית</option>
+          <option value="secretary">מזכירות</option>
+          <option value="admin">מנהלת מערכת</option>
+        </select>
+        <button class="btn btn-primary" (click)="createUser()">➕ יצירת חשבון</button>
+      </div>
+      <p *ngIf="userError()" class="user-error" role="alert">{{ userError() }}</p>
+      <div class="user-list">
+        <div *ngFor="let user of users()" class="user-row">
+          <div class="user-info">
+            <strong>{{ user.name }}</strong>
+            <span>{{ user.email }} · {{ user.active ? 'פעילה' : 'מושבתת' }}</span>
+          </div>
+          <select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
+            [disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
+            <option value="laborant">לבורנטית</option>
+            <option value="secretary">מזכירות</option>
+            <option value="admin">מנהלת מערכת</option>
+          </select>
+          <button class="btn" [class.btn-danger]="user.active" [class.btn-secondary]="!user.active"
+            [disabled]="user.id === auth.user()?.id"
+            (click)="updateUser(user, user.role, !user.active)">
+            {{ user.active ? 'השבתה' : 'הפעלה' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -143,6 +189,19 @@ import { ApiService } from '../../services/api.service';
     .approval-row-actions { display: flex; gap: 6px; }
     .approval-form { margin-top: 4px; }
     code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
+    .user-management { max-width: 1000px; margin-bottom: 24px; }
+    .user-help { color: var(--text-muted); font-size: 0.85rem; margin: -4px 0 14px; }
+    .user-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .user-list { display: grid; gap: 8px; margin-top: 18px; }
+    .user-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .user-info { display: grid; flex: 1; gap: 3px; }
+    .user-info span { color: var(--text-muted); font-size: 0.78rem; }
+    .user-row select { max-width: 180px; }
+    .user-error { color: var(--danger); font-size: 0.85rem; margin-top: 12px; }
+    @media (max-width: 640px) {
+      .user-row { align-items: stretch; flex-direction: column; }
+      .user-row select { max-width: none; }
+    }
   `]
 })
 export class AdminComponent {
@@ -152,10 +211,42 @@ export class AdminComponent {
   totalImported = signal(0);
   approvalTypes = signal<any[]>([]);
   editingApproval = signal<any | null>(null);
+  users = signal<UserAccount[]>([]);
+  userError = signal('');
+  newUser: { name: string; email: string; password: string; role: UserRole } = {
+    name: '', email: '', password: '', role: 'laborant'
+  };
 
-  constructor(private http: HttpClient, private api: ApiService) {
+  constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
     this.loadTotal();
     this.loadApprovals();
+    if (auth.user()?.role === 'admin') this.loadUsers();
+  }
+
+  loadUsers() {
+    this.http.get<UserAccount[]>('/api/users').subscribe(users => this.users.set(users));
+  }
+
+  createUser() {
+    this.userError.set('');
+    this.http.post('/api/users', this.newUser).subscribe({
+      next: () => {
+        this.newUser = { name: '', email: '', password: '', role: 'laborant' };
+        this.loadUsers();
+      },
+      error: error => this.userError.set(error.error?.error || 'לא ניתן ליצור את החשבון')
+    });
+  }
+
+  updateUser(user: UserAccount, role: UserRole, active: boolean) {
+    this.userError.set('');
+    this.http.put(`/api/users/${user.id}`, { role, active }).subscribe({
+      next: () => this.loadUsers(),
+      error: error => {
+        this.userError.set(error.error?.error || 'לא ניתן לעדכן את החשבון');
+        this.loadUsers();
+      }
+    });
   }
 
   loadTotal() {

@@ -1,12 +1,13 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Student } from '../../models';
 
 @Component({
   selector: 'app-student',
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div *ngIf="student()">
       <div class="page-header">
@@ -23,7 +24,21 @@ import { Student } from '../../models';
 
       <div class="detail-grid">
         <div class="card">
-          <div class="section-title">📋 פרטים אישיים</div>
+          <div class="student-card-header">
+            <div class="section-title">📋 פרטים אישיים</div>
+            <button *ngIf="!editing()" class="btn btn-secondary" (click)="startEditing()">✏️ עריכת פרטים</button>
+          </div>
+          <form *ngIf="editing()" class="student-edit-form" (ngSubmit)="saveStudent()">
+            <label>שם מלא<input name="name" [(ngModel)]="studentDraft.name" required></label>
+            <label>טלפון<input name="phone" [(ngModel)]="studentDraft.phone"></label>
+            <label>מסלול<input name="track" [(ngModel)]="studentDraft.track"></label>
+            <label>שנה<input name="year" [(ngModel)]="studentDraft.year"></label>
+            <div *ngIf="editError()" class="edit-error" role="alert">{{ editError() }}</div>
+            <div class="edit-actions">
+              <button class="btn btn-primary" type="submit" [disabled]="saving()">שמור</button>
+              <button class="btn btn-secondary" type="button" (click)="editing.set(false)">ביטול</button>
+            </div>
+          </form>
           <div class="info-row">
             <span class="info-label">שם</span>
             <span class="info-value">{{ student()!.name }}</span>
@@ -112,6 +127,12 @@ import { Student } from '../../models';
       transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
+    .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .student-card-header .section-title { margin-bottom: 0; }
+    .student-edit-form { display: grid; gap: 10px; margin-bottom: 16px; }
+    .student-edit-form label { display: grid; gap: 5px; font-size: 0.82rem; font-weight: 700; }
+    .edit-actions { display: flex; gap: 8px; }
+    .edit-error { color: var(--danger); font-size: 0.85rem; }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
     .barcode-val {
@@ -144,15 +165,54 @@ import { Student } from '../../models';
 export class StudentComponent implements OnInit {
   student = signal<Student | null>(null);
   loading = signal(true);
+  editing = signal(false);
+  saving = signal(false);
+  editError = signal('');
+  studentDraft = { name: '', phone: '', track: '', year: '' };
   today = new Date().toISOString().split('T')[0];
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
   ngOnInit() {
     const id = this.route.snapshot.params['id'];
+    this.loadStudent(id);
+  }
+
+  loadStudent(id: string) {
     this.api.getStudent(id).subscribe({
       next: s => { this.student.set(s); this.loading.set(false); },
       error: () => this.loading.set(false)
+    });
+  }
+
+  startEditing() {
+    const current = this.student();
+    if (!current) return;
+    this.studentDraft = {
+      name: current.name,
+      phone: current.phone || '',
+      track: current.track || '',
+      year: current.year || ''
+    };
+    this.editError.set('');
+    this.editing.set(true);
+  }
+
+  saveStudent() {
+    const current = this.student();
+    if (!current || this.saving()) return;
+    this.saving.set(true);
+    this.editError.set('');
+    this.api.updateStudent(current.id_number, this.studentDraft).subscribe({
+      next: () => {
+        this.editing.set(false);
+        this.saving.set(false);
+        this.loadStudent(current.id_number);
+      },
+      error: error => {
+        this.editError.set(error.error?.error || 'לא ניתן לשמור את פרטי התלמידה');
+        this.saving.set(false);
+      }
     });
   }
 

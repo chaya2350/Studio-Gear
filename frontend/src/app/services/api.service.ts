@@ -36,6 +36,9 @@ export class ApiService {
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year'>) {
+    return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
+  }
 
   getApprovalTypes() { return this.http.get<any[]>(`${this.base}/approval-types`); }
   createApprovalType(data: any) { return this.http.post<any>(`${this.base}/approval-types`, data); }

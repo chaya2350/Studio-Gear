@@ -6,6 +6,8 @@ const Database = require('better-sqlite3');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const { createHash, randomBytes } = require('crypto');
+const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -28,10 +30,11 @@ const xlsxUpload = multer({
 
 const app = express();
 const db = new Database(path.join(dataDir, 'studio.db'));
+initializeAuthSchema(db);
+db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(uploadsDir));
 
 const frontendDir = path.join(__dirname, '../frontend/dist/frontend/browser');
 if (fs.existsSync(frontendDir)) {
@@ -41,6 +44,162 @@ if (fs.existsSync(frontendDir)) {
     res.sendFile(path.join(frontendDir, 'index.html'));
   });
 }
+
+const sessionCookie = 'studio_session';
+const sessionDurationSeconds = 7 * 24 * 60 * 60;
+
+function appendSessionCookie(res, value, maxAge) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.append(
+    'Set-Cookie',
+    `${sessionCookie}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`
+  );
+}
+
+function getSessionToken(req) {
+  const cookie = req.headers.cookie?.split(';').map(part => part.trim())
+    .find(part => part.startsWith(`${sessionCookie}=`));
+  return cookie ? cookie.slice(sessionCookie.length + 1) : null;
+}
+
+function isAllowedOrigin(req) {
+  const origin = req.get('origin');
+  if (!origin) return true;
+  const host = req.get('host');
+  const configuredOrigin = process.env.APP_ORIGIN?.replace(/\/$/, '');
+  const allowedOrigins = new Set([
+    configuredOrigin,
+    `http://${host}`,
+    `https://${host}`,
+    'http://localhost:4200',
+    'http://127.0.0.1:4200'
+  ].filter(Boolean));
+  return allowedOrigins.has(origin);
+}
+
+function authenticate(req, res, next) {
+  const token = getSessionToken(req);
+  if (!token) return res.status(401).json({ error: 'נדרשת התחברות' });
+
+  const user = db.prepare(`
+    SELECT u.id, u.name, u.email, u.role
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1
+  `).get(createHash('sha256').update(token).digest('hex'), new Date().toISOString());
+  if (!user) return res.status(401).json({ error: 'פג תוקף ההתחברות, יש להתחבר מחדש' });
+  req.user = user;
+  next();
+}
+
+function authorizeApi(req, res, next) {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isAllowedOrigin(req)) {
+    return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
+  }
+  if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?)\/?$/.test(req.path);
+    if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
+  }
+  if (req.path.startsWith('/users') && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'פעולה זו מיועדת למנהלת מערכת בלבד' });
+  }
+  next();
+}
+
+app.post('/api/auth/login', (req, res) => {
+  if (!isAllowedOrigin(req)) return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = req.body?.password;
+  if (!email || typeof password !== 'string') {
+    return res.status(400).json({ error: 'נא להזין אימייל וסיסמה' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE AND active = 1').get(email);
+  if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) {
+    return res.status(401).json({ error: 'האימייל או הסיסמה שגויים' });
+  }
+
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + sessionDurationSeconds * 1000).toISOString();
+  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+    .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
+  appendSessionCookie(res, token, sessionDurationSeconds);
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  if (!isAllowedOrigin(req)) return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
+  const token = getSessionToken(req);
+  if (token) {
+    db.prepare('DELETE FROM sessions WHERE token_hash = ?')
+      .run(createHash('sha256').update(token).digest('hex'));
+  }
+  appendSessionCookie(res, '', 0);
+  res.json({ success: true });
+});
+
+app.use('/api', authenticate, authorizeApi);
+app.use('/uploads', authenticate, express.static(uploadsDir));
+
+app.get('/api/auth/me', (req, res) => {
+  res.json(req.user);
+});
+
+app.get('/api/users', (req, res) => {
+  res.json(db.prepare('SELECT id, name, email, role, active, created_at FROM users ORDER BY name').all());
+});
+
+app.post('/api/users', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = req.body?.password;
+  const role = req.body?.role;
+  if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'נא להזין שם ואימייל תקין' });
+  }
+  if (!['admin', 'laborant', 'secretary'].includes(role)) {
+    return res.status(400).json({ error: 'תפקיד לא תקין' });
+  }
+  if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+    return res.status(400).json({ error: 'הסיסמה חייבת להכיל 12 עד 128 תווים' });
+  }
+  const { salt, hash } = hashPassword(password);
+  try {
+    const result = db.prepare(`
+      INSERT INTO users (name, email, password_salt, password_hash, role, active, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `).run(name, email, salt, hash, role, new Date().toISOString());
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'כבר קיים חשבון עם האימייל הזה' });
+    }
+    throw error;
+  }
+});
+
+app.put('/api/users/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const user = db.prepare('SELECT id, role, active FROM users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+
+  const role = req.body?.role;
+  const active = req.body?.active;
+  if (!['admin', 'laborant', 'secretary'].includes(role) || typeof active !== 'boolean') {
+    return res.status(400).json({ error: 'נתוני החשבון אינם תקינים' });
+  }
+  if (id === req.user.id && (!active || role !== 'admin')) {
+    return res.status(400).json({ error: 'לא ניתן לשנות או להשבית את חשבון המנהלת המחוברת' });
+  }
+
+  if (user.role === 'admin' && user.active && (!active || role !== 'admin')) {
+    const activeAdmins = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND active = 1").get().count;
+    if (activeAdmins <= 1) return res.status(400).json({ error: 'חייבת להישאר לפחות מנהלת מערכת פעילה אחת' });
+  }
+
+  db.prepare('UPDATE users SET role = ?, active = ? WHERE id = ?').run(role, Number(active), id);
+  if (!active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  res.json({ success: true });
+});
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
@@ -179,6 +338,17 @@ app.get('/api/students/:id_number', (req, res) => {
     ORDER BY l.loan_date DESC
   `).all(req.params.id_number);
   res.json({ ...student, loans });
+});
+
+app.put('/api/students/:id_number', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
+  const result = db.prepare(`
+    UPDATE students SET name = ?, phone = ?, track = ?, year = ?
+    WHERE id_number = ?
+  `).run(name, req.body.phone || null, req.body.track || null, req.body.year || null, req.params.id_number);
+  if (!result.changes) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+  res.json({ success: true });
 });
 
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
