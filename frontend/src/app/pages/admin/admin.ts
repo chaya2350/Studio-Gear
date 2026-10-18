@@ -39,7 +39,7 @@ interface UserAccount {
         </select>
         <button class="btn btn-primary" (click)="createUser()">➕ יצירת חשבון</button>
       </div>
-      <p *ngIf="userError()" class="user-error" role="alert">{{ userError() }}</p>
+      <div *ngIf="userError()" class="alert alert-error user-error" role="alert">⚠️ {{ userError() }}</div>
       <div class="user-list">
         <div *ngFor="let user of users()" class="user-row">
           <div class="user-info">
@@ -196,13 +196,22 @@ interface UserAccount {
     code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
     .user-management { max-width: 1000px; margin-bottom: 24px; }
     .user-help { color: var(--text-muted); font-size: 0.85rem; margin: -4px 0 14px; }
-    .user-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-    .user-list { display: grid; gap: 8px; margin-top: 18px; }
-    .user-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .user-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: center; }
+    .user-form input, .user-form select, .user-row select {
+      padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 0.93rem; font-family: inherit; direction: rtl; background: var(--surface); color: var(--text);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .user-form input:focus, .user-form select:focus, .user-row select:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+    .user-form input::placeholder { color: var(--text-light); }
+    .user-list { display: grid; gap: 10px; margin-top: 20px; }
+    .user-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
     .user-info { display: grid; flex: 1; gap: 3px; }
     .user-info span { color: var(--text-muted); font-size: 0.78rem; }
     .user-row select { max-width: 180px; }
-    .user-error { color: var(--danger); font-size: 0.85rem; margin-top: 12px; }
+    .user-error { margin-top: 12px; margin-bottom: 0; }
     @media (max-width: 640px) {
       .user-row { align-items: stretch; flex-direction: column; }
       .user-row select { max-width: none; }
