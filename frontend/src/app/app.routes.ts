@@ -53,12 +53,26 @@ export const routes: Routes = [
       },
       {
         path: 'calendar',
-        loadComponent: () => import('./pages/calendar/calendar').then((m) => m.CalendarComponent),
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'equipment' },
+          {
+            path: 'equipment',
+            loadComponent: () => import('./pages/monthly-calendar/monthly-calendar').then((m) => m.MonthlyCalendarComponent),
+            data: { view: 'equipment' },
+          },
+          {
+            path: 'personal',
+            loadComponent: () => import('./pages/monthly-calendar/monthly-calendar').then((m) => m.MonthlyCalendarComponent),
+            data: { view: 'personal' },
+          },
+          {
+            path: 'schedule',
+            loadComponent: () => import('./pages/monthly-calendar/monthly-calendar').then((m) => m.MonthlyCalendarComponent),
+            data: { view: 'schedule' },
+          },
+        ],
       },
-      {
-        path: 'my-calendar',
-        loadComponent: () => import('./pages/my-calendar/my-calendar').then((m) => m.MyCalendarComponent),
-      },
+      { path: 'my-calendar', redirectTo: 'calendar/personal' },
       {
         path: 'messages',
         loadComponent: () => import('./pages/messages/messages').then((m) => m.MessagesComponent),

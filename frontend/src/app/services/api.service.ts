@@ -2,6 +2,21 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Equipment, Loan, Category, Student } from '../models';
 
+export interface CalendarEvent {
+  id: number;
+  title: string;
+  event_date: string;
+  hebrew_year: number;
+  category: string;
+  source_sheet: string;
+}
+
+export interface CalendarImportResult {
+  imported: number;
+  sheets: number;
+  warnings: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private base = '/api';
@@ -26,6 +41,12 @@ export class ApiService {
   returnLoan(id: number) { return this.http.put<{success:boolean; chargeAmount:number; isOverdue:boolean}>(`${this.base}/loans/${id}/return`, {}); }
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
+  getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  importCalendarWorkbook(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<CalendarImportResult>(`${this.base}/calendar-events/import`, formData);
+  }
 
   getCategories() { return this.http.get<Category[]>(`${this.base}/categories`); }
   createCategory(data: { name: string; icon: string; parent_id?: number | null }) { return this.http.post<Category>(`${this.base}/categories`, data); }

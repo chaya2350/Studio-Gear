@@ -88,7 +88,7 @@ type MessageView = 'inbox' | 'sent' | 'all';
             <p class="message-body">{{ message.body }}</p>
             <div class="message-actions">
               <div class="message-task">
-                <a *ngIf="taskForMessage(message) as task" routerLink="/my-calendar"
+                <a *ngIf="taskForMessage(message) as task" routerLink="/calendar/personal"
                   [queryParams]="{ date: task.due_date }" class="task-added">
                   ✓ נשמרה · פתחי ביומן שלי
                 </a>

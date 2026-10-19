@@ -8,6 +8,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
+const { parseCalendarWorkbook } = require('./calendar-import');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -96,7 +97,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -169,9 +170,79 @@ db.exec(`
     UNIQUE (user_id, source_message_id)
   );
   CREATE INDEX IF NOT EXISTS personal_tasks_user_due_idx ON personal_tasks(user_id, due_date);
+  CREATE TABLE IF NOT EXISTS calendar_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    hebrew_year INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    source_sheet TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (event_date, title, category, source_sheet)
+  );
+  CREATE INDEX IF NOT EXISTS calendar_events_date_idx ON calendar_events(event_date);
 `);
 
 const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
+
+app.get('/api/calendar-events', (req, res) => {
+  res.json(db.prepare(`
+    SELECT id, title, event_date, hebrew_year, category, source_sheet
+    FROM calendar_events
+    ORDER BY event_date, category, title
+  `).all());
+});
+
+app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, res) => {
+  if (!['admin', 'secretary'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'ייבוא נתונים ללוח השנה מיועד למנהלת או למזכירות' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ אקסל' });
+  if (path.extname(req.file.originalname).toLowerCase() !== '.xlsx') {
+    return res.status(400).json({ error: 'יש לבחור קובץ Excel מסוג xlsx' });
+  }
+
+  let parsed;
+  try {
+    parsed = await parseCalendarWorkbook(req.file.buffer);
+  } catch (error) {
+    console.error('Calendar workbook parsing failed:', error);
+    return res.status(400).json({ error: 'לא ניתן לקרוא את קובץ האקסל. בדקי שהוא תקין ונסי שוב.' });
+  }
+
+  if (!parsed.events.length) {
+    return res.status(400).json({
+      error: 'לא נמצאו אירועים בלוחות השנה בקובץ',
+      warnings: parsed.warnings
+    });
+  }
+
+  const importEvents = db.transaction(events => {
+    const insert = db.prepare(`
+      INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (event_date, title, category, source_sheet) DO UPDATE SET
+        hebrew_year = excluded.hebrew_year
+    `);
+    const importedAt = new Date().toISOString();
+    for (const event of events) {
+      insert.run(event.title, event.event_date, event.hebrew_year, event.category, event.source_sheet, importedAt);
+    }
+  });
+
+  try {
+    importEvents(parsed.events);
+  } catch (error) {
+    console.error('Calendar workbook import failed:', error);
+    return res.status(500).json({ error: 'לא ניתן לשמור את אירועי הקובץ בלוח השנה' });
+  }
+
+  res.json({
+    imported: parsed.events.length,
+    sheets: parsed.sheetCount,
+    warnings: parsed.warnings
+  });
+});
 
 app.get('/api/messages/users', (req, res) => {
   res.json(db.prepare(`
