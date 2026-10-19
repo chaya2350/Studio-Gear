@@ -22,11 +22,23 @@ export interface TrackRequirement {
   track_id: number;
   title: string;
   required: number;
+  requires_file: number;
+}
+
+export interface TrackStats {
+  track: string;
+  total_students: number;
+  requirements: { id: number; title: string; required: number; requires_file: number; completed_count: number }[];
+  students: { id_number: string; name: string; completed: number[]; missing_required: number }[];
 }
 
 export interface Track {
   id: number;
   name: string;
+  merged_into: number | null;
+  merged_into_name: string | null;
+  merged_from: { id: number; name: string }[];
+  own_student_count: number;
   student_count: number;
   requirements: TrackRequirement[];
 }
@@ -40,8 +52,10 @@ export interface StudentRequirement {
   id: number;
   title: string;
   required: number;
+  requires_file: number;
   completed_at: string | null;
   completed_by: string | null;
+  file_name: string | null;
 }
 
 export interface StudentRequirements {
@@ -107,15 +121,27 @@ export class ApiService {
   createTrack(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/tracks`, { name }); }
   renameTrack(id: number, name: string) { return this.http.put(`${this.base}/tracks/${id}`, { name }); }
   deleteTrack(id: number) { return this.http.delete(`${this.base}/tracks/${id}`); }
-  createTrackRequirement(trackId: number, data: { title: string; required: boolean }) {
+  mergeTrack(id: number, targetId: number | null) {
+    return this.http.put(`${this.base}/tracks/${id}/merge`, { target_id: targetId });
+  }
+  createTrackRequirement(trackId: number, data: { title: string; required: boolean; requires_file?: boolean }) {
     return this.http.post<{ id: number }>(`${this.base}/tracks/${trackId}/requirements`, data);
   }
-  updateTrackRequirement(id: number, data: { title: string; required: boolean }) {
+  updateTrackRequirement(id: number, data: { title: string; required: boolean; requires_file?: boolean }) {
     return this.http.put(`${this.base}/track-requirements/${id}`, data);
   }
   deleteTrackRequirement(id: number) { return this.http.delete(`${this.base}/track-requirements/${id}`); }
-  createRequirementForTracks(data: { title: string; required: boolean; track_ids: number[] }) {
+  createRequirementForTracks(data: { title: string; required: boolean; requires_file?: boolean; track_ids: number[] }) {
     return this.http.post<{ added: number; skipped: number }>(`${this.base}/track-requirements/bulk`, data);
+  }
+  getTrackStats(id: number) { return this.http.get<TrackStats>(`${this.base}/tracks/${id}/stats`); }
+  requirementFileUrl(id_number: string, requirementId: number) {
+    return `${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}/file`;
+  }
+  uploadRequirementFile(id_number: string, requirementId: number, file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post(this.requirementFileUrl(id_number, requirementId), form);
   }
   getStudentRequirements(id_number: string) {
     return this.http.get<StudentRequirements>(`${this.base}/students/${encodeURIComponent(id_number)}/requirements`);

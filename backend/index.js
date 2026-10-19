@@ -24,6 +24,21 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, file.mimetype.startsWith('image/'))
 });
 
+// Student documents are private: stored outside /uploads and served only through an authenticated route
+const requirementFilesDir = process.env.STUDIO_DATA_DIR
+  ? path.join(dataDir, 'requirement-files')
+  : path.join(__dirname, 'requirement-files');
+fs.mkdirSync(requirementFilesDir, { recursive: true });
+const FILE_TYPES = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+const requirementUpload = multer({
+  storage: multer.diskStorage({
+    destination: requirementFilesDir,
+    filename: (req, file, cb) => cb(null, `${randomBytes(16).toString('hex')}${FILE_TYPES[file.mimetype] || ''}`)
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, Boolean(FILE_TYPES[file.mimetype]))
+});
+
 const xlsxUpload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
@@ -97,7 +112,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/requirements\/\d+)?)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/requirements\/\d+(?:\/file)?)?)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -628,10 +643,34 @@ db.exec(`
     PRIMARY KEY (id_number, requirement_id)
   );
 `);
+for (const [table, column, ddl] of [
+  ['track_requirements', 'requires_file', 'INTEGER NOT NULL DEFAULT 0'],
+  ['student_requirements', 'file_stored', 'TEXT'],
+  ['student_requirements', 'file_name', 'TEXT'],
+  ['student_requirements', 'file_mime', 'TEXT'],
+  ['tracks', 'merged_into', 'INTEGER']
+]) {
+  if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
+function removeStoredFiles(rows) {
+  for (const row of rows) {
+    if (row.file_stored) fs.rm(path.join(requirementFilesDir, path.basename(row.file_stored)), { force: true }, () => {});
+  }
+}
 
 // Student tracks come from free-text Excel cells, so extra spaces must not break matching
 function normalizeTrackName(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+// A student's track may be merged into a main track, whose requirements then apply
+function findStudentTrack(student) {
+  const track = db.prepare('SELECT * FROM tracks WHERE name = ?').get(normalizeTrackName(student.track));
+  if (track?.merged_into) return db.prepare('SELECT * FROM tracks WHERE id = ?').get(track.merged_into) || track;
+  return track;
 }
 
 function validTrackName(value) {
@@ -645,7 +684,8 @@ function validRequirement(body) {
   const title = String(body?.title || '').replace(/\s+/g, ' ').trim();
   if (!title) return { error: 'שם הדרישה הוא שדה חובה' };
   if (title.length > 200) return { error: 'שם הדרישה ארוך מדי' };
-  return { title, required: body?.required === false || body?.required === 0 ? 0 : 1 };
+  return { title, required: body?.required === false || body?.required === 0 ? 0 : 1,
+    requires_file: body?.requires_file === true || body?.requires_file === 1 ? 1 : 0 };
 }
 
 app.get('/api/tracks', (req, res) => {
@@ -658,10 +698,15 @@ app.get('/api/tracks', (req, res) => {
     if (name) counts.set(name, (counts.get(name) || 0) + row.n);
   }
   const defined = new Set(tracks.map((t) => t.name));
+  const trackById = new Map(tracks.map((t) => [t.id, t]));
+  const ownCount = (t) => counts.get(t.name) || 0;
   res.json({
     tracks: tracks.map((t) => ({
       ...t,
-      student_count: counts.get(t.name) || 0,
+      merged_into_name: t.merged_into ? trackById.get(t.merged_into)?.name || null : null,
+      own_student_count: ownCount(t),
+      student_count: ownCount(t) + tracks.filter((m) => m.merged_into === t.id).reduce((sum, m) => sum + ownCount(m), 0),
+      merged_from: tracks.filter((m) => m.merged_into === t.id).map((m) => ({ id: m.id, name: m.name })),
       requirements: requirements.filter((r) => r.track_id === t.id),
     })),
     undefined_tracks: [...counts]
@@ -700,10 +745,32 @@ app.put('/api/tracks/:id', (req, res) => {
   res.json({ success: true });
 });
 
+app.put('/api/tracks/:id/merge', (req, res) => {
+  const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
+  const targetId = req.body?.target_id;
+  if (targetId === null) {
+    db.prepare('UPDATE tracks SET merged_into = NULL WHERE id = ?').run(track.id);
+    return res.json({ success: true });
+  }
+  if (!Number.isInteger(targetId)) return res.status(400).json({ error: 'יש לבחור מסלול' });
+  if (targetId === track.id) return res.status(400).json({ error: 'אי אפשר לאחד מסלול עם עצמו' });
+  const target = db.prepare('SELECT * FROM tracks WHERE id = ?').get(targetId);
+  if (!target) return res.status(404).json({ error: 'מסלול היעד לא נמצא' });
+  if (target.merged_into) return res.status(400).json({ error: `המסלול "${target.name}" עצמו מאוחד למסלול אחר. יש לבחור את המסלול הראשי.` });
+  if (db.prepare('SELECT 1 FROM tracks WHERE merged_into = ?').get(track.id)) {
+    return res.status(400).json({ error: 'מסלולים אחרים מאוחדים למסלול הזה. יש להפריד אותם קודם.' });
+  }
+  db.prepare('UPDATE tracks SET merged_into = ? WHERE id = ?').run(target.id, track.id);
+  res.json({ success: true });
+});
+
 app.delete('/api/tracks/:id', (req, res) => {
   const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
   db.transaction(() => {
+    db.prepare('UPDATE tracks SET merged_into = NULL WHERE merged_into = ?').run(track.id);
+    removeStoredFiles(db.prepare('SELECT file_stored FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)').all(track.id));
     db.prepare('DELETE FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)').run(track.id);
     db.prepare('DELETE FROM track_requirements WHERE track_id = ?').run(track.id);
     db.prepare('DELETE FROM tracks WHERE id = ?').run(track.id);
@@ -717,8 +784,8 @@ app.post('/api/tracks/:id/requirements', (req, res) => {
   const checked = validRequirement(req.body);
   if (checked.error) return res.status(400).json({ error: checked.error });
   const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(track.id).n;
-  const result = db.prepare('INSERT INTO track_requirements (track_id, title, required, sort_order) VALUES (?, ?, ?, ?)')
-    .run(track.id, checked.title, checked.required, next);
+  const result = db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, sort_order) VALUES (?, ?, ?, ?, ?)')
+    .run(track.id, checked.title, checked.required, checked.requires_file, next);
   res.status(201).json({ id: Number(result.lastInsertRowid) });
 });
 
@@ -741,8 +808,8 @@ app.post('/api/track-requirements/bulk', (req, res) => {
         continue;
       }
       const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(id).n;
-      db.prepare('INSERT INTO track_requirements (track_id, title, required, sort_order) VALUES (?, ?, ?, ?)')
-        .run(id, checked.title, checked.required, next);
+      db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, sort_order) VALUES (?, ?, ?, ?, ?)')
+        .run(id, checked.title, checked.required, checked.requires_file, next);
       added++;
     }
   })();
@@ -752,8 +819,8 @@ app.post('/api/track-requirements/bulk', (req, res) => {
 app.put('/api/track-requirements/:id', (req, res) => {
   const checked = validRequirement(req.body);
   if (checked.error) return res.status(400).json({ error: checked.error });
-  const result = db.prepare('UPDATE track_requirements SET title = ?, required = ? WHERE id = ?')
-    .run(checked.title, checked.required, req.params.id);
+  const result = db.prepare('UPDATE track_requirements SET title = ?, required = ?, requires_file = ? WHERE id = ?')
+    .run(checked.title, checked.required, checked.requires_file, req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'הדרישה לא נמצאה' });
   res.json({ success: true });
 });
@@ -762,6 +829,7 @@ app.delete('/api/track-requirements/:id', (req, res) => {
   const found = db.prepare('SELECT id FROM track_requirements WHERE id = ?').get(req.params.id);
   if (!found) return res.status(404).json({ error: 'הדרישה לא נמצאה' });
   db.transaction(() => {
+    removeStoredFiles(db.prepare('SELECT file_stored FROM student_requirements WHERE requirement_id = ?').all(found.id));
     db.prepare('DELETE FROM student_requirements WHERE requirement_id = ?').run(found.id);
     db.prepare('DELETE FROM track_requirements WHERE id = ?').run(found.id);
   })();
@@ -772,10 +840,10 @@ app.get('/api/students/:id_number/requirements', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
   const trackName = normalizeTrackName(student.track);
-  const track = trackName ? db.prepare('SELECT * FROM tracks WHERE name = ?').get(trackName) : null;
+  const track = trackName ? findStudentTrack(student) : null;
   if (!track) return res.json({ track: trackName || null, defined: false, requirements: [] });
   const requirements = db.prepare(`
-    SELECT r.id, r.title, r.required, sr.completed_at, sr.completed_by
+    SELECT r.id, r.title, r.required, r.requires_file, sr.completed_at, sr.completed_by, sr.file_name
     FROM track_requirements r
     LEFT JOIN student_requirements sr ON sr.requirement_id = r.id AND sr.id_number = ?
     WHERE r.track_id = ?
@@ -788,18 +856,92 @@ app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
   if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'ערך לא תקין' });
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
-  const track = db.prepare('SELECT * FROM tracks WHERE name = ?').get(normalizeTrackName(student.track));
+  const track = findStudentTrack(student);
   const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
     .get(req.params.requirement_id, track.id);
   if (!requirement) return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
   if (req.body.completed) {
+    if (requirement.requires_file) return res.status(400).json({ error: 'דרישה זו מסתיימת בהעלאת קובץ' });
     db.prepare('INSERT OR REPLACE INTO student_requirements (id_number, requirement_id, completed_by) VALUES (?, ?, ?)')
       .run(student.id_number, requirement.id, req.user.name);
   } else {
+    removeStoredFiles(db.prepare('SELECT file_stored FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
+      .all(student.id_number, requirement.id));
     db.prepare('DELETE FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
       .run(student.id_number, requirement.id);
   }
   res.json({ success: true });
+});
+
+function findStudentFileRequirement(idNumber, requirementId) {
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(idNumber);
+  const track = student && findStudentTrack(student);
+  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
+    .get(requirementId, track.id);
+  return student && requirement ? { student, requirement } : null;
+}
+
+app.post('/api/students/:id_number/requirements/:requirement_id/file', (req, res) => {
+  requirementUpload.single('file')(req, res, (err) => {
+    const discard = () => req.file && fs.rm(req.file.path, { force: true }, () => {});
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'הקובץ גדול מדי (עד 10MB)' : 'שגיאה בהעלאת הקובץ' });
+    if (!req.file) return res.status(400).json({ error: 'יש לבחור קובץ PDF או תמונה' });
+    const found = findStudentFileRequirement(req.params.id_number, req.params.requirement_id);
+    if (!found || !found.requirement.requires_file) {
+      discard();
+      return res.status(404).json({ error: 'הדרישה אינה דורשת קובץ או אינה שייכת לתלמידה' });
+    }
+    const old = db.prepare('SELECT file_stored FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
+      .all(found.student.id_number, found.requirement.id);
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
+    db.prepare(`INSERT OR REPLACE INTO student_requirements
+      (id_number, requirement_id, completed_by, file_stored, file_name, file_mime) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(found.student.id_number, found.requirement.id, req.user.name, req.file.filename, originalName, req.file.mimetype);
+    removeStoredFiles(old);
+    res.status(201).json({ success: true });
+  });
+});
+
+app.get('/api/students/:id_number/requirements/:requirement_id/file', (req, res) => {
+  const row = db.prepare('SELECT file_stored, file_name, file_mime FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
+    .get(req.params.id_number, req.params.requirement_id);
+  if (!row?.file_stored) return res.status(404).json({ error: 'הקובץ לא נמצא' });
+  res.setHeader('Content-Type', row.file_mime);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(row.file_name || 'file')}`);
+  res.sendFile(path.join(requirementFilesDir, path.basename(row.file_stored)), (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'הקובץ לא נמצא' });
+  });
+});
+
+app.get('/api/tracks/:id/stats', (req, res) => {
+  const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
+  const names = new Set([track.name, ...db.prepare('SELECT name FROM tracks WHERE merged_into = ?').all(track.id).map((t) => t.name)]);
+  const students = db.prepare('SELECT id_number, name, track FROM students').all()
+    .filter((s) => names.has(normalizeTrackName(s.track)));
+  const requirements = db.prepare('SELECT id, title, required, requires_file FROM track_requirements WHERE track_id = ? ORDER BY sort_order, id').all(track.id);
+  const done = new Set(
+    db.prepare('SELECT id_number, requirement_id FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)')
+      .all(track.id).map((r) => `${r.id_number}:${r.requirement_id}`)
+  );
+  res.json({
+    track: track.name,
+    total_students: students.length,
+    requirements: requirements.map((r) => ({
+      ...r,
+      completed_count: students.filter((s) => done.has(`${s.id_number}:${r.id}`)).length
+    })),
+    students: students.map((s) => {
+      const completed = requirements.filter((r) => done.has(`${s.id_number}:${r.id}`)).map((r) => r.id);
+      return {
+        id_number: s.id_number,
+        name: s.name,
+        completed,
+        missing_required: requirements.filter((r) => r.required && !completed.includes(r.id)).length
+      };
+    })
+  });
 });
 
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {

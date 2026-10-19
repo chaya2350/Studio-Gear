@@ -62,7 +62,6 @@ import { filter } from 'rxjs/operators';
         >📦 ציוד</a
       >
       <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-      <a routerLink="/calendar/equipment" routerLinkActive="active">📅 לוח שנה</a>
       <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
       <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
     </nav>

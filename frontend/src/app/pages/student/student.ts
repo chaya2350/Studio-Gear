@@ -1,6 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { CommonModule } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, StudentRequirement, StudentRequirements } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
@@ -13,7 +13,7 @@ import { Student } from '../../models';
     <div *ngIf="student()">
       <div class="page-header">
         <div style="display:flex; align-items:center; gap:16px;">
-          <a routerLink="/equipment" class="back-btn">→</a>
+          <a href="#" (click)="goBack($event)" class="back-btn">→</a>
           <div>
             <h1>{{ student()!.name }}</h1>
             <p class="subtitle">🪪 {{ student()!.id_number }}
@@ -98,7 +98,28 @@ import { Student } from '../../models';
             {{ missingRequired() === 0 ? '🎉 כל דרישות החובה הושלמו' : 'חסרות ' + missingRequired() + ' דרישות חובה' }}
           </div>
           <div *ngIf="requirementError()" class="edit-error" role="alert">{{ requirementError() }}</div>
-          <label *ngFor="let r of reqs.requirements" class="req-item" [class.checked]="!!r.completed_at">
+          <ng-container *ngFor="let r of reqs.requirements">
+          <div *ngIf="r.requires_file" class="req-item file-req" [class.checked]="!!r.completed_at">
+            <span class="req-text">📎 {{ r.title }}</span>
+            <span class="badge req-badge" [class.optional]="!r.required">{{ r.required ? 'חובה' : 'רשות' }}</span>
+            <ng-container *ngIf="r.completed_at">
+              <a class="btn btn-secondary" [href]="fileUrl(r)" target="_blank" rel="noopener">👁️ {{ r.file_name || 'צפייה' }}</a>
+              <button class="btn btn-secondary" type="button" (click)="printFile(r)">🖨️ הדפסה</button>
+              <button class="btn btn-danger" type="button" [disabled]="savingRequirementId() === r.id" (click)="toggleRequirement(r, false)">🗑️</button>
+            </ng-container>
+            <label class="btn btn-primary upload-btn" [class.disabled]="savingRequirementId() === r.id">
+              {{ r.completed_at ? '🔄 החלפה' : '⬆️ העלאת קובץ' }}
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                hidden
+                [disabled]="savingRequirementId() === r.id"
+                (change)="uploadFile(r, $event)"
+              />
+            </label>
+            <span *ngIf="r.completed_at" class="req-by">{{ r.completed_by ? 'הועלה ע"י ' + r.completed_by : '' }}</span>
+          </div>
+          <label *ngIf="!r.requires_file" class="req-item" [class.checked]="!!r.completed_at">
             <input
               type="checkbox"
               [checked]="!!r.completed_at"
@@ -109,6 +130,7 @@ import { Student } from '../../models';
             <span class="badge req-badge" [class.optional]="!r.required">{{ r.required ? 'חובה' : 'רשות' }}</span>
             <span *ngIf="r.completed_at" class="req-by">{{ r.completed_by ? 'סומן ע"י ' + r.completed_by : 'הושלם' }}</span>
           </label>
+          </ng-container>
         </ng-container>
       </div>
 
@@ -147,7 +169,7 @@ import { Student } from '../../models';
     <div *ngIf="!student() && !loading()" class="empty-state">
       <div class="empty-icon">🔍</div>
       <p>תלמידה לא נמצאה</p>
-      <a routerLink="/equipment" class="btn btn-primary" style="margin-top:16px;">חזור לציוד</a>
+      <a href="#" (click)="goBack($event)" class="btn btn-primary" style="margin-top:16px;">חזרה</a>
     </div>
   `,
   styles: [`
@@ -182,6 +204,10 @@ import { Student } from '../../models';
     .req-badge { background: #fee2e2; color: #b91c1c; }
     .req-badge.optional { background: var(--primary-light); color: var(--primary); }
     .req-by { color: var(--text-muted); font-size: 0.75rem; }
+    .file-req { flex-wrap: wrap; cursor: default; }
+    .file-req .btn { padding: 6px 12px; font-size: 0.82rem; text-decoration: none; }
+    .upload-btn { cursor: pointer; margin: 0; }
+    .upload-btn.disabled { opacity: 0.6; pointer-events: none; }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
     .barcode-val {
@@ -223,7 +249,13 @@ export class StudentComponent implements OnInit {
   requirementError = signal('');
   savingRequirementId = signal<number | null>(null);
 
-  constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
+
+  goBack(event: Event) {
+    event.preventDefault();
+    if (window.history.length > 1) this.location.back();
+    else this.router.navigate(['/students']);
+  }
 
   ngOnInit() {
     const id = this.route.snapshot.params['id'];
@@ -264,6 +296,42 @@ export class StudentComponent implements OnInit {
         this.loadRequirements(current.id_number);
       }
     });
+  }
+
+  fileUrl(req: StudentRequirement) {
+    return this.api.requirementFileUrl(this.student()!.id_number, req.id) + '?v=' + encodeURIComponent(req.completed_at || '');
+  }
+
+  uploadFile(req: StudentRequirement, event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const current = this.student();
+    input.value = '';
+    if (!file || !current) return;
+    this.savingRequirementId.set(req.id);
+    this.requirementError.set('');
+    this.api.uploadRequirementFile(current.id_number, req.id, file).subscribe({
+      next: () => {
+        this.savingRequirementId.set(null);
+        this.loadRequirements(current.id_number);
+      },
+      error: error => {
+        this.savingRequirementId.set(null);
+        this.requirementError.set(error.error?.error || 'לא ניתן להעלות את הקובץ');
+      }
+    });
+  }
+
+  printFile(req: StudentRequirement) {
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
+    frame.src = this.fileUrl(req);
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      setTimeout(() => frame.remove(), 60000);
+    };
+    document.body.appendChild(frame);
   }
 
   startEditing() {

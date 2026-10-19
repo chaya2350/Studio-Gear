@@ -1,11 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, Track, TrackRequirement, TracksOverview } from '../../services/api.service';
+import { RouterLink } from '@angular/router';
+import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from '../../services/api.service';
 
 @Component({
   selector: 'app-tracks',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="tracks-header">
       <p class="help">
@@ -43,6 +44,9 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
           />
           <label class="check">
             <input type="checkbox" name="bulkRequired" [(ngModel)]="bulkRequired" /> חובה
+          </label>
+          <label class="check">
+            <input type="checkbox" name="bulkFile" [(ngModel)]="bulkFile" /> 📎 דורש קובץ
           </label>
         </div>
         <div class="bulk-tracks">
@@ -101,7 +105,10 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
         >
           <span class="chevron">{{ isOpen(track.id) ? '▾' : '◂' }}</span>
           <span class="track-name">{{ track.name }}</span>
-          <span class="count">{{ track.student_count }} תלמידות · {{ track.requirements.length }} דרישות</span>
+          <span class="count">
+            <ng-container *ngIf="track.merged_into">🔗 מאוחד ל{{ track.merged_into_name }} · {{ track.own_student_count }} תלמידות</ng-container>
+            <ng-container *ngIf="!track.merged_into">{{ track.student_count }} תלמידות · {{ track.requirements.length }} דרישות</ng-container>
+          </span>
         </button>
 
         <div *ngIf="isOpen(track.id)" class="track-body">
@@ -112,8 +119,62 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
               <button class="btn btn-secondary" type="button" (click)="renamingId.set(null)">ביטול</button>
             </form>
             <div *ngIf="renamingId() !== track.id" class="actions">
+              <button *ngIf="!track.merged_into" class="btn btn-secondary" type="button" (click)="toggleStats(track)">
+                📊 סטטיסטיקה
+              </button>
+              <button class="btn btn-secondary" type="button" (click)="startMerge(track)">🔗 איחוד</button>
               <button class="btn btn-secondary" type="button" (click)="startRename(track)">✏️ שינוי שם</button>
               <button class="btn btn-danger" type="button" (click)="removeTrack(track)">🗑️ מחיקה</button>
+            </div>
+          </div>
+
+          <div *ngIf="track.merged_from.length" class="merge-note">
+            🔗 כולל גם את המסלולים: {{ mergedNames(track) }}
+          </div>
+          <div *ngIf="track.merged_into" class="merge-note">
+            🔗 מסלול זה מאוחד ל<b>{{ track.merged_into_name }}</b>: התלמידות שלו מקבלות את הדרישות של המסלול הראשי
+            ומופיעות יחד איתו. השם במערכת נשאר "{{ track.name }}".
+            <button class="btn btn-secondary" type="button" (click)="unmerge(track)">ביטול איחוד</button>
+          </div>
+          <form *ngIf="mergingId() === track.id" class="inline-form merge-form" (ngSubmit)="saveMerge(track)">
+            <label for="mergeTarget">לאחד עם:</label>
+            <select id="mergeTarget" name="mergeTarget" [(ngModel)]="mergeTargetId">
+              <option [ngValue]="null" disabled>בחרי מסלול ראשי...</option>
+              <option *ngFor="let t of mergeOptions(track)" [ngValue]="t.id">{{ t.name }}</option>
+            </select>
+            <button class="btn btn-primary" type="submit" [disabled]="mergeTargetId === null">שמירה</button>
+            <button class="btn btn-secondary" type="button" (click)="mergingId.set(null)">ביטול</button>
+            <span *ngIf="!mergeOptions(track).length" class="help">אין מסלול זמין לאיחוד</span>
+          </form>
+
+          <ng-container *ngIf="!track.merged_into">
+          <div *ngIf="stats()?.id === track.id && stats()!.data as s" class="stats">
+            <div class="stats-title">📊 {{ s.total_students }} תלמידות במסלול</div>
+            <div *ngFor="let r of s.requirements" class="stat-row">
+              <div class="stat-label">
+                {{ r.title }} <span *ngIf="r.requires_file">📎</span>
+                <span class="stat-num">{{ r.completed_count }} / {{ s.total_students }}</span>
+              </div>
+              <div class="bar"><div class="bar-fill" [style.width.%]="percent(r.completed_count, s.total_students)"></div></div>
+            </div>
+            <div *ngIf="!s.requirements.length" class="no-reqs">אין דרישות להצגה</div>
+            <div *ngIf="s.students.length && s.requirements.length" class="table-wrap">
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th>תלמידה</th>
+                    <th *ngFor="let r of s.requirements" [title]="r.title">{{ r.title }}</th>
+                    <th>חסר חובה</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let st of s.students">
+                    <td><a [routerLink]="['/students', st.id_number]">{{ st.name }}</a></td>
+                    <td *ngFor="let r of s.requirements" class="mark">{{ st.completed.includes(r.id) ? '✅' : '—' }}</td>
+                    <td [class.missing]="st.missing_required">{{ st.missing_required }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -125,6 +186,9 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
               <label class="check">
                 <input type="checkbox" name="reqRequired" [(ngModel)]="reqDraft.required" /> חובה
               </label>
+              <label class="check">
+                <input type="checkbox" name="reqFile" [(ngModel)]="reqDraft.requires_file" /> 📎 קובץ
+              </label>
               <button class="btn btn-primary" type="submit">שמירה</button>
               <button class="btn btn-secondary" type="button" (click)="editingReqId.set(null)">ביטול</button>
             </form>
@@ -133,7 +197,8 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
               <span class="badge" [class.badge-optional]="!req.required">
                 {{ req.required ? 'חובה' : 'רשות' }}
               </span>
-              <button class="icon-btn" type="button" (click)="startEditRequirement(req)" aria-label="עריכת דרישה">✏️</button>
+              <span *ngIf="req.requires_file" class="badge badge-optional">📎 קובץ</span>
+              <button class="icon-btn" type="button" (click)="startEditRequirement(req)" aria-label="עריכת דרישה">              ✏️</button>
               <button class="icon-btn" type="button" (click)="removeRequirement(req)" aria-label="מחיקת דרישה">🗑️</button>
             </ng-container>
           </div>
@@ -145,8 +210,12 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
               placeholder="דרישה חדשה, למשל: 12 שנות לימוד"
               aria-label="דרישה חדשה"
             />
+            <label class="check">
+              <input type="checkbox" [name]="'newFile' + track.id" [(ngModel)]="newReqFile[track.id]" /> 📎 קובץ
+            </label>
             <button class="btn btn-secondary" type="submit">➕ הוספת דרישה</button>
           </form>
+          </ng-container>
         </div>
       </div>
     </div>
@@ -171,6 +240,15 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
       }
       input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
       .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .merge-note {
+        background: var(--primary-light); color: var(--text); border-radius: var(--radius-sm);
+        padding: 10px 14px; margin-bottom: 12px; font-size: 0.88rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      }
+      .merge-form { margin-bottom: 14px; }
+      select {
+        padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+        font: inherit; background: var(--surface); color: var(--text); min-width: 180px;
+      }
       .chip {
         border: 1.5px solid var(--border-focus); background: var(--primary-light); color: var(--primary);
         border-radius: 20px; padding: 6px 14px; font: inherit; font-weight: 700; cursor: pointer;
@@ -204,6 +282,18 @@ import { ApiService, Track, TrackRequirement, TracksOverview } from '../../servi
       .icon-btn:hover { background: var(--border); }
       .check { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; white-space: nowrap; }
       .add-req { margin-top: 12px; }
+      .stats { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px; }
+      .stats-title { font-weight: 800; margin-bottom: 10px; }
+      .stat-row { margin-bottom: 10px; }
+      .stat-label { display: flex; gap: 6px; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+      .stat-num { margin-inline-start: auto; color: var(--text-muted); }
+      .bar { height: 10px; background: var(--border); border-radius: 6px; overflow: hidden; }
+      .bar-fill { height: 100%; background: var(--primary); border-radius: 6px; }
+      .table-wrap { overflow-x: auto; margin-top: 12px; }
+      .stats-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+      .stats-table th, .stats-table td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: start; }
+      .stats-table .mark { text-align: center; }
+      .missing { color: #b91c1c; font-weight: 700; }
     `,
   ],
 })
@@ -215,12 +305,64 @@ export class TracksComponent implements OnInit {
   bulkSelected = signal<Set<number>>(new Set());
   bulkTitle = '';
   bulkRequired = true;
+  bulkFile = false;
+  stats = signal<{ id: number; data: TrackStats | null } | null>(null);
   renamingId = signal<number | null>(null);
   editingReqId = signal<number | null>(null);
   newTrackName = '';
   renameDraft = '';
-  reqDraft = { title: '', required: true };
+  reqDraft = { title: '', required: true, requires_file: false };
   newReqTitles: Record<number, string> = {};
+  newReqFile: Record<number, boolean> = {};
+  mergingId = signal<number | null>(null);
+  mergeTargetId: number | null = null;
+
+  mergedNames(track: Track) {
+    return track.merged_from.map((m) => m.name).join(', ');
+  }
+
+  // Only main tracks can be targets, and a track that others are merged into cannot itself be merged
+  mergeOptions(track: Track) {
+    if (track.merged_from.length) return [];
+    return (this.overview()?.tracks || []).filter((t) => t.id !== track.id && !t.merged_into);
+  }
+
+  startMerge(track: Track) {
+    this.mergeTargetId = track.merged_into;
+    this.mergingId.set(track.id);
+  }
+
+  saveMerge(track: Track) {
+    if (this.mergeTargetId === null) return;
+    this.run(this.api.mergeTrack(track.id, this.mergeTargetId), () => {
+      this.mergingId.set(null);
+      this.stats.set(null);
+    });
+  }
+
+  unmerge(track: Track) {
+    this.run(this.api.mergeTrack(track.id, null));
+  }
+
+  percent(done: number, total: number) {
+    return total ? Math.round((done / total) * 100) : 0;
+  }
+
+  toggleStats(track: Track) {
+    if (this.stats()?.id === track.id) {
+      this.stats.set(null);
+      return;
+    }
+    this.error.set('');
+    this.stats.set({ id: track.id, data: null });
+    this.api.getTrackStats(track.id).subscribe({
+      next: (data) => this.stats.set({ id: track.id, data }),
+      error: (e) => {
+        this.stats.set(null);
+        this.error.set(e.error?.error || 'לא ניתן לטעון סטטיסטיקה');
+      },
+    });
+  }
 
   constructor(private api: ApiService) {}
 
@@ -296,7 +438,7 @@ export class TracksComponent implements OnInit {
     if (!ids.length) return;
     this.error.set('');
     this.notice.set('');
-    this.api.createRequirementForTracks({ title, required: this.bulkRequired, track_ids: ids }).subscribe({
+    this.api.createRequirementForTracks({ title, required: this.bulkRequired, requires_file: this.bulkFile, track_ids: ids }).subscribe({
       next: (result) => {
         this.notice.set(
           result.skipped
@@ -342,13 +484,14 @@ export class TracksComponent implements OnInit {
   addRequirement(track: Track) {
     const title = (this.newReqTitles[track.id] || '').trim();
     if (!title) return;
-    this.run(this.api.createTrackRequirement(track.id, { title, required: true }), () => {
+    this.run(this.api.createTrackRequirement(track.id, { title, required: true, requires_file: !!this.newReqFile[track.id] }), () => {
       this.newReqTitles[track.id] = '';
+      this.newReqFile[track.id] = false;
     });
   }
 
   startEditRequirement(req: TrackRequirement) {
-    this.reqDraft = { title: req.title, required: !!req.required };
+    this.reqDraft = { title: req.title, required: !!req.required, requires_file: !!req.requires_file };
     this.editingReqId.set(req.id);
   }
 
