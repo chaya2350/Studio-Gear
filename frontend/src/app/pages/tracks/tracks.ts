@@ -48,6 +48,12 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
           <label class="check">
             <input type="checkbox" name="bulkFile" [(ngModel)]="bulkFile" /> 📎 דורש קובץ
           </label>
+          <span class="check years">
+            שנה:
+            <label *ngFor="let y of yearOptions" class="check">
+              <input type="checkbox" [name]="'bulkYear' + y" [checked]="bulkYears.includes(y)" (change)="toggleYear(bulkYears, y, $any($event.target).checked)" /> {{ y }}
+            </label>
+          </span>
         </div>
         <div class="bulk-tracks">
           <label class="check select-all">
@@ -153,9 +159,10 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
             <div *ngFor="let r of s.requirements" class="stat-row">
               <div class="stat-label">
                 {{ r.title }} <span *ngIf="r.requires_file">📎</span>
-                <span class="stat-num">{{ r.completed_count }} / {{ s.total_students }}</span>
+                <span *ngIf="r.years" class="badge badge-optional">שנה {{ yearsLabel(r.years) }}</span>
+                <span class="stat-num">{{ r.completed_count }} / {{ r.applicable_count }}</span>
               </div>
-              <div class="bar"><div class="bar-fill" [style.width.%]="percent(r.completed_count, s.total_students)"></div></div>
+              <div class="bar"><div class="bar-fill" [style.width.%]="percent(r.completed_count, r.applicable_count)"></div></div>
             </div>
             <div *ngIf="!s.requirements.length" class="no-reqs">אין דרישות להצגה</div>
             <div *ngIf="s.students.length && s.requirements.length" class="table-wrap">
@@ -170,7 +177,7 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
                 <tbody>
                   <tr *ngFor="let st of s.students">
                     <td><a [routerLink]="['/students', st.id_number]">{{ st.name }}</a></td>
-                    <td *ngFor="let r of s.requirements" class="mark">{{ st.completed.includes(r.id) ? '✅' : '—' }}</td>
+                    <td *ngFor="let r of s.requirements" class="mark">{{ !st.applicable.includes(r.id) ? '·' : st.completed.includes(r.id) ? '✅' : '—' }}</td>
                     <td [class.missing]="st.missing_required">{{ st.missing_required }}</td>
                   </tr>
                 </tbody>
@@ -189,6 +196,12 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
               <label class="check">
                 <input type="checkbox" name="reqFile" [(ngModel)]="reqDraft.requires_file" /> 📎 קובץ
               </label>
+              <span class="check years">
+                שנה:
+                <label *ngFor="let y of yearOptions" class="check">
+                  <input type="checkbox" [name]="'editYear' + y" [checked]="reqDraft.years.includes(y)" (change)="toggleYear(reqDraft.years, y, $any($event.target).checked)" /> {{ y }}
+                </label>
+              </span>
               <button class="btn btn-primary" type="submit">שמירה</button>
               <button class="btn btn-secondary" type="button" (click)="editingReqId.set(null)">ביטול</button>
             </form>
@@ -198,6 +211,7 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
                 {{ req.required ? 'חובה' : 'רשות' }}
               </span>
               <span *ngIf="req.requires_file" class="badge badge-optional">📎 קובץ</span>
+              <span *ngIf="req.years" class="badge badge-optional">שנה {{ yearsLabel(req.years) }}</span>
               <button class="icon-btn" type="button" (click)="startEditRequirement(req)" aria-label="עריכת דרישה">              ✏️</button>
               <button class="icon-btn" type="button" (click)="removeRequirement(req)" aria-label="מחיקת דרישה">🗑️</button>
             </ng-container>
@@ -213,6 +227,12 @@ import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from 
             <label class="check">
               <input type="checkbox" [name]="'newFile' + track.id" [(ngModel)]="newReqFile[track.id]" /> 📎 קובץ
             </label>
+            <span class="check years">
+              שנה:
+              <label *ngFor="let y of yearOptions" class="check">
+                <input type="checkbox" [name]="'newYear' + track.id + y" [checked]="newYears(track.id).includes(y)" (change)="toggleYear(newYears(track.id), y, $any($event.target).checked)" /> {{ y }}
+              </label>
+            </span>
             <button class="btn btn-secondary" type="submit">➕ הוספת דרישה</button>
           </form>
           </ng-container>
@@ -311,7 +331,26 @@ export class TracksComponent implements OnInit {
   editingReqId = signal<number | null>(null);
   newTrackName = '';
   renameDraft = '';
-  reqDraft = { title: '', required: true, requires_file: false };
+  reqDraft: { title: string; required: boolean; requires_file: boolean; years: string[] } = {
+    title: '', required: true, requires_file: false, years: [],
+  };
+  yearOptions = ['ה', 'ו'];
+  bulkYears: string[] = [];
+  newReqYears: Record<number, string[]> = {};
+
+  newYears(trackId: number) {
+    return (this.newReqYears[trackId] ||= []);
+  }
+
+  toggleYear(list: string[], year: string, checked: boolean) {
+    const i = list.indexOf(year);
+    if (checked && i < 0) list.push(year);
+    if (!checked && i >= 0) list.splice(i, 1);
+  }
+
+  yearsLabel(years: string) {
+    return years.split(',').join(' / ');
+  }
   newReqTitles: Record<number, string> = {};
   newReqFile: Record<number, boolean> = {};
   mergingId = signal<number | null>(null);
@@ -438,7 +477,7 @@ export class TracksComponent implements OnInit {
     if (!ids.length) return;
     this.error.set('');
     this.notice.set('');
-    this.api.createRequirementForTracks({ title, required: this.bulkRequired, requires_file: this.bulkFile, track_ids: ids }).subscribe({
+    this.api.createRequirementForTracks({ title, required: this.bulkRequired, requires_file: this.bulkFile, years: this.bulkYears, track_ids: ids }).subscribe({
       next: (result) => {
         this.notice.set(
           result.skipped
@@ -446,6 +485,7 @@ export class TracksComponent implements OnInit {
             : `הדרישה נוספה ל-${result.added} מסלולים.`,
         );
         this.bulkTitle = '';
+        this.bulkYears = [];
         this.bulkSelected.set(new Set());
         this.load();
       },
@@ -484,14 +524,15 @@ export class TracksComponent implements OnInit {
   addRequirement(track: Track) {
     const title = (this.newReqTitles[track.id] || '').trim();
     if (!title) return;
-    this.run(this.api.createTrackRequirement(track.id, { title, required: true, requires_file: !!this.newReqFile[track.id] }), () => {
+    this.run(this.api.createTrackRequirement(track.id, { title, required: true,     requires_file: !!this.newReqFile[track.id], years: this.newYears(track.id) }), () => {
       this.newReqTitles[track.id] = '';
       this.newReqFile[track.id] = false;
+          this.newReqYears[track.id] = [];
     });
   }
 
   startEditRequirement(req: TrackRequirement) {
-    this.reqDraft = { title: req.title, required: !!req.required, requires_file: !!req.requires_file };
+    this.reqDraft = { title: req.title, required: !!req.required, requires_file: !!req.requires_file, years: req.years ? req.years.split(',') : [] };
     this.editingReqId.set(req.id);
   }
 

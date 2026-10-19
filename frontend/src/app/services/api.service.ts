@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Equipment, Loan, Category, Student } from '../models';
 
@@ -23,13 +23,14 @@ export interface TrackRequirement {
   title: string;
   required: number;
   requires_file: number;
+  years: string | null;
 }
 
 export interface TrackStats {
   track: string;
   total_students: number;
-  requirements: { id: number; title: string; required: number; requires_file: number; completed_count: number }[];
-  students: { id_number: string; name: string; completed: number[]; missing_required: number }[];
+  requirements: { id: number; title: string; required: number; requires_file: number; years: string | null; applicable_count: number; completed_count: number }[];
+  students: { id_number: string; name: string; year: string; applicable: number[]; completed: number[]; missing_required: number }[];
 }
 
 export interface Track {
@@ -124,14 +125,14 @@ export class ApiService {
   mergeTrack(id: number, targetId: number | null) {
     return this.http.put(`${this.base}/tracks/${id}/merge`, { target_id: targetId });
   }
-  createTrackRequirement(trackId: number, data: { title: string; required: boolean; requires_file?: boolean }) {
+  createTrackRequirement(trackId: number, data: { title: string; required: boolean; requires_file?: boolean; years?: string[] }) {
     return this.http.post<{ id: number }>(`${this.base}/tracks/${trackId}/requirements`, data);
   }
-  updateTrackRequirement(id: number, data: { title: string; required: boolean; requires_file?: boolean }) {
+  updateTrackRequirement(id: number, data: { title: string; required: boolean; requires_file?: boolean; years?: string[] }) {
     return this.http.put(`${this.base}/track-requirements/${id}`, data);
   }
   deleteTrackRequirement(id: number) { return this.http.delete(`${this.base}/track-requirements/${id}`); }
-  createRequirementForTracks(data: { title: string; required: boolean; requires_file?: boolean; track_ids: number[] }) {
+  createRequirementForTracks(data: { title: string; required: boolean; requires_file?: boolean; years?: string[]; track_ids: number[] }) {
     return this.http.post<{ added: number; skipped: number }>(`${this.base}/track-requirements/bulk`, data);
   }
   getTrackStats(id: number) { return this.http.get<TrackStats>(`${this.base}/tracks/${id}/stats`); }

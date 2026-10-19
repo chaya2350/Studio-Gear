@@ -1,6 +1,6 @@
-import { CommonModule } from '@angular/common';
+﻿import { CommonModule } from '@angular/common';
 import { Component, computed, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HDate, months } from '@hebcal/core';
 import { ApiService, CalendarEvent } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
@@ -58,6 +58,16 @@ function toHebrewYear(year: number): string {
   return label.length === 1 ? `${label}׳` : `${label.slice(0, -1)}״${label.slice(-1)}`;
 }
 
+type CalendarLayer = 'equipment' | 'personal' | 'schedule';
+
+interface CalendarItem {
+  kind: 'loan' | 'task' | 'event';
+  loan?: Loan;
+  task?: PersonalTask;
+  event?: CalendarEvent;
+  completed?: boolean;
+}
+
 interface CalendarDay {
   date: string;
   hebrewDay: string;
@@ -70,7 +80,7 @@ interface CalendarDay {
 
 @Component({
   selector: 'app-monthly-calendar',
-  imports: [CommonModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterLink],
   template: `
     <div class="page-header">
       <div>
@@ -88,19 +98,22 @@ interface CalendarDay {
       <button type="button" class="month-nav" (click)="changeMonth(1)" aria-label="החודש הבא">›</button>
     </div>
 
-    <nav class="calendar-tabs" aria-label="סוגי לוחות שנה">
-      <a routerLink="/calendar/equipment" routerLinkActive="active" ariaCurrentWhenActive="page">
+    <nav class="calendar-tabs" role="group" aria-label="בחירת לוחות להצגה">
+      <button type="button" class="layer-chip" [class.active]="has('equipment')"
+        [attr.aria-pressed]="has('equipment')" (click)="toggleLayer('equipment')">
         📦 השאלת ציוד
-      </a>
-      <a routerLink="/calendar/personal" routerLinkActive="active" ariaCurrentWhenActive="page">
+      </button>
+      <button type="button" class="layer-chip" [class.active]="has('personal')"
+        [attr.aria-pressed]="has('personal')" (click)="toggleLayer('personal')">
         🗓 הלוח האישי
-      </a>
-      <a routerLink="/calendar/schedule" routerLinkActive="active" ariaCurrentWhenActive="page">
+      </button>
+      <button type="button" class="layer-chip" [class.active]="has('schedule')"
+        [attr.aria-pressed]="has('schedule')" (click)="toggleLayer('schedule')">
         🏫 לוח המערכת
-      </a>
+      </button>
     </nav>
 
-    <nav *ngIf="activeView() === 'schedule' && calendarSheets().length"
+    <nav *ngIf="has('schedule') && calendarSheets().length"
       class="sheet-tabs" role="tablist" aria-label="גיליונות לוח המערכת">
       <button type="button" role="tab" [attr.aria-selected]="selectedSourceSheet() === null"
         [class.active]="selectedSourceSheet() === null" (click)="selectSourceSheet(null)">
@@ -113,7 +126,7 @@ interface CalendarDay {
       </button>
     </nav>
 
-    <section *ngIf="activeView() === 'schedule' && canImportCalendar()" class="upload-panel">
+    <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
       <label class="upload-button" [class.uploading]="uploading">
         <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
         {{ uploading ? 'מעלה ומייבאת...' : '📤 העלאת לוח שנה מאקסל' }}
@@ -124,16 +137,17 @@ interface CalendarDay {
     </section>
 
     <div *ngIf="loadError" class="calendar-error" role="alert">{{ loadError }}</div>
+    <p *ngIf="!layers().size" class="empty-state">בחרי לפחות לוח אחד להצגה</p>
     <div class="calendar-legend">
-      <span class="legend-item" *ngIf="activeView() === 'equipment'">
+      <span class="legend-item" *ngIf="has('equipment')">
         <span class="legend-dot equipment-dot"></span> ציוד מושאל
       </span>
-      <span class="legend-item" *ngIf="activeView() === 'personal'">
+      <span class="legend-item" *ngIf="has('personal')">
         <span class="legend-dot task-dot"></span> משימה פתוחה
         <span class="legend-dot completed-dot"></span> משימה שבוצעה
       </span>
-      <span class="legend-item" *ngIf="activeView() === 'schedule'">
-        הכיתוב בכל יום מציג את שם האירוע
+      <span class="legend-item" *ngIf="has('schedule')">
+        אירוע בלוח המערכת (צבע לפי קטגוריה)
       </span>
     </div>
 
@@ -153,7 +167,7 @@ interface CalendarDay {
                 <span class="gregorian-day">{{ calendarDay.gregorianDay }}<span
                   *ngIf="calendarDay.gregorianDay === 1">/{{ calendarDay.gregorianMonth }}</span></span>
               </span>
-              <span *ngIf="visibleItems(calendarDay).length && activeView() === 'schedule'"
+              <span *ngIf="visibleItems(calendarDay).length && onlySchedule()"
                 class="schedule-event-labels" aria-hidden="true">
                 <span *ngFor="let item of visibleItems(calendarDay).slice(0, 2)"
                   class="schedule-event-label"
@@ -164,28 +178,28 @@ interface CalendarDay {
                   +{{ visibleItems(calendarDay).length - 2 }}
                 </span>
               </span>
-              <span *ngIf="visibleItems(calendarDay).length && activeView() !== 'schedule'"
+              <span *ngIf="visibleItems(calendarDay).length && !onlySchedule()"
                 class="event-markers" aria-hidden="true">
-                <span *ngFor="let item of visibleItems(calendarDay).slice(0, 3)"
-                  class="event-dot" [class.task-dot]="activeView() === 'personal'"
-                  [class.completed-dot]="activeView() === 'personal' && item.completed"
-                  [style.background]="activeView() === 'equipment'
+                <span *ngFor="let item of visibleItems(calendarDay).slice(0, 4)"
+                  class="event-dot" [class.task-dot]="item.kind === 'task'"
+                  [class.completed-dot]="item.kind === 'task' && item.completed"
+                  [style.background]="item.kind === 'loan'
                     ? loanColor(item.loan!)
-                    : activeView() === 'schedule' ? schoolEventColor(item.event!) : null"></span>
-                <span *ngIf="visibleItems(calendarDay).length > 3" class="more-events">
-                  +{{ visibleItems(calendarDay).length - 3 }}
+                    : item.kind === 'event' ? schoolEventColor(item.event!) : null"></span>
+                <span *ngIf="visibleItems(calendarDay).length > 4" class="more-events">
+                  +{{ visibleItems(calendarDay).length - 4 }}
                 </span>
               </span>
               <span *ngIf="visibleItems(calendarDay).length" class="day-tooltip" role="tooltip">
                 <span *ngFor="let item of visibleItems(calendarDay)">
-                  <ng-container *ngIf="activeView() === 'equipment'">
-                    {{ item.loan?.equipment_name }} · {{ item.loan?.borrower_name }}
+                  <ng-container *ngIf="item.kind === 'loan'">
+                    📦 {{ item.loan?.equipment_name }} · {{ item.loan?.borrower_name }}
                   </ng-container>
-                  <ng-container *ngIf="activeView() === 'personal'">
-                    {{ item.task?.completed ? '✓' : '•' }} {{ item.task?.title }}
+                  <ng-container *ngIf="item.kind === 'task'">
+                    {{ item.task?.completed ? '✓' : '🗓' }} {{ item.task?.title }}
                   </ng-container>
-                  <ng-container *ngIf="activeView() === 'schedule'">
-                    {{ item.event?.category }} · {{ item.event?.title }}
+                  <ng-container *ngIf="item.kind === 'event'">
+                    🏫 {{ item.event?.category }} · {{ item.event?.title }}
                   </ng-container>
                 </span>
               </span>
@@ -196,12 +210,9 @@ interface CalendarDay {
 
     <section class="selected-day-card">
       <h2>{{ selectedDateLabel() }}</h2>
-      <p *ngIf="!selectedDayItems().length" class="empty-state">
-        {{ activeView() === 'equipment'
-          ? 'אין השאלות ביום זה'
-          : activeView() === 'personal' ? 'אין משימות בתאריך זה' : 'אין אירועים בלוח הזה ביום זה' }}
-      </p>
-      <ng-container *ngIf="activeView() === 'equipment'">
+      <p *ngIf="layers().size && !selectedDayCount()" class="empty-state">אין פריטים ביום זה בלוחות שנבחרו</p>
+      <ng-container *ngIf="has('equipment') && selectedDayLoans().length">
+        <h3 class="layer-title">📦 השאלת ציוד</h3>
         <div *ngFor="let loan of selectedDayLoans()" class="detail-row">
           <span class="detail-dot" [style.background]="loanColor(loan)"></span>
           <div class="detail-main">
@@ -211,7 +222,8 @@ interface CalendarDay {
           <span class="detail-date">{{ loan.loan_date }} → {{ loan.expected_return }}</span>
         </div>
       </ng-container>
-      <ng-container *ngIf="activeView() === 'personal'">
+      <ng-container *ngIf="has('personal') && selectedDayTasks().length">
+        <h3 class="layer-title">🗓 הלוח האישי</h3>
         <div *ngFor="let task of selectedDayTasks()" class="detail-row" [class.completed]="task.completed">
           <button type="button" class="task-check" [disabled]="updatingTaskId === task.id"
             [attr.aria-label]="task.completed ? 'סמני כלא בוצעה' : 'סמני כבוצעה'"
@@ -221,7 +233,8 @@ interface CalendarDay {
           <span class="task-title">{{ task.title }}</span>
         </div>
       </ng-container>
-      <ng-container *ngIf="activeView() === 'schedule'">
+      <ng-container *ngIf="has('schedule') && selectedDayEvents().length">
+        <h3 class="layer-title">🏫 לוח המערכת</h3>
         <div *ngFor="let event of selectedDayEvents()" class="detail-row">
           <span class="detail-dot" [style.background]="schoolEventColor(event)"></span>
           <div class="detail-main">
@@ -246,15 +259,16 @@ interface CalendarDay {
       background: var(--surface); color: var(--primary); font-size: 1.25rem; cursor: pointer;
     }
     .calendar-tabs {
-      display: flex; gap: 8px; overflow-x: auto; margin: 0 0 14px; padding: 4px;
-      border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+      display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px;
     }
-    .calendar-tabs a {
-      flex: 1 0 auto; padding: 10px 16px; border-radius: 9px; color: var(--text-muted);
-      text-align: center; text-decoration: none; font-weight: 700;
+    .layer-chip {
+      padding: 9px 18px; border-radius: 999px; border: 1.5px solid var(--border);
+      background: var(--surface); color: var(--text-muted); font: inherit; font-weight: 700; cursor: pointer;
+      transition: all var(--transition);
     }
-    .calendar-tabs a:hover { color: var(--primary); }
-    .calendar-tabs a.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-sm); }
+    .layer-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .layer-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: var(--shadow-sm); }
+    .layer-title { margin: 14px 0 6px; font-size: 0.95rem; color: var(--text-muted); }
     .sheet-tabs {
       display: flex; gap: 6px; overflow-x: auto; margin: -4px 0 14px; padding: 4px 2px 8px;
       scrollbar-width: thin;
@@ -364,7 +378,7 @@ interface CalendarDay {
 export class MonthlyCalendarComponent implements OnInit {
   readonly dayNames = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
   readonly today = this.toDateString(new Date());
-  readonly activeView = signal<'equipment' | 'personal' | 'schedule'>('equipment');
+  readonly layers = signal<Set<CalendarLayer>>(new Set<CalendarLayer>(['equipment']));
   private readonly initialHebrewDate = new HDate(new Date());
   readonly displayedYear = signal(this.initialHebrewDate.getFullYear());
   readonly displayedMonth = signal(this.initialHebrewDate.getMonth());
@@ -381,10 +395,10 @@ export class MonthlyCalendarComponent implements OnInit {
   readonly selectedDayLoans = computed(() => this.loansForDate(this.selectedDate()));
   readonly selectedDayTasks = computed(() => this.tasksForDate(this.selectedDate()));
   readonly selectedDayEvents = computed(() => this.eventsForDate(this.selectedDate()));
-  readonly selectedDayItems = computed(() =>
-    this.activeView() === 'equipment'
-      ? this.selectedDayLoans()
-      : this.activeView() === 'personal' ? this.selectedDayTasks() : this.selectedDayEvents()
+  readonly selectedDayCount = computed(() =>
+    (this.has('equipment') ? this.selectedDayLoans().length : 0) +
+    (this.has('personal') ? this.selectedDayTasks().length : 0) +
+    (this.has('schedule') ? this.selectedDayEvents().length : 0)
   );
   readonly selectedDateLabel = computed(() => this.formatDateLabel(this.selectedDate()));
   loadError = '';
@@ -406,7 +420,7 @@ export class MonthlyCalendarComponent implements OnInit {
   ngOnInit() {
     this.route.data.subscribe(data => {
       const view = data['view'];
-      this.activeView.set(view === 'personal' || view === 'schedule' ? view : 'equipment');
+      this.layers.set(new Set<CalendarLayer>([view === 'personal' || view === 'schedule' ? view : 'equipment']));
     });
     this.route.queryParamMap.subscribe(params => {
       const requestedDate = params.get('date');
@@ -497,12 +511,26 @@ export class MonthlyCalendarComponent implements OnInit {
     this.selectedSourceSheet.set(sourceSheet);
   }
 
-  visibleItems(day: CalendarDay): { loan?: Loan; task?: PersonalTask; event?: CalendarEvent; completed?: boolean }[] {
-    return this.activeView() === 'equipment'
-      ? day.loans.map(loan => ({ loan }))
-      : this.activeView() === 'personal'
-        ? day.tasks.map(task => ({ task, completed: task.completed }))
-        : day.calendarEvents.map(event => ({ event }));
+  has(layer: CalendarLayer): boolean {
+    return this.layers().has(layer);
+  }
+
+  onlySchedule(): boolean {
+    return this.layers().size === 1 && this.has('schedule');
+  }
+
+  toggleLayer(layer: CalendarLayer) {
+    const next = new Set(this.layers());
+    if (!next.delete(layer)) next.add(layer);
+    this.layers.set(next);
+  }
+
+  visibleItems(day: CalendarDay): CalendarItem[] {
+    return [
+      ...(this.has('equipment') ? day.loans.map((loan): CalendarItem => ({ kind: 'loan', loan })) : []),
+      ...(this.has('personal') ? day.tasks.map((task): CalendarItem => ({ kind: 'task', task, completed: task.completed })) : []),
+      ...(this.has('schedule') ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : [])
+    ];
   }
 
   private isHiddenFromGeneralView(loan: Loan): boolean {
@@ -564,9 +592,7 @@ export class MonthlyCalendarComponent implements OnInit {
   }
 
   dayLabel(day: CalendarDay): string {
-    const itemCount = this.activeView() === 'equipment'
-      ? day.loans.length
-      : this.activeView() === 'personal' ? day.tasks.length : day.calendarEvents.length;
+    const itemCount = this.visibleItems(day).length;
     return `${day.date}${itemCount ? `, ${itemCount} פריטים` : ''}`;
   }
 

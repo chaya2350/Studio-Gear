@@ -648,7 +648,8 @@ for (const [table, column, ddl] of [
   ['student_requirements', 'file_stored', 'TEXT'],
   ['student_requirements', 'file_name', 'TEXT'],
   ['student_requirements', 'file_mime', 'TEXT'],
-  ['tracks', 'merged_into', 'INTEGER']
+  ['tracks', 'merged_into', 'INTEGER'],
+  ['track_requirements', 'years', 'TEXT']
 ]) {
   if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
@@ -664,6 +665,19 @@ function removeStoredFiles(rows) {
 // Student tracks come from free-text Excel cells, so extra spaces must not break matching
 function normalizeTrackName(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+// years: null means every year; otherwise a comma list such as "ה" or "ה,ו"
+const REQUIREMENT_YEARS = ['ה', 'ו'];
+function normalizeYears(value) {
+  const list = Array.isArray(value) ? value : [];
+  const picked = REQUIREMENT_YEARS.filter((y) => list.includes(y));
+  return picked.length && picked.length < REQUIREMENT_YEARS.length ? picked.join(',') : null;
+}
+
+function requirementAppliesTo(requirement, student) {
+  if (!requirement.years) return true;
+  return requirement.years.split(',').includes(normalizeTrackName(student.year));
 }
 
 // A student's track may be merged into a main track, whose requirements then apply
@@ -685,7 +699,8 @@ function validRequirement(body) {
   if (!title) return { error: 'שם הדרישה הוא שדה חובה' };
   if (title.length > 200) return { error: 'שם הדרישה ארוך מדי' };
   return { title, required: body?.required === false || body?.required === 0 ? 0 : 1,
-    requires_file: body?.requires_file === true || body?.requires_file === 1 ? 1 : 0 };
+    requires_file: body?.requires_file === true || body?.requires_file === 1 ? 1 : 0,
+    years: normalizeYears(body?.years) };
 }
 
 app.get('/api/tracks', (req, res) => {
@@ -784,8 +799,8 @@ app.post('/api/tracks/:id/requirements', (req, res) => {
   const checked = validRequirement(req.body);
   if (checked.error) return res.status(400).json({ error: checked.error });
   const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(track.id).n;
-  const result = db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, sort_order) VALUES (?, ?, ?, ?, ?)')
-    .run(track.id, checked.title, checked.required, checked.requires_file, next);
+  const result = db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, years, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(track.id, checked.title, checked.required, checked.requires_file, checked.years, next);
   res.status(201).json({ id: Number(result.lastInsertRowid) });
 });
 
@@ -808,8 +823,8 @@ app.post('/api/track-requirements/bulk', (req, res) => {
         continue;
       }
       const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(id).n;
-      db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, sort_order) VALUES (?, ?, ?, ?, ?)')
-        .run(id, checked.title, checked.required, checked.requires_file, next);
+      db.prepare('INSERT INTO track_requirements (track_id, title, required, requires_file, years, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, checked.title, checked.required, checked.requires_file, checked.years, next);
       added++;
     }
   })();
@@ -819,8 +834,8 @@ app.post('/api/track-requirements/bulk', (req, res) => {
 app.put('/api/track-requirements/:id', (req, res) => {
   const checked = validRequirement(req.body);
   if (checked.error) return res.status(400).json({ error: checked.error });
-  const result = db.prepare('UPDATE track_requirements SET title = ?, required = ?, requires_file = ? WHERE id = ?')
-    .run(checked.title, checked.required, checked.requires_file, req.params.id);
+  const result = db.prepare('UPDATE track_requirements SET title = ?, required = ?, requires_file = ?, years = ? WHERE id = ?')
+    .run(checked.title, checked.required, checked.requires_file, checked.years, req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'הדרישה לא נמצאה' });
   res.json({ success: true });
 });
@@ -843,12 +858,12 @@ app.get('/api/students/:id_number/requirements', (req, res) => {
   const track = trackName ? findStudentTrack(student) : null;
   if (!track) return res.json({ track: trackName || null, defined: false, requirements: [] });
   const requirements = db.prepare(`
-    SELECT r.id, r.title, r.required, r.requires_file, sr.completed_at, sr.completed_by, sr.file_name
+    SELECT r.id, r.title, r.required, r.requires_file, r.years, sr.completed_at, sr.completed_by, sr.file_name
     FROM track_requirements r
     LEFT JOIN student_requirements sr ON sr.requirement_id = r.id AND sr.id_number = ?
     WHERE r.track_id = ?
     ORDER BY r.sort_order, r.id
-  `).all(student.id_number, track.id);
+  `).all(student.id_number, track.id).filter((r) => requirementAppliesTo(r, student));
   res.json({ track: track.name, defined: true, requirements });
 });
 
@@ -859,7 +874,9 @@ app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
   const track = findStudentTrack(student);
   const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
     .get(req.params.requirement_id, track.id);
-  if (!requirement) return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
+  if (!requirement || !requirementAppliesTo(requirement, student)) {
+    return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
+  }
   if (req.body.completed) {
     if (requirement.requires_file) return res.status(400).json({ error: 'דרישה זו מסתיימת בהעלאת קובץ' });
     db.prepare('INSERT OR REPLACE INTO student_requirements (id_number, requirement_id, completed_by) VALUES (?, ?, ?)')
@@ -878,7 +895,7 @@ function findStudentFileRequirement(idNumber, requirementId) {
   const track = student && findStudentTrack(student);
   const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
     .get(requirementId, track.id);
-  return student && requirement ? { student, requirement } : null;
+  return student && requirement && requirementAppliesTo(requirement, student) ? { student, requirement } : null;
 }
 
 app.post('/api/students/:id_number/requirements/:requirement_id/file', (req, res) => {
@@ -918,9 +935,9 @@ app.get('/api/tracks/:id/stats', (req, res) => {
   const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
   const names = new Set([track.name, ...db.prepare('SELECT name FROM tracks WHERE merged_into = ?').all(track.id).map((t) => t.name)]);
-  const students = db.prepare('SELECT id_number, name, track FROM students').all()
+  const students = db.prepare('SELECT id_number, name, track, year FROM students').all()
     .filter((s) => names.has(normalizeTrackName(s.track)));
-  const requirements = db.prepare('SELECT id, title, required, requires_file FROM track_requirements WHERE track_id = ? ORDER BY sort_order, id').all(track.id);
+  const requirements = db.prepare('SELECT id, title, required, requires_file, years FROM track_requirements WHERE track_id = ? ORDER BY sort_order, id').all(track.id);
   const done = new Set(
     db.prepare('SELECT id_number, requirement_id FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)')
       .all(track.id).map((r) => `${r.id_number}:${r.requirement_id}`)
@@ -928,17 +945,24 @@ app.get('/api/tracks/:id/stats', (req, res) => {
   res.json({
     track: track.name,
     total_students: students.length,
-    requirements: requirements.map((r) => ({
-      ...r,
-      completed_count: students.filter((s) => done.has(`${s.id_number}:${r.id}`)).length
-    })),
+    requirements: requirements.map((r) => {
+      const applicable = students.filter((s) => requirementAppliesTo(r, s));
+      return {
+        ...r,
+        applicable_count: applicable.length,
+        completed_count: applicable.filter((s) => done.has(`${s.id_number}:${r.id}`)).length
+      };
+    }),
     students: students.map((s) => {
-      const completed = requirements.filter((r) => done.has(`${s.id_number}:${r.id}`)).map((r) => r.id);
+      const applicable = requirements.filter((r) => requirementAppliesTo(r, s));
+      const completed = applicable.filter((r) => done.has(`${s.id_number}:${r.id}`)).map((r) => r.id);
       return {
         id_number: s.id_number,
         name: s.name,
+        year: normalizeTrackName(s.year),
+        applicable: applicable.map((r) => r.id),
         completed,
-        missing_required: requirements.filter((r) => r.required && !completed.includes(r.id)).length
+        missing_required: applicable.filter((r) => r.required && !completed.includes(r.id)).length
       };
     })
   });
