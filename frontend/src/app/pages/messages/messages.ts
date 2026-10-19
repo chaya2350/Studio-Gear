@@ -1,14 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { DirectMessage, MessageUser, MessagesService } from '../../services/messages.service';
+import { DirectMessage, MessageUser, MessagesService, PersonalTask } from '../../services/messages.service';
 
 type MessageView = 'inbox' | 'sent' | 'all';
 
 @Component({
   selector: 'app-messages',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="page-header">
       <div>
@@ -86,6 +87,24 @@ type MessageView = 'inbox' | 'sent' | 'all';
             </div>
             <p class="message-body">{{ message.body }}</p>
             <div class="message-actions">
+              <div class="message-task">
+                <a *ngIf="taskForMessage(message) as task" routerLink="/my-calendar"
+                  [queryParams]="{ date: task.due_date }" class="task-added">
+                  ✓ נשמרה · פתחי ביומן שלי
+                </a>
+                <button *ngIf="!taskForMessage(message)" type="button" class="task-add-button"
+                  (click)="startTask(message)">
+                  ＋ למשימות שלי
+                </button>
+                <form *ngIf="taskDraftMessageId === message.id" class="task-date-form"
+                  (ngSubmit)="addMessageTask(message)">
+                  <label [for]="'task-date-' + message.id">תאריך למשימה</label>
+                  <input [id]="'task-date-' + message.id" type="date" name="taskDueDate"
+                    [(ngModel)]="taskDueDate" required>
+                  <button type="submit" [disabled]="savingTask">הוספה</button>
+                  <button type="button" (click)="taskDraftMessageId = null">ביטול</button>
+                </form>
+              </div>
               <div class="reaction-list" *ngIf="message.reactions.length">
                 <button *ngFor="let group of reactionGroups(message)" type="button"
                   [class.mine]="group.mine" [title]="group.names"
@@ -111,6 +130,7 @@ type MessageView = 'inbox' | 'sent' | 'all';
         </article>
       </section>
     </div>
+    <div *ngIf="taskError" class="alert alert-error task-error" role="alert">{{ taskError }}</div>
   `,
   styles: [`
     .messages-layout { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr); gap: 20px; align-items: start; }
@@ -145,6 +165,14 @@ type MessageView = 'inbox' | 'sent' | 'all';
     .reply-button { border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; font-size: 0.8rem; white-space: nowrap; }
     .message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; font-size: 0.85rem; margin: 7px 0; }
     .message-actions, .reaction-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .message-task { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .task-add-button, .task-date-form button { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--primary); padding: 4px 9px; cursor: pointer; font: inherit; font-size: 0.72rem; }
+    .task-added { color: var(--success); font-size: 0.72rem; font-weight: 700; text-decoration: none; }
+    .task-date-form { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+    .task-date-form label { margin: 0; font-size: 0.7rem; }
+    .task-date-form input { max-width: 145px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; font: inherit; font-size: 0.75rem; }
+    .task-date-form button:disabled { opacity: 0.5; cursor: wait; }
+    .task-error { margin-top: 12px; }
     .reaction-list button { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); cursor: pointer; padding: 3px 8px; font: inherit; }
     .reaction-list button.mine { border-color: var(--primary); background: var(--primary-light); }
     .emoji-control { position: relative; margin-right: auto; }
@@ -173,6 +201,11 @@ export class MessagesComponent implements OnInit {
   messagesError = '';
   sendError = '';
   sendSuccess = '';
+  tasks: PersonalTask[] = [];
+  taskDraftMessageId: number | null = null;
+  taskDueDate = this.localToday();
+  savingTask = false;
+  taskError = '';
 
   constructor(
     public auth: AuthService,
@@ -183,6 +216,54 @@ export class MessagesComponent implements OnInit {
   ngOnInit() {
     this.loadUsers();
     this.loadMessages();
+    this.loadTasks();
+  }
+
+  private localToday(): string {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }
+
+  loadTasks() {
+    this.messagesApi.getTasks().subscribe({
+      next: tasks => {
+        this.tasks = tasks;
+        this.changeDetector.markForCheck();
+      },
+      error: error => {
+        this.taskError = error.error?.error || 'לא ניתן לטעון את המשימות האישיות';
+        this.changeDetector.markForCheck();
+      }
+    });
+  }
+
+  taskForMessage(message: DirectMessage): PersonalTask | undefined {
+    return this.tasks.find(task => task.source_message_id === message.id);
+  }
+
+  startTask(message: DirectMessage) {
+    this.taskDraftMessageId = message.id;
+    this.taskDueDate = this.localToday();
+    this.taskError = '';
+  }
+
+  addMessageTask(message: DirectMessage) {
+    if (!this.taskDueDate || this.savingTask) return;
+    this.savingTask = true;
+    this.taskError = '';
+    this.messagesApi.addMessageToTasks(message.id, this.taskDueDate).subscribe({
+      next: task => {
+        this.tasks = [...this.tasks.filter(existing => existing.id !== task.id), task];
+        this.taskDraftMessageId = null;
+        this.savingTask = false;
+        this.changeDetector.markForCheck();
+      },
+      error: error => {
+        this.savingTask = false;
+        this.taskError = error.error?.error || 'לא ניתן להוסיף את ההודעה למשימות';
+        this.changeDetector.markForCheck();
+      }
+    });
   }
 
   loadUsers() {

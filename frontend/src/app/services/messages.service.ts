@@ -27,6 +27,17 @@ export interface DirectMessage {
   reactions: MessageReaction[];
 }
 
+export interface PersonalTask {
+  id: number;
+  user_id: number;
+  source_message_id: number;
+  title: string;
+  due_date: string;
+  completed: boolean;
+  completed_at: string | null;
+  created_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MessagesService {
   readonly unreadCount = signal(0);
@@ -52,5 +63,17 @@ export class MessagesService {
 
   toggleReaction(messageId: number, emoji: string): Observable<{ added: boolean }> {
     return this.http.post<{ added: boolean }>(`/api/messages/${messageId}/reactions`, { emoji });
+  }
+
+  getTasks(): Observable<PersonalTask[]> {
+    return this.http.get<PersonalTask[]>('/api/tasks');
+  }
+
+  addMessageToTasks(messageId: number, due_date: string): Observable<PersonalTask> {
+    return this.http.post<PersonalTask>(`/api/messages/${messageId}/tasks`, { due_date });
+  }
+
+  setTaskCompleted(taskId: number, completed: boolean): Observable<{ success: boolean }> {
+    return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/completion`, { completed });
   }
 }

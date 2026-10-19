@@ -56,6 +56,14 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/calendar/calendar').then((m) => m.CalendarComponent),
       },
       {
+        path: 'my-calendar',
+        loadComponent: () => import('./pages/my-calendar/my-calendar').then((m) => m.MyCalendarComponent),
+      },
+      {
+        path: 'messages',
+        loadComponent: () => import('./pages/messages/messages').then((m) => m.MessagesComponent),
+      },
+      {
         path: 'admin',
         loadComponent: () => import('./pages/admin/admin').then((m) => m.AdminComponent),
       },

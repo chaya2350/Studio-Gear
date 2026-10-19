@@ -96,7 +96,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -139,6 +139,179 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.use('/api', authenticate, authorizeApi);
 app.use('/uploads', authenticate, express.static(uploadsDir));
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS messages_sender_id_idx ON messages(sender_id, created_at);
+  CREATE INDEX IF NOT EXISTS messages_recipient_id_idx ON messages(recipient_id, created_at);
+  CREATE TABLE IF NOT EXISTS message_reactions (
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (message_id, user_id, emoji)
+  );
+  CREATE TABLE IF NOT EXISTS personal_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, source_message_id)
+  );
+  CREATE INDEX IF NOT EXISTS personal_tasks_user_due_idx ON personal_tasks(user_id, due_date);
+`);
+
+const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
+
+app.get('/api/messages/users', (req, res) => {
+  res.json(db.prepare(`
+    SELECT id, name, role FROM users
+    WHERE active = 1 AND id != ?
+    ORDER BY name
+  `).all(req.user.id));
+});
+
+app.get('/api/messages/unread-count', (req, res) => {
+  const { count } = db.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE recipient_id = ? AND read_at IS NULL
+  `).get(req.user.id);
+  res.json({ count });
+});
+
+app.get('/api/messages', (req, res) => {
+  const now = new Date().toISOString();
+  db.prepare('UPDATE messages SET read_at = ? WHERE recipient_id = ? AND read_at IS NULL')
+    .run(now, req.user.id);
+  const messages = db.prepare(`
+    SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
+      recipient.name AS recipient_name, m.body, m.created_at, m.read_at
+    FROM messages m
+    JOIN users sender ON sender.id = m.sender_id
+    JOIN users recipient ON recipient.id = m.recipient_id
+    WHERE m.sender_id = ? OR m.recipient_id = ?
+    ORDER BY m.created_at DESC, m.id DESC
+    LIMIT 300
+  `).all(req.user.id, req.user.id);
+  const getReactions = db.prepare(`
+    SELECT r.message_id, r.user_id, r.emoji, u.name AS user_name
+    FROM message_reactions r JOIN users u ON u.id = r.user_id
+    WHERE r.message_id = ?
+    ORDER BY r.created_at
+  `);
+  res.json(messages.map(message => ({ ...message, reactions: getReactions.all(message.id) })));
+});
+
+app.post('/api/messages', (req, res) => {
+  const recipientId = Number(req.body?.recipient_id);
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+  if (!Number.isInteger(recipientId) || recipientId === req.user.id || !body || body.length > 4000) {
+    return res.status(400).json({ error: 'יש לבחור משתמשת ולכתוב הודעה עד 4000 תווים' });
+  }
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(recipientId)) {
+    return res.status(400).json({ error: 'המשתמשת שנבחרה אינה פעילה במערכת' });
+  }
+  const result = db.prepare(`
+    INSERT INTO messages (sender_id, recipient_id, body, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(req.user.id, recipientId, body, new Date().toISOString());
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.post('/api/messages/:id/reactions', (req, res) => {
+  const messageId = Number(req.params.id);
+  const emoji = req.body?.emoji;
+  const message = db.prepare(`
+    SELECT id FROM messages WHERE id = ? AND (sender_id = ? OR recipient_id = ?)
+  `).get(messageId, req.user.id, req.user.id);
+  if (!message) return res.status(404).json({ error: 'ההודעה לא נמצאה' });
+  if (!allowedMessageReactions.has(emoji)) {
+    return res.status(400).json({ error: 'תגובת האימוג׳י אינה נתמכת' });
+  }
+  const existing = db.prepare(`
+    SELECT 1 FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?
+  `).get(messageId, req.user.id, emoji);
+  if (existing) {
+    db.prepare('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?')
+      .run(messageId, req.user.id, emoji);
+    return res.json({ added: false });
+  }
+  db.prepare(`
+    INSERT INTO message_reactions (message_id, user_id, emoji, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(messageId, req.user.id, emoji, new Date().toISOString());
+  res.json({ added: true });
+});
+
+app.get('/api/tasks', (req, res) => {
+  const { from, to } = req.query;
+  const validDate = value => typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !Number.isNaN(Date.parse(`${value}T12:00:00Z`)) &&
+    new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
+  if ((from !== undefined && !validDate(from)) || (to !== undefined && !validDate(to))) {
+    return res.status(400).json({ error: 'טווח התאריכים אינו תקין' });
+  }
+  const fromDate = from || null;
+  const toDate = to || null;
+  const tasks = db.prepare(`
+    SELECT id, user_id, source_message_id, title, due_date,
+      completed_at IS NOT NULL AS completed, completed_at, created_at
+    FROM personal_tasks
+    WHERE user_id = ? AND (? IS NULL OR due_date >= ?) AND (? IS NULL OR due_date <= ?)
+    ORDER BY due_date, completed_at IS NOT NULL, id DESC
+  `).all(req.user.id, fromDate, fromDate, toDate, toDate);
+  res.json(tasks.map(task => ({ ...task, completed: Boolean(task.completed) })));
+});
+
+app.post('/api/messages/:id/tasks', (req, res) => {
+  const messageId = Number(req.params.id);
+  const dueDate = req.body?.due_date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
+    Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
+    new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
+    return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
+  }
+  const message = db.prepare(`
+    SELECT id, body FROM messages
+    WHERE id = ? AND (sender_id = ? OR recipient_id = ?)
+  `).get(messageId, req.user.id, req.user.id);
+  if (!message) return res.status(404).json({ error: 'ההודעה לא נמצאה' });
+  const title = message.body.trim() || 'משימה מהודעה';
+  const result = db.prepare(`
+    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, source_message_id) DO UPDATE SET due_date = excluded.due_date
+  `).run(req.user.id, messageId, title, dueDate, new Date().toISOString());
+  const task = db.prepare(`
+    SELECT id, user_id, source_message_id, title, due_date,
+      completed_at IS NOT NULL AS completed, completed_at, created_at
+    FROM personal_tasks WHERE user_id = ? AND source_message_id = ?
+  `).get(req.user.id, messageId);
+  res.status(result.changes ? 201 : 200).json({ ...task, completed: Boolean(task.completed) });
+});
+
+app.patch('/api/tasks/:id/completion', (req, res) => {
+  if (typeof req.body?.completed !== 'boolean') {
+    return res.status(400).json({ error: 'מצב ביצוע המשימה אינו תקין' });
+  }
+  const task = db.prepare('SELECT id FROM personal_tasks WHERE id = ? AND user_id = ?')
+    .get(Number(req.params.id), req.user.id);
+  if (!task) return res.status(404).json({ error: 'המשימה לא נמצאה' });
+  db.prepare('UPDATE personal_tasks SET completed_at = ? WHERE id = ? AND user_id = ?')
+    .run(req.body.completed ? new Date().toISOString() : null, task.id, req.user.id);
+  res.json({ success: true });
+});
 
 app.get('/api/auth/me', (req, res) => {
   res.json(req.user);

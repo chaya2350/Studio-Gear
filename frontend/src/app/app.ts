@@ -21,6 +21,8 @@ import { filter } from 'rxjs/operators';
         >
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
+        <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
+        <a routerLink="/my-calendar" routerLinkActive="active">🗓 היומן שלי</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
       </div>
       <div class="account-actions" *ngIf="auth.user() as user">

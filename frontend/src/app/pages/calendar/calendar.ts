@@ -1,8 +1,9 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { Loan } from '../../models';
+import { MessagesService, PersonalTask } from '../../services/messages.service';
 import { HDate, months } from '@hebcal/core';
 
 const HE_MONTHS = [
@@ -26,6 +27,7 @@ interface CalCell {
   inMonth: boolean;
   isToday: boolean;
   loans: Loan[];
+  tasks: PersonalTask[];
 }
 
 @Component({
@@ -38,6 +40,19 @@ interface CalCell {
         <p class="subtitle">תצוגת השאלות לפי חודש עברי</p>
       </div>
     </div>
+
+    <section class="personal-tasks" aria-labelledby="today-tasks-title">
+      <h2 id="today-tasks-title">✅ המשימות שלי להיום</h2>
+      <div class="cal-detail-empty" *ngIf="!tasksForDate(today).length">אין משימות להיום</div>
+      <div *ngFor="let task of tasksForDate(today)" class="personal-task-row" [class.completed]="task.completed">
+        <button type="button" class="task-check" [attr.aria-label]="task.completed ? 'סמני כלא בוצעה' : 'סמני כבוצעה'"
+          [attr.aria-pressed]="task.completed" (click)="toggleTask(task)">
+          {{ task.completed ? '✓' : '' }}
+        </button>
+        <span>{{ task.title }}</span>
+      </div>
+      <div *ngIf="tasksError" class="task-error" role="alert">{{ tasksError }}</div>
+    </section>
 
     <div class="cal-card">
       <div class="cal-header">
@@ -55,6 +70,7 @@ interface CalCell {
           [class.other-month]="!cell.inMonth"
           [class.today]="cell.isToday"
           [class.has-loans]="cell.loans.length > 0"
+          [class.has-tasks]="cell.tasks.length > 0"
           [class.selected]="selectedDay() === cell.dateStr"
           [class.rosh-hodesh]="cell.inMonth && cell.heDay === 1"
           (click)="cell.inMonth && selectDay(cell)">
@@ -72,6 +88,7 @@ interface CalCell {
               </span>
             </span>
             <span *ngIf="cell.loans.length > 4" class="cal-dot-more">+{{ cell.loans.length - 4 }}</span>
+            <span *ngIf="cell.tasks.length" class="task-count">{{ cell.tasks.length }} משימות</span>
           </div>
         </div>
       </div>
@@ -79,7 +96,15 @@ interface CalCell {
 
     <div class="cal-detail" *ngIf="selectedDay()">
       <div class="cal-detail-title">{{ selectedDayLabel() }}</div>
-      <div class="cal-detail-empty" *ngIf="selectedDayLoans().length === 0">אין השאלות ביום זה</div>
+      <div class="cal-detail-empty" *ngIf="selectedDayLoans().length === 0 && selectedDayTasks().length === 0">אין השאלות או משימות ביום זה</div>
+      <div *ngFor="let task of selectedDayTasks()" class="personal-task-row" [class.completed]="task.completed">
+        <button type="button" class="task-check" [attr.aria-label]="task.completed ? 'סמני כלא בוצעה' : 'סמני כבוצעה'"
+          [attr.aria-pressed]="task.completed" (click)="toggleTask(task)">
+          {{ task.completed ? '✓' : '' }}
+        </button>
+        <span>{{ task.title }}</span>
+        <span class="task-source">משימה מהודעה</span>
+      </div>
       <div *ngFor="let l of selectedDayLoans()" class="cal-loan-row">
         <span class="cal-loan-dot" [style.background]="loanColor(l)"></span>
         <div class="cal-loan-info">
@@ -109,6 +134,27 @@ interface CalCell {
       border: 1.5px solid var(--border); box-shadow: var(--shadow-sm);
       padding: 24px; margin-bottom: 20px;
     }
+    .personal-tasks {
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow-sm); padding: 16px 20px; margin-bottom: 20px;
+    }
+    .personal-tasks h2 { margin: 0 0 10px; font-size: 1rem; }
+    .personal-task-row {
+      display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 7px 10px;
+      border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
+    }
+    .personal-task-row > span:first-of-type { overflow-wrap: anywhere; }
+    .personal-task-row.completed > span:first-of-type { color: var(--text-muted); text-decoration: line-through; }
+    .task-check {
+      display: inline-flex; flex: 0 0 23px; width: 23px; height: 23px; align-items: center; justify-content: center;
+      border: 1.5px solid var(--primary); border-radius: 6px; background: var(--surface); color: var(--primary);
+      cursor: pointer; font-weight: 800;
+    }
+    .personal-task-row.completed .task-check { background: var(--primary); color: white; }
+    .task-source { margin-right: auto; color: var(--text-muted); font-size: 0.75rem; }
+    .task-count { color: var(--primary); font-size: 0.65rem; font-weight: 700; white-space: nowrap; }
+    .cal-cell.has-tasks { border-bottom-color: var(--primary); }
+    .task-error { color: var(--danger); margin-top: 8px; font-size: 0.85rem; }
     .cal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .cal-nav {
       width: 36px; height: 36px; border: 1.5px solid var(--border); border-radius: 8px;
@@ -189,8 +235,10 @@ interface CalCell {
   `]
 })
 export class CalendarComponent implements OnInit {
-  readonly today = new Date().toISOString().split('T')[0];
+  readonly today = this.toDateStr(new Date());
   allLoans = signal<Loan[]>([]);
+  personalTasks = signal<PersonalTask[]>([]);
+  tasksError = '';
   selectedDay = signal<string | null>(null);
   readonly dows = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'];
 
@@ -199,12 +247,57 @@ export class CalendarComponent implements OnInit {
   heMonth = signal(this._hdate.getMonth());
   heYear = signal(this._hdate.getFullYear());
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private messages: MessagesService,
+    private route: ActivatedRoute
+  ) {}
 
   ngOnInit() {
+    const requestedDate = this.route.snapshot.queryParamMap.get('date');
+    if (requestedDate && this.isValidDate(requestedDate)) {
+      const date = new Date(`${requestedDate}T12:00:00`);
+      const hebrewDate = new HDate(date);
+      this.selectedDay.set(requestedDate);
+      this.heMonth.set(hebrewDate.getMonth());
+      this.heYear.set(hebrewDate.getFullYear());
+    }
     this.api.getLoans().subscribe(d => {
       this.allLoans.set(d);
-      this.selectedDay.set(this.today);
+      if (!this.selectedDay()) this.selectedDay.set(this.today);
+    });
+    this.loadTasks();
+  }
+
+  private isValidDate(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T12:00:00`);
+    return !Number.isNaN(date.getTime()) && this.toDateStr(date) === value;
+  }
+
+  loadTasks() {
+    this.tasksError = '';
+    this.messages.getTasks().subscribe({
+      next: tasks => this.personalTasks.set(tasks),
+      error: error => this.tasksError = error.error?.error || 'לא ניתן לטעון את המשימות האישיות'
+    });
+  }
+
+  tasksForDate(date: string): PersonalTask[] {
+    return this.personalTasks().filter(task => task.due_date === date);
+  }
+
+  selectedDayTasks(): PersonalTask[] {
+    const date = this.selectedDay();
+    return date ? this.tasksForDate(date) : [];
+  }
+
+  toggleTask(task: PersonalTask) {
+    this.messages.setTaskCompleted(task.id, !task.completed).subscribe({
+      next: () => this.personalTasks.update(tasks => tasks.map(item =>
+        item.id === task.id ? { ...item, completed: !task.completed } : item
+      )),
+      error: error => this.tasksError = error.error?.error || 'לא ניתן לעדכן את מצב המשימה'
     });
   }
 
@@ -266,7 +359,7 @@ export class CalendarComponent implements OnInit {
         heDay: pad.getDate(), heDayStr: GEMATRIA[pad.getDate()],
         gregDay: greg.getDate(), gregMonth: greg.getMonth(), gregYear: greg.getFullYear(),
         dateStr, inMonth: false, isToday: dateStr === this.today,
-        loans: []
+        loans: [], tasks: []
       });
     }
 
@@ -279,7 +372,8 @@ export class CalendarComponent implements OnInit {
         heDay: d, heDayStr: GEMATRIA[d],
         gregDay: greg.getDate(), gregMonth: greg.getMonth(), gregYear: greg.getFullYear(),
         dateStr, inMonth: true, isToday: dateStr === this.today,
-        loans: this.allLoans().filter(l => !l.actual_return && l.loan_date <= dateStr && l.expected_return >= dateStr && !this.isHiddenFromGeneralView(l) && l.category !== 'מחשב נייד')
+        loans: this.allLoans().filter(l => !l.actual_return && l.loan_date <= dateStr && l.expected_return >= dateStr && !this.isHiddenFromGeneralView(l) && l.category !== 'מחשב נייד'),
+        tasks: this.tasksForDate(dateStr)
       });
     }
 
@@ -293,7 +387,7 @@ export class CalendarComponent implements OnInit {
         heDay: hd.getDate(), heDayStr: GEMATRIA[hd.getDate()],
         gregDay: greg.getDate(), gregMonth: greg.getMonth(), gregYear: greg.getFullYear(),
         dateStr, inMonth: false, isToday: dateStr === this.today,
-        loans: []
+        loans: [], tasks: []
       });
     }
     return cells;
