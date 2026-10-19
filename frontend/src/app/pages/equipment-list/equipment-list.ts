@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -293,7 +293,8 @@ type View = 'categories' | 'subcategories' | 'items';
     @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   `]
 })
-export class EquipmentListComponent implements OnInit {
+export class EquipmentListComponent implements OnInit, OnDestroy {
+  private refreshTimer?: ReturnType<typeof setInterval>;
   all = signal<Equipment[]>([]);
   filtered = signal<Equipment[]>([]);
   categories = signal<Category[]>([]);
@@ -312,6 +313,26 @@ export class EquipmentListComponent implements OnInit {
     this.api.getCategories().subscribe(cats => this.categories.set(cats));
     this.route.queryParams.subscribe(p => {
       if (p['status']) this.goItems(p['status'] === 'available' ? '__available__' : '__loaned__');
+    });
+    this.refreshTimer = setInterval(() => this.refreshInBackground(), 30000);
+  }
+
+  ngOnDestroy() {
+    clearInterval(this.refreshTimer);
+  }
+
+  // Updates item data in place so the current view, filters and search are kept
+  private refreshInBackground() {
+    if (document.hidden) return;
+    this.api.getEquipment().subscribe({
+      next: data => {
+        const fresh = new Map(data.map(item => [item.id, item]));
+        const update = (items: Equipment[]) => items.map(item => fresh.get(item.id) ?? item);
+        this.all.set(data);
+        this.filtered.set(update(this.filtered()));
+        if (this._baseBeforeSearch) this._baseBeforeSearch = update(this._baseBeforeSearch);
+      },
+      error: () => {}
     });
   }
 

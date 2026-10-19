@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal, ElementRef, ViewChild } from '@angular/core';
 import { RouterLink, ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -183,7 +183,8 @@ import { Loan } from '../../models';
     .order-highlight-row td { background: #eef2ff !important; box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2); }
   `]
 })
-export class LoansComponent implements OnInit {
+export class LoansComponent implements OnInit, OnDestroy {
+  private refreshTimer?: ReturnType<typeof setInterval>;
   all = signal<Loan[]>([]);
   displayed = signal<Loan[]>([]);
   filter = signal<'active' | 'overdue' | 'all'>('active');
@@ -209,6 +210,18 @@ export class LoansComponent implements OnInit {
       if (p['filter'] === 'overdue') this.setFilter('overdue');
       this.applyFilter();
     });
+    this.refreshTimer = setInterval(() => this.refreshInBackground(), 30000);
+  }
+
+  ngOnDestroy() {
+    clearInterval(this.refreshTimer);
+  }
+
+  private refreshInBackground() {
+    if (document.hidden) return;
+    this.load();
+    this.api.getOverdueLoans().subscribe({ next: d => this.overdueCount.set(d.length), error: () => {} });
+    this.api.getLaptopOverdue().subscribe({ next: d => this.laptopOverdue.set(d), error: () => {} });
   }
 
   private isHiddenFromGeneralView(l: Loan) {
