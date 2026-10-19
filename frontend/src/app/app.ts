@@ -22,7 +22,7 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
-        <a routerLink="/my-calendar" routerLinkActive="active">🗓 היומן שלי</a>
+        <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
       </div>
       <div class="account-actions" *ngIf="auth.user() as user">
@@ -61,7 +61,7 @@ import { filter } from 'rxjs/operators';
         >📦 ציוד</a
       >
       <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-      <a routerLink="/calendar" routerLinkActive="active">📅 לוח שנה</a>
+      <a routerLink="/calendar/equipment" routerLinkActive="active">📅 לוח שנה</a>
       <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
       <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
       <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
