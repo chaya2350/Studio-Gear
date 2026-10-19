@@ -81,6 +81,7 @@ export const routes: Routes = [
         path: 'admin',
         loadComponent: () => import('./pages/admin/admin').then((m) => m.AdminComponent),
       },
+      { path: 'tracks', redirectTo: 'admin' },
       {
         path: 'checkout',
         loadComponent: () => import('./pages/checkout/checkout').then((m) => m.CheckoutComponent),

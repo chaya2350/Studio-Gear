@@ -97,7 +97,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/requirements\/\d+)?)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -605,6 +605,201 @@ app.get('/api/students/:id_number/details', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
   res.json(student);
+});
+
+// ── Tracks and requirements ────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS track_requirements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    required INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS student_requirements (
+    id_number TEXT NOT NULL,
+    requirement_id INTEGER NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_by TEXT,
+    PRIMARY KEY (id_number, requirement_id)
+  );
+`);
+
+// Student tracks come from free-text Excel cells, so extra spaces must not break matching
+function normalizeTrackName(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function validTrackName(value) {
+  const name = normalizeTrackName(value);
+  if (!name) return { error: 'שם המסלול הוא שדה חובה' };
+  if (name.length > 100) return { error: 'שם המסלול ארוך מדי' };
+  return { name };
+}
+
+function validRequirement(body) {
+  const title = String(body?.title || '').replace(/\s+/g, ' ').trim();
+  if (!title) return { error: 'שם הדרישה הוא שדה חובה' };
+  if (title.length > 200) return { error: 'שם הדרישה ארוך מדי' };
+  return { title, required: body?.required === false || body?.required === 0 ? 0 : 1 };
+}
+
+app.get('/api/tracks', (req, res) => {
+  const tracks = db.prepare('SELECT * FROM tracks ORDER BY name').all();
+  const requirements = db.prepare('SELECT * FROM track_requirements ORDER BY sort_order, id').all();
+  const counts = new Map();
+  const rows = db.prepare("SELECT track, COUNT(*) AS n FROM students WHERE track IS NOT NULL GROUP BY track").all();
+  for (const row of rows) {
+    const name = normalizeTrackName(row.track);
+    if (name) counts.set(name, (counts.get(name) || 0) + row.n);
+  }
+  const defined = new Set(tracks.map((t) => t.name));
+  res.json({
+    tracks: tracks.map((t) => ({
+      ...t,
+      student_count: counts.get(t.name) || 0,
+      requirements: requirements.filter((r) => r.track_id === t.id),
+    })),
+    undefined_tracks: [...counts]
+      .filter(([name]) => !defined.has(name))
+      .map(([name, student_count]) => ({ name, student_count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'he')),
+  });
+});
+
+app.post('/api/tracks', (req, res) => {
+  const checked = validTrackName(req.body?.name);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  if (db.prepare('SELECT 1 FROM tracks WHERE name = ?').get(checked.name)) {
+    return res.status(409).json({ error: 'מסלול בשם הזה כבר קיים' });
+  }
+  const result = db.prepare('INSERT INTO tracks (name) VALUES (?)').run(checked.name);
+  res.status(201).json({ id: Number(result.lastInsertRowid), name: checked.name });
+});
+
+app.put('/api/tracks/:id', (req, res) => {
+  const checked = validTrackName(req.body?.name);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
+  if (db.prepare('SELECT 1 FROM tracks WHERE name = ? AND id != ?').get(checked.name, track.id)) {
+    return res.status(409).json({ error: 'מסלול בשם הזה כבר קיים' });
+  }
+  db.transaction(() => {
+    db.prepare('UPDATE tracks SET name = ? WHERE id = ?').run(checked.name, track.id);
+    // Keep students attached to the track after a rename
+    const updateStudents = db.prepare('UPDATE students SET track = ? WHERE track = ?');
+    for (const { track: raw } of db.prepare('SELECT DISTINCT track FROM students WHERE track IS NOT NULL').all()) {
+      if (normalizeTrackName(raw) === track.name) updateStudents.run(checked.name, raw);
+    }
+  })();
+  res.json({ success: true });
+});
+
+app.delete('/api/tracks/:id', (req, res) => {
+  const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)').run(track.id);
+    db.prepare('DELETE FROM track_requirements WHERE track_id = ?').run(track.id);
+    db.prepare('DELETE FROM tracks WHERE id = ?').run(track.id);
+  })();
+  res.json({ success: true });
+});
+
+app.post('/api/tracks/:id/requirements', (req, res) => {
+  const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+  if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
+  const checked = validRequirement(req.body);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(track.id).n;
+  const result = db.prepare('INSERT INTO track_requirements (track_id, title, required, sort_order) VALUES (?, ?, ?, ?)')
+    .run(track.id, checked.title, checked.required, next);
+  res.status(201).json({ id: Number(result.lastInsertRowid) });
+});
+
+app.post('/api/track-requirements/bulk', (req, res) => {
+  const checked = validRequirement(req.body);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  const ids = Array.isArray(req.body?.track_ids) ? [...new Set(req.body.track_ids.map(Number))] : [];
+  if (!ids.length || ids.length > 200 || ids.some((id) => !Number.isInteger(id))) {
+    return res.status(400).json({ error: 'יש לבחור לפחות מסלול אחד' });
+  }
+  const tracks = ids.map((id) => db.prepare('SELECT id FROM tracks WHERE id = ?').get(id));
+  if (tracks.some((t) => !t)) return res.status(404).json({ error: 'אחד המסלולים לא נמצא' });
+
+  let added = 0;
+  let skipped = 0;
+  db.transaction(() => {
+    for (const { id } of tracks) {
+      if (db.prepare('SELECT 1 FROM track_requirements WHERE track_id = ? AND title = ?').get(id, checked.title)) {
+        skipped++;
+        continue;
+      }
+      const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM track_requirements WHERE track_id = ?').get(id).n;
+      db.prepare('INSERT INTO track_requirements (track_id, title, required, sort_order) VALUES (?, ?, ?, ?)')
+        .run(id, checked.title, checked.required, next);
+      added++;
+    }
+  })();
+  res.status(201).json({ added, skipped });
+});
+
+app.put('/api/track-requirements/:id', (req, res) => {
+  const checked = validRequirement(req.body);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  const result = db.prepare('UPDATE track_requirements SET title = ?, required = ? WHERE id = ?')
+    .run(checked.title, checked.required, req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'הדרישה לא נמצאה' });
+  res.json({ success: true });
+});
+
+app.delete('/api/track-requirements/:id', (req, res) => {
+  const found = db.prepare('SELECT id FROM track_requirements WHERE id = ?').get(req.params.id);
+  if (!found) return res.status(404).json({ error: 'הדרישה לא נמצאה' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM student_requirements WHERE requirement_id = ?').run(found.id);
+    db.prepare('DELETE FROM track_requirements WHERE id = ?').run(found.id);
+  })();
+  res.json({ success: true });
+});
+
+app.get('/api/students/:id_number/requirements', (req, res) => {
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'לא נמצא' });
+  const trackName = normalizeTrackName(student.track);
+  const track = trackName ? db.prepare('SELECT * FROM tracks WHERE name = ?').get(trackName) : null;
+  if (!track) return res.json({ track: trackName || null, defined: false, requirements: [] });
+  const requirements = db.prepare(`
+    SELECT r.id, r.title, r.required, sr.completed_at, sr.completed_by
+    FROM track_requirements r
+    LEFT JOIN student_requirements sr ON sr.requirement_id = r.id AND sr.id_number = ?
+    WHERE r.track_id = ?
+    ORDER BY r.sort_order, r.id
+  `).all(student.id_number, track.id);
+  res.json({ track: track.name, defined: true, requirements });
+});
+
+app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
+  if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'ערך לא תקין' });
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+  const track = db.prepare('SELECT * FROM tracks WHERE name = ?').get(normalizeTrackName(student.track));
+  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
+    .get(req.params.requirement_id, track.id);
+  if (!requirement) return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
+  if (req.body.completed) {
+    db.prepare('INSERT OR REPLACE INTO student_requirements (id_number, requirement_id, completed_by) VALUES (?, ?, ?)')
+      .run(student.id_number, requirement.id, req.user.name);
+  } else {
+    db.prepare('DELETE FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
+      .run(student.id_number, requirement.id);
+  }
+  res.json({ success: true });
 });
 
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {

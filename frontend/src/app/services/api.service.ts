@@ -17,6 +17,39 @@ export interface CalendarImportResult {
   warnings: string[];
 }
 
+export interface TrackRequirement {
+  id: number;
+  track_id: number;
+  title: string;
+  required: number;
+}
+
+export interface Track {
+  id: number;
+  name: string;
+  student_count: number;
+  requirements: TrackRequirement[];
+}
+
+export interface TracksOverview {
+  tracks: Track[];
+  undefined_tracks: { name: string; student_count: number }[];
+}
+
+export interface StudentRequirement {
+  id: number;
+  title: string;
+  required: number;
+  completed_at: string | null;
+  completed_by: string | null;
+}
+
+export interface StudentRequirements {
+  track: string | null;
+  defined: boolean;
+  requirements: StudentRequirement[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private base = '/api';
@@ -69,4 +102,25 @@ export class ApiService {
     return this.http.put<{ success: boolean }>(`${this.base}/approval-types/${id}`, data);
   }
   deleteApprovalType(id: number) { return this.http.delete(`${this.base}/approval-types/${id}`); }
+
+  getTracks() { return this.http.get<TracksOverview>(`${this.base}/tracks`); }
+  createTrack(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/tracks`, { name }); }
+  renameTrack(id: number, name: string) { return this.http.put(`${this.base}/tracks/${id}`, { name }); }
+  deleteTrack(id: number) { return this.http.delete(`${this.base}/tracks/${id}`); }
+  createTrackRequirement(trackId: number, data: { title: string; required: boolean }) {
+    return this.http.post<{ id: number }>(`${this.base}/tracks/${trackId}/requirements`, data);
+  }
+  updateTrackRequirement(id: number, data: { title: string; required: boolean }) {
+    return this.http.put(`${this.base}/track-requirements/${id}`, data);
+  }
+  deleteTrackRequirement(id: number) { return this.http.delete(`${this.base}/track-requirements/${id}`); }
+  createRequirementForTracks(data: { title: string; required: boolean; track_ids: number[] }) {
+    return this.http.post<{ added: number; skipped: number }>(`${this.base}/track-requirements/bulk`, data);
+  }
+  getStudentRequirements(id_number: string) {
+    return this.http.get<StudentRequirements>(`${this.base}/students/${encodeURIComponent(id_number)}/requirements`);
+  }
+  setStudentRequirement(id_number: string, requirementId: number, completed: boolean) {
+    return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}`, { completed });
+  }
 }

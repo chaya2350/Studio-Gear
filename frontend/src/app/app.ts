@@ -19,6 +19,7 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
           >🏠 בית</a
         >
+        <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">🪪 תלמידות</a>
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
@@ -63,7 +64,6 @@ import { filter } from 'rxjs/operators';
       <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
       <a routerLink="/calendar/equipment" routerLinkActive="active">📅 לוח שנה</a>
       <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
-      <a routerLink="/students" routerLinkActive="active">🪪 תלמידות</a>
       <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
     </nav>
 
@@ -208,7 +208,7 @@ export class App implements OnInit {
   }
 
   isEquipmentSection(): boolean {
-    return ['/equipment', '/scan', '/loans', '/calendar', '/students', '/checkout'].some(
+    return ['/equipment', '/scan', '/loans', '/calendar', '/checkout'].some(
       (p) =>
         this.currentPath === p ||
         this.currentPath.startsWith(p + '/') ||

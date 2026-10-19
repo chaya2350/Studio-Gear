@@ -12,7 +12,7 @@ import { Student } from '../../models';
     <div class="search-page">
       <div class="search-hero">
         <div class="hero-icon">🪪</div>
-        <h1>חיפוש הזמנות לפי  שם / ת.ז.</h1>
+        <h1>חיפוש תלמידות לפי  שם / ת.ז.</h1>
         <p class="subtitle">הקלד שם או ת.ז. לחיפוש תלמידה</p>
       </div>
 

@@ -4,6 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
 import { AuthService, UserRole } from '../../services/auth.service';
+import { TracksComponent } from '../tracks/tracks';
+
+type AdminSection = 'tracks' | 'students' | 'approvals' | 'users';
 
 interface UserAccount {
   id: number;
@@ -16,16 +19,31 @@ interface UserAccount {
 
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TracksComponent],
   template: `
     <div class="page-header">
       <div>
         <h1>⚙️ ניהול מערכת</h1>
-        <p class="subtitle">ייבוא נתוני תלמידות מקובץ אקסל</p>
+        <p class="subtitle">בחרי תחום לניהול</p>
       </div>
     </div>
 
-    <div *ngIf="auth.user()?.role === 'admin'" class="card user-management">
+    <div class="section-tabs" role="tablist">
+      <button
+        *ngFor="let s of sections()"
+        type="button"
+        role="tab"
+        class="section-tab"
+        [class.active]="activeSection() === s.id"
+        [attr.aria-selected]="activeSection() === s.id"
+        (click)="section.set(s.id)"
+      >
+        <span class="tab-icon">{{ s.icon }}</span>
+        <span>{{ s.label }}</span>
+      </button>
+    </div>
+
+    <div *ngIf="activeSection() === 'users'" class="card user-management">
       <div class="section-title">👥 ניהול משתמשות והרשאות</div>
       <p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
       <div class="user-form">
@@ -61,7 +79,9 @@ interface UserAccount {
       </div>
     </div>
 
-    <div class="card" style="max-width:560px;">
+    <app-tracks *ngIf="activeSection() === 'tracks'"></app-tracks>
+
+    <div *ngIf="activeSection() === 'students'" class="card" style="max-width:560px;">
       <div class="section-title">📥 ייבוא תלמידות מאקסל</div>
       <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
         העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה, ת. לידה לועזי/עברית, כתובת, מספר בית, עיר</strong><br>
@@ -98,7 +118,7 @@ interface UserAccount {
     </div>
 
     <!-- ניהול סוגי אישורים -->
-    <div class="card" style="max-width:760px; margin-top:24px;">
+    <div *ngIf="activeSection() === 'approvals'" class="card" style="max-width:760px;">
       <div class="section-title">📄 ניהול סוגי אישורים</div>
 
       <div class="approval-list">
@@ -151,6 +171,16 @@ interface UserAccount {
     </div>
   `,
   styles: [`
+    .section-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+    .section-tab {
+      display: flex; align-items: center; gap: 8px; padding: 12px 22px; cursor: pointer;
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font: inherit; font-weight: 700; color: var(--text-muted); box-shadow: var(--shadow-xs);
+      transition: all var(--transition);
+    }
+    .section-tab:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .section-tab.active { background: var(--grad-primary); border-color: transparent; color: #fff; box-shadow: var(--shadow-primary); }
+    .tab-icon { font-size: 1.15rem; }
     .upload-area {
       border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px;
       text-align: center; cursor: pointer; transition: all var(--transition);
@@ -240,11 +270,29 @@ export class AdminComponent {
   };
   approvalSaveError = signal('');
   savingApproval = signal(false);
+  section = signal<AdminSection | null>(null);
 
   constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
     this.loadTotal();
     this.loadApprovals();
     if (auth.user()?.role === 'admin') this.loadUsers();
+  }
+
+  sections(): { id: AdminSection; icon: string; label: string }[] {
+    const role = this.auth.user()?.role;
+    const all: { id: AdminSection; icon: string; label: string; roles: UserRole[] }[] = [
+      { id: 'tracks', icon: '🎓', label: 'מסלולים', roles: ['admin', 'laborant'] },
+      { id: 'students', icon: '🪪', label: 'תלמידות', roles: ['admin', 'laborant', 'secretary'] },
+      { id: 'approvals', icon: '📄', label: 'סוגי אישורים', roles: ['admin', 'laborant', 'secretary'] },
+      { id: 'users', icon: '👥', label: 'משתמשות והרשאות', roles: ['admin'] },
+    ];
+    return all.filter(s => role && s.roles.includes(role));
+  }
+
+  activeSection(): AdminSection | null {
+    const available = this.sections();
+    const chosen = this.section();
+    return available.find(s => s.id === chosen)?.id ?? available[0]?.id ?? null;
   }
 
   loadUsers() {

@@ -2,7 +2,8 @@ import { Component, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../../services/api.service';
+import { ApiService, StudentRequirement, StudentRequirements } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 
 @Component({
@@ -81,6 +82,36 @@ import { Student } from '../../models';
         </div>
       </div>
 
+      <div class="card" style="margin-top:20px;" *ngIf="requirements() as reqs">
+        <div class="section-title">✅ דרישות המסלול{{ reqs.track ? ' · ' + reqs.track : '' }}</div>
+        <p *ngIf="!reqs.track" class="req-note">לא הוגדר מסלול לתלמידה. אפשר להגדיר אותו בעריכת הפרטים.</p>
+        <p *ngIf="reqs.track && !reqs.defined" class="req-note">
+          עדיין לא הוגדרו דרישות למסלול הזה.
+          <a *ngIf="auth.user()?.role !== 'secretary'" routerLink="/admin" class="req-link">להגדרת המסלול</a>
+        </p>
+        <p *ngIf="reqs.defined && !reqs.requirements.length" class="req-note">
+          למסלול הזה עדיין אין דרישות.
+          <a *ngIf="auth.user()?.role !== 'secretary'" routerLink="/admin" class="req-link">להוספת דרישות</a>
+        </p>
+        <ng-container *ngIf="reqs.requirements.length">
+          <div class="req-summary" [class.done]="missingRequired() === 0">
+            {{ missingRequired() === 0 ? '🎉 כל דרישות החובה הושלמו' : 'חסרות ' + missingRequired() + ' דרישות חובה' }}
+          </div>
+          <div *ngIf="requirementError()" class="edit-error" role="alert">{{ requirementError() }}</div>
+          <label *ngFor="let r of reqs.requirements" class="req-item" [class.checked]="!!r.completed_at">
+            <input
+              type="checkbox"
+              [checked]="!!r.completed_at"
+              [disabled]="savingRequirementId() === r.id"
+              (change)="toggleRequirement(r, $any($event.target).checked)"
+            />
+            <span class="req-text">{{ r.title }}</span>
+            <span class="badge req-badge" [class.optional]="!r.required">{{ r.required ? 'חובה' : 'רשות' }}</span>
+            <span *ngIf="r.completed_at" class="req-by">{{ r.completed_by ? 'סומן ע"י ' + r.completed_by : 'הושלם' }}</span>
+          </label>
+        </ng-container>
+      </div>
+
       <div class="card" style="margin-top:20px;">
         <div class="section-title">🕓 היסטוריית השאלות ({{ student()!.loans?.length || 0 }})</div>
         <div *ngIf="!student()!.loans?.length" class="empty-state" style="padding:30px 0;">
@@ -133,6 +164,24 @@ import { Student } from '../../models';
     .student-edit-form label { display: grid; gap: 5px; font-size: 0.82rem; font-weight: 700; }
     .edit-actions { display: flex; gap: 8px; }
     .edit-error { color: var(--danger); font-size: 0.85rem; }
+    .req-note { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+    .req-link { color: var(--primary); font-weight: 700; margin-inline-start: 6px; }
+    .req-summary {
+      background: #fef3c7; color: #92400e; border-radius: var(--radius-sm);
+      padding: 8px 14px; font-weight: 700; font-size: 0.88rem; margin-bottom: 12px;
+      &.done { background: #dcfce7; color: #166534; }
+    }
+    .req-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 8px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
+      &.checked { background: #f0fdf4; border-color: #bbf7d0; }
+      input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+    }
+    .req-text { flex: 1; font-weight: 600; }
+    .req-item.checked .req-text { color: var(--text-muted); text-decoration: line-through; }
+    .req-badge { background: #fee2e2; color: #b91c1c; }
+    .req-badge.optional { background: var(--primary-light); color: var(--primary); }
+    .req-by { color: var(--text-muted); font-size: 0.75rem; }
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
     .barcode-val {
@@ -170,8 +219,11 @@ export class StudentComponent implements OnInit {
   editError = signal('');
   studentDraft = { name: '', phone: '', track: '', year: '' };
   today = new Date().toISOString().split('T')[0];
+  requirements = signal<StudentRequirements | null>(null);
+  requirementError = signal('');
+  savingRequirementId = signal<number | null>(null);
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService) {}
 
   ngOnInit() {
     const id = this.route.snapshot.params['id'];
@@ -180,8 +232,37 @@ export class StudentComponent implements OnInit {
 
   loadStudent(id: string) {
     this.api.getStudent(id).subscribe({
-      next: s => { this.student.set(s); this.loading.set(false); },
+      next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); },
       error: () => this.loading.set(false)
+    });
+  }
+
+  loadRequirements(id_number: string) {
+    this.api.getStudentRequirements(id_number).subscribe({
+      next: r => this.requirements.set(r),
+      error: () => this.requirements.set(null)
+    });
+  }
+
+  missingRequired() {
+    return (this.requirements()?.requirements || []).filter(r => r.required && !r.completed_at).length;
+  }
+
+  toggleRequirement(req: StudentRequirement, completed: boolean) {
+    const current = this.student();
+    if (!current || this.savingRequirementId() !== null) return;
+    this.savingRequirementId.set(req.id);
+    this.requirementError.set('');
+    this.api.setStudentRequirement(current.id_number, req.id, completed).subscribe({
+      next: () => {
+        this.savingRequirementId.set(null);
+        this.loadRequirements(current.id_number);
+      },
+      error: error => {
+        this.savingRequirementId.set(null);
+        this.requirementError.set(error.error?.error || 'לא ניתן לשמור את הסימון');
+        this.loadRequirements(current.id_number);
+      }
     });
   }
 
