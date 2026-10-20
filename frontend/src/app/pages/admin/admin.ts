@@ -58,6 +58,18 @@ interface UserAccount {
         <button class="btn btn-primary" (click)="createUser()">➕ יצירת חשבון</button>
       </div>
       <div *ngIf="userError()" class="alert alert-error user-error" role="alert">⚠️ {{ userError() }}</div>
+      <form *ngIf="passwordTarget() as target" class="alert user-error set-password" (submit)="$event.preventDefault(); savePassword()">
+        <label>סיסמה חדשה עבור <strong>{{ target.name }}</strong> (12–128 תווים):</label>
+        <input type="password" autocomplete="new-password" minlength="12" maxlength="128" [value]="newPassword()" (input)="newPassword.set($any($event.target).value)">
+        <button class="btn btn-primary" type="submit" [disabled]="newPassword().length < 12">שמירה</button>
+        <button class="btn btn-secondary" type="button" (click)="passwordTarget.set(null)">ביטול</button>
+      </form>
+      <div *ngIf="resetResult() as r" class="alert alert-success user-error" role="status">
+        🔑 סיסמה זמנית עבור <strong>{{ r.name }}</strong>:
+        <code class="temp-password">{{ r.password }}</code>
+        <br>הסיסמה מוצגת פעם אחת בלבד. העבירי אותה למשתמשת, והיא תתחבר איתה (יש לבקש ממנה להחליף).
+        <button class="btn btn-secondary" type="button" (click)="resetResult.set(null)">הסתרה</button>
+      </div>
       <div class="user-list">
         <div *ngFor="let user of users()" class="user-row">
           <div class="user-info">
@@ -70,6 +82,12 @@ interface UserAccount {
             <option value="secretary">מזכירות</option>
             <option value="admin">מנהלת מערכת</option>
           </select>
+          <button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">
+            ✏️ קביעת סיסמה
+          </button>
+          <button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="resetPassword(user)">
+            🔑 איפוס סיסמה
+          </button>
           <button class="btn" [class.btn-danger]="user.active" [class.btn-secondary]="!user.active"
             [disabled]="user.id === auth.user()?.id"
             (click)="updateUser(user, user.role, !user.active)">
@@ -242,6 +260,7 @@ interface UserAccount {
     .user-info span { color: var(--text-muted); font-size: 0.78rem; }
     .user-row select { max-width: 180px; }
     .user-error { margin-top: 12px; margin-bottom: 0; }
+    .temp-password { direction: ltr; display: inline-block; font-size: 1.1rem; font-weight: 800; letter-spacing: 1px; background: var(--surface); padding: 2px 10px; border-radius: 6px; user-select: all; }
     @media (max-width: 640px) {
       .user-row { align-items: stretch; flex-direction: column; }
       .user-row select { max-width: none; }
@@ -265,6 +284,7 @@ export class AdminComponent {
   editingApproval = signal<any | null>(null);
   users = signal<UserAccount[]>([]);
   userError = signal('');
+  resetResult = signal<{ name: string; password: string } | null>(null);
   newUser: { name: string; email: string; password: string; role: UserRole } = {
     name: '', email: '', password: '', role: 'laborant'
   };
@@ -307,6 +327,39 @@ export class AdminComponent {
         this.loadUsers();
       },
       error: error => this.userError.set(error.error?.error || 'לא ניתן ליצור את החשבון')
+    });
+  }
+
+  passwordTarget = signal<UserAccount | null>(null);
+  newPassword = signal('');
+
+  startSetPassword(user: UserAccount) {
+    this.userError.set('');
+    this.resetResult.set(null);
+    this.newPassword.set('');
+    this.passwordTarget.set(user);
+  }
+
+  savePassword() {
+    const user = this.passwordTarget();
+    if (!user) return;
+    this.http.post(`/api/users/${user.id}/password`, { password: this.newPassword() }).subscribe({
+      next: () => {
+        this.passwordTarget.set(null);
+        this.newPassword.set('');
+        alert(`הסיסמה של ${user.name} עודכנה. היא נותקה מהמערכת ותתחבר עם הסיסמה החדשה.`);
+      },
+      error: error => this.userError.set(error.error?.error || 'לא ניתן לשנות את הסיסמה')
+    });
+  }
+
+  resetPassword(user: UserAccount) {
+    if (!confirm(`לאפס את הסיסמה של ${user.name}? הסיסמה הנוכחית תפסיק לעבוד והיא תנותק מהמערכת.`)) return;
+    this.userError.set('');
+    this.resetResult.set(null);
+    this.http.post<{ password: string }>(`/api/users/${user.id}/reset-password`, {}).subscribe({
+      next: result => this.resetResult.set({ name: user.name, password: result.password }),
+      error: error => this.userError.set(error.error?.error || 'לא ניתן לאפס את הסיסמה')
     });
   }
 

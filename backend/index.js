@@ -51,6 +51,10 @@ db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOStr
 
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => {
+  if (useHttps) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
 
 const frontendDir = path.join(__dirname, '../frontend/dist/frontend/browser');
 if (fs.existsSync(frontendDir)) {
@@ -63,9 +67,11 @@ if (fs.existsSync(frontendDir)) {
 
 const sessionCookie = 'studio_session';
 const sessionDurationSeconds = 7 * 24 * 60 * 60;
+const certDirForCheck = process.env.STUDIO_CERT_DIR || path.join(__dirname, 'certs');
+const useHttps = fs.existsSync(path.join(certDirForCheck, 'key.pem')) && fs.existsSync(path.join(certDirForCheck, 'cert.pem'));
 
 function appendSessionCookie(res, value, maxAge) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const secure = useHttps || process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.append(
     'Set-Cookie',
     `${sessionCookie}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`
@@ -458,6 +464,40 @@ app.put('/api/users/:id', (req, res) => {
   db.prepare('UPDATE users SET role = ?, active = ? WHERE id = ?').run(role, Number(active), id);
   if (!active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   res.json({ success: true });
+});
+
+app.post('/api/users/:id/password', (req, res) => {
+  const id = Number(req.params.id);
+  const password = req.body?.password;
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(id)) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+  if (id === req.user.id) return res.status(400).json({ error: 'לא ניתן לשנות כאן את הסיסמה של החשבון המחובר' });
+  if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+    return res.status(400).json({ error: 'הסיסמה חייבת להכיל 12 עד 128 תווים' });
+  }
+  const { salt, hash } = hashPassword(password);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?').run(salt, hash, id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  })();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true });
+});
+
+app.post('/api/users/:id/reset-password', (req, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(id)) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+  if (id === req.user.id) return res.status(400).json({ error: 'לא ניתן לאפס את הסיסמה של החשבון המחובר' });
+  // Characters without look-alikes (no 0/O, 1/l/I) so it is easy to read out
+  const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = randomBytes(16);
+  const temporary = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+  const { salt, hash } = hashPassword(temporary);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?').run(salt, hash, id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  })();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ password: temporary });
 });
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
@@ -1477,4 +1517,22 @@ app.delete('/api/approval-types/:id', (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Backend running on port ${port}`));
+const keyFile = path.join(certDirForCheck, 'key.pem');
+const certFile = path.join(certDirForCheck, 'cert.pem');
+if (useHttps) {
+  require('https')
+    .createServer({ key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) }, app)
+    .listen(port, () => console.log(`Backend running securely (HTTPS) on port ${port}`));
+  // Plain-HTTP port that only redirects to HTTPS, so no data is ever served unencrypted
+  const redirectPort = process.env.HTTP_REDIRECT_PORT || 3080;
+  require('http')
+    .createServer((req, res) => {
+      const host = (req.headers.host || 'localhost').replace(/:\d+$/, '');
+      res.writeHead(301, { Location: `https://${host}:${port}${req.url}` });
+      res.end();
+    })
+    .on('error', (e) => console.log(`HTTP redirect disabled: ${e.message}`))
+    .listen(redirectPort);
+} else {
+  app.listen(port, () => console.log(`Backend running on port ${port} (HTTP, not encrypted)`));
+}

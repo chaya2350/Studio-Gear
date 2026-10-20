@@ -6,3 +6,4 @@
 .env.*
 !.env.example
 /backend/requirement-files/
+/backend/certs/
