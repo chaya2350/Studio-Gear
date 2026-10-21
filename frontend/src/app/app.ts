@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, effect } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { CartService } from './services/cart.service';
@@ -176,15 +176,20 @@ export class App implements OnInit {
       this.currentPath = e.urlAfterRedirects.split('?')[0];
       this.currentQuery = e.urlAfterRedirects;
     });
+    // טעינת סוגי האישורים בכל פעם שמשתמשת מתחברת
+    effect(() => {
+      const user = this.auth.user();
+      if (user) {
+        this.api.getApprovalTypes().subscribe((t) => {
+          if (this.auth.user()) this.approvalTypes = t;
+        });
+      } else {
+        this.approvalTypes = [];
+      }
+    });
   }
 
-  ngOnInit() {
-    if (this.auth.user()) {
-      this.api.getApprovalTypes().subscribe((t) => {
-        this.approvalTypes = t;
-      });
-    }
-  }
+  ngOnInit() {}
 
   roleLabel(role: UserRole): string {
     return role === 'admin' ? 'מנהלת מערכת' : role === 'secretary' ? 'מזכירות' : 'לבורנטית';
