@@ -117,8 +117,6 @@ interface CalendarDay {
         [attr.aria-pressed]="has('exams')" (click)="toggleLayer('exams')">
         📝 לוח מבחנים
       </button>
-      <button type="button" class="layer-chip add-exam-chip" *ngIf="canImportCalendar()"
-        (click)="openAddExam()">➕ הוספת מבחן</button>
     </nav>
 
     <nav *ngIf="has('schedule') && calendarSheets().length"
@@ -214,42 +212,6 @@ interface CalendarDay {
             </button>
           </ng-container>
         </div>
-    </section>
-
-    <!-- הוספת מבחן -->
-    <section *ngIf="addExamOpen()" class="month-card add-exam-card">
-      <div class="section-title">📝 הוספת מבחן ללוח</div>
-      <div class="add-exam-form">
-        <div class="form-group">
-          <label>שם המבחן *</label>
-          <input [(ngModel)]="examDraft.name" placeholder="לדוגמה: מבחן עברית מחצית א'">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>מסלול</label>
-            <select [(ngModel)]="examDraft.track">
-              <option [ngValue]="null">כל המסלולים</option>
-              <option *ngFor="let t of trackOptions()" [ngValue]="t">{{ t }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>שנה</label>
-            <select [(ngModel)]="examDraft.year">
-              <option [ngValue]="null">כל השנים</option>
-              <option *ngFor="let y of yearOptions()" [ngValue]="y">{{ toStudyYear(y) }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>תאריך בלוח</label>
-          <input type="date" [(ngModel)]="examDraft.exam_date">
-        </div>
-        <div class="exam-actions">
-          <button class="btn btn-primary" [disabled]="savingExam() || !examDraft.name.trim()" (click)="saveExam()">💾 שמור מבחן</button>
-          <button class="btn btn-secondary" (click)="addExamOpen.set(false)">ביטול</button>
-        </div>
-        <p *ngIf="examError()" class="upload-error">{{ examError() }}</p>
-      </div>
     </section>
 
     <section class="selected-day-card">
@@ -364,16 +326,7 @@ interface CalendarDay {
     .equipment-dot { background: #6c63ff; }
     .task-dot { background: #8b5cf6; }
     .completed-dot { background: #10b981; }
-    .exam-dot, .add-exam-chip { background: #e11d48; }
-    .add-exam-chip { border-color: #e11d48; color: #e11d48; }
-    .add-exam-chip:hover { background: #fff1f2; }
-    .add-exam-card { margin-top: 14px; }
-    .add-exam-form { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
-    .add-exam-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .add-exam-form .form-group { display: flex; flex-direction: column; gap: 4px;
-      label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
-      input, select { height: 38px; padding: 0 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); } }
-    .exam-actions { display: flex; gap: 8px; }
+    .exam-dot { background: #e11d48; }
     .month-card, .selected-day-card {
       min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius);
       background: var(--surface); box-shadow: var(--shadow-sm);
@@ -474,11 +427,6 @@ export class MonthlyCalendarComponent implements OnInit {
   uploadMessage = '';
   uploading = false;
   updatingTaskId: number | null = null;
-  addExamOpen = signal(false);
-  savingExam = signal(false);
-  examError = signal('');
-  examDraft = { name: '', track: null as string | null, year: null as string | null, exam_date: '' };
-  private allStudents = signal<any[]>([]);
   private colorMap = new Map<number, string>();
   private readonly colors = ['#6c63ff', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
   private readonly eventColors = ['#6c63ff', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6'];
@@ -514,7 +462,6 @@ export class MonthlyCalendarComponent implements OnInit {
     });
     this.loadCalendarEvents();
     this.api.getExams().subscribe(exams => this.exams.set(exams));
-    this.api.getStudents().subscribe(s => this.allStudents.set(s));
   }
 
   private toDateString(date: Date): string {
@@ -579,42 +526,6 @@ export class MonthlyCalendarComponent implements OnInit {
   toStudyYearSuffix(year?: string): string {
     const y = toStudyYear(year);
     return y ? ' ' + y : '';
-  }
-
-  trackOptions(): string[] {
-    return [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
-  }
-
-  yearOptions(): string[] {
-    return [...new Set(this.allStudents().map(s => s.year).filter(Boolean))] as string[];
-  }
-
-  openAddExam() {
-    this.examDraft = { name: '', track: null, year: null, exam_date: this.selectedDate() };
-    this.examError.set('');
-    this.addExamOpen.set(true);
-  }
-
-  saveExam() {
-    if (!this.examDraft.name.trim() || this.savingExam()) return;
-    this.savingExam.set(true);
-    this.examError.set('');
-    this.api.createExam({
-      name: this.examDraft.name.trim(),
-      track: this.examDraft.track || undefined,
-      year: this.examDraft.year || undefined,
-      exam_date: this.examDraft.exam_date || undefined
-    }).subscribe({
-      next: () => {
-        this.savingExam.set(false);
-        this.addExamOpen.set(false);
-        this.api.getExams().subscribe(exams => this.exams.set(exams));
-      },
-      error: (e) => {
-        this.savingExam.set(false);
-        this.examError.set(e.error?.error || 'שמירת המבחן נכשלה');
-      }
-    });
   }
 
   private eventsForDate(date: string): CalendarEvent[] {
