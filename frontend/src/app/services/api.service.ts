@@ -105,8 +105,11 @@ export class ApiService {
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year'>) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'>) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
+  }
+  deleteStudent(id_number: string) {
+    return this.http.delete<{ success: boolean; id_number: string; name: string }>(`${this.base}/students/${encodeURIComponent(id_number)}`);
   }
 
   getApprovalTypes() { return this.http.get<any[]>(`${this.base}/approval-types`); }
