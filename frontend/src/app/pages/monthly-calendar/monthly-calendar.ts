@@ -1,11 +1,13 @@
 ﻿import { CommonModule } from '@angular/common';
 import { Component, computed, OnInit, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { HDate, months } from '@hebcal/core';
 import { ApiService, CalendarEvent } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Loan } from '../../models';
 import { MessagesService, PersonalTask } from '../../services/messages.service';
+import { toStudyYear } from '../approvals/study-year';
 
 const HEBREW_MONTH_NAMES: Record<number, string> = {
   [months.TISHREI]: 'תשרי',
@@ -58,16 +60,15 @@ function toHebrewYear(year: number): string {
   return label.length === 1 ? `${label}׳` : `${label.slice(0, -1)}״${label.slice(-1)}`;
 }
 
-type CalendarLayer = 'equipment' | 'personal' | 'schedule';
-
+type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams';
 interface CalendarItem {
-  kind: 'loan' | 'task' | 'event';
+  kind: 'loan' | 'task' | 'event' | 'exam';
   loan?: Loan;
   task?: PersonalTask;
   event?: CalendarEvent;
+  exam?: any;
   completed?: boolean;
 }
-
 interface CalendarDay {
   date: string;
   hebrewDay: string;
@@ -76,11 +77,12 @@ interface CalendarDay {
   loans: Loan[];
   tasks: PersonalTask[];
   calendarEvents: CalendarEvent[];
+  exams: any[];
 }
 
 @Component({
   selector: 'app-monthly-calendar',
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, FormsModule],
   template: `
     <div class="page-header">
       <div>
@@ -111,6 +113,12 @@ interface CalendarDay {
         [attr.aria-pressed]="has('schedule')" (click)="toggleLayer('schedule')">
         🏫 לוח המערכת
       </button>
+      <button type="button" class="layer-chip" [class.active]="has('exams')"
+        [attr.aria-pressed]="has('exams')" (click)="toggleLayer('exams')">
+        📝 לוח מבחנים
+      </button>
+      <button type="button" class="layer-chip add-exam-chip" *ngIf="canImportCalendar()"
+        (click)="openAddExam()">➕ הוספת מבחן</button>
     </nav>
 
     <nav *ngIf="has('schedule') && calendarSheets().length"
@@ -171,8 +179,8 @@ interface CalendarDay {
                 class="schedule-event-labels" aria-hidden="true">
                 <span *ngFor="let item of visibleItems(calendarDay).slice(0, 2)"
                   class="schedule-event-label"
-                  [style.border-inline-start-color]="schoolEventColor(item.event!)">
-                  {{ item.event?.title }}
+                  [style.border-inline-start-color]="item.kind === 'exam' ? '#e11d48' : schoolEventColor(item.event!)">
+                  {{ item.kind === 'exam' ? '📝 ' + item.exam!.name : item.event?.title }}
                 </span>
                 <span *ngIf="visibleItems(calendarDay).length > 2" class="more-events">
                   +{{ visibleItems(calendarDay).length - 2 }}
@@ -185,7 +193,7 @@ interface CalendarDay {
                   [class.completed-dot]="item.kind === 'task' && item.completed"
                   [style.background]="item.kind === 'loan'
                     ? loanColor(item.loan!)
-                    : item.kind === 'event' ? schoolEventColor(item.event!) : null"></span>
+                    : item.kind === 'exam' ? '#e11d48' : item.kind === 'event' ? schoolEventColor(item.event!) : null"></span>
                 <span *ngIf="visibleItems(calendarDay).length > 4" class="more-events">
                   +{{ visibleItems(calendarDay).length - 4 }}
                 </span>
@@ -198,14 +206,50 @@ interface CalendarDay {
                   <ng-container *ngIf="item.kind === 'task'">
                     {{ item.task?.completed ? '✓' : '🗓' }} {{ item.task?.title }}
                   </ng-container>
-                  <ng-container *ngIf="item.kind === 'event'">
-                    🏫 {{ item.event?.category }} · {{ item.event?.title }}
+                  <ng-container *ngIf="item.kind === 'exam'">
+                    📝 {{ item.exam?.name }}{{ item.exam?.track ? ' · ' + item.exam?.track + toStudyYearSuffix(item.exam?.year) : '' }}
                   </ng-container>
                 </span>
               </span>
             </button>
           </ng-container>
         </div>
+    </section>
+
+    <!-- הוספת מבחן -->
+    <section *ngIf="addExamOpen()" class="month-card add-exam-card">
+      <div class="section-title">📝 הוספת מבחן ללוח</div>
+      <div class="add-exam-form">
+        <div class="form-group">
+          <label>שם המבחן *</label>
+          <input [(ngModel)]="examDraft.name" placeholder="לדוגמה: מבחן עברית מחצית א'">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>מסלול</label>
+            <select [(ngModel)]="examDraft.track">
+              <option [ngValue]="null">כל המסלולים</option>
+              <option *ngFor="let t of trackOptions()" [ngValue]="t">{{ t }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>שנה</label>
+            <select [(ngModel)]="examDraft.year">
+              <option [ngValue]="null">כל השנים</option>
+              <option *ngFor="let y of yearOptions()" [ngValue]="y">{{ toStudyYear(y) }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>תאריך בלוח</label>
+          <input type="date" [(ngModel)]="examDraft.exam_date">
+        </div>
+        <div class="exam-actions">
+          <button class="btn btn-primary" [disabled]="savingExam() || !examDraft.name.trim()" (click)="saveExam()">💾 שמור מבחן</button>
+          <button class="btn btn-secondary" (click)="addExamOpen.set(false)">ביטול</button>
+        </div>
+        <p *ngIf="examError()" class="upload-error">{{ examError() }}</p>
+      </div>
     </section>
 
     <section class="selected-day-card">
@@ -241,6 +285,17 @@ interface CalendarDay {
             <strong>{{ event.title }}</strong>
             <span>{{ event.category }} · {{ event.source_sheet }}</span>
           </div>
+        </div>
+      </ng-container>
+      <ng-container *ngIf="has('exams') && selectedDayExams().length">
+        <h3 class="layer-title">📝 מבחנים</h3>
+        <div *ngFor="let exam of selectedDayExams()" class="detail-row">
+          <span class="detail-dot exam-dot"></span>
+          <div class="detail-main">
+            <a [routerLink]="['/exams']" [queryParams]="{ exam: exam.id, print: '1' }"><strong>{{ exam.name }}</strong></a>
+            <span>{{ exam.track || 'כל המסלולים' }}{{ exam.year ? ' · ' + toStudyYear(exam.year) : '' }} — לחצי להדפסת ברקודים</span>
+          </div>
+          <span class="detail-date">📝</span>
         </div>
       </ng-container>
     </section>
@@ -309,6 +364,16 @@ interface CalendarDay {
     .equipment-dot { background: #6c63ff; }
     .task-dot { background: #8b5cf6; }
     .completed-dot { background: #10b981; }
+    .exam-dot, .add-exam-chip { background: #e11d48; }
+    .add-exam-chip { border-color: #e11d48; color: #e11d48; }
+    .add-exam-chip:hover { background: #fff1f2; }
+    .add-exam-card { margin-top: 14px; }
+    .add-exam-form { display: flex; flex-direction: column; gap: 10px; max-width: 480px; }
+    .add-exam-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .add-exam-form .form-group { display: flex; flex-direction: column; gap: 4px;
+      label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+      input, select { height: 38px; padding: 0 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); } }
+    .exam-actions { display: flex; gap: 8px; }
     .month-card, .selected-day-card {
       min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius);
       background: var(--surface); box-shadow: var(--shadow-sm);
@@ -386,6 +451,7 @@ export class MonthlyCalendarComponent implements OnInit {
   readonly loans = signal<Loan[]>([]);
   readonly tasks = signal<PersonalTask[]>([]);
   readonly calendarEvents = signal<CalendarEvent[]>([]);
+  readonly exams = signal<any[]>([]);
   readonly selectedSourceSheet = signal<string | null>(null);
   readonly calendarSheets = computed(() =>
     [...new Set(this.calendarEvents().map(event => event.source_sheet))]
@@ -395,10 +461,12 @@ export class MonthlyCalendarComponent implements OnInit {
   readonly selectedDayLoans = computed(() => this.loansForDate(this.selectedDate()));
   readonly selectedDayTasks = computed(() => this.tasksForDate(this.selectedDate()));
   readonly selectedDayEvents = computed(() => this.eventsForDate(this.selectedDate()));
+  readonly selectedDayExams = computed(() => this.examsForDate(this.selectedDate()));
   readonly selectedDayCount = computed(() =>
     (this.has('equipment') ? this.selectedDayLoans().length : 0) +
     (this.has('personal') ? this.selectedDayTasks().length : 0) +
-    (this.has('schedule') ? this.selectedDayEvents().length : 0)
+    (this.has('schedule') ? this.selectedDayEvents().length : 0) +
+    (this.has('exams') ? this.selectedDayExams().length : 0)
   );
   readonly selectedDateLabel = computed(() => this.formatDateLabel(this.selectedDate()));
   loadError = '';
@@ -406,6 +474,11 @@ export class MonthlyCalendarComponent implements OnInit {
   uploadMessage = '';
   uploading = false;
   updatingTaskId: number | null = null;
+  addExamOpen = signal(false);
+  savingExam = signal(false);
+  examError = signal('');
+  examDraft = { name: '', track: null as string | null, year: null as string | null, exam_date: '' };
+  private allStudents = signal<any[]>([]);
   private colorMap = new Map<number, string>();
   private readonly colors = ['#6c63ff', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
   private readonly eventColors = ['#6c63ff', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6'];
@@ -440,6 +513,8 @@ export class MonthlyCalendarComponent implements OnInit {
       error: error => this.loadError = error.error?.error || 'לא ניתן לטעון את המשימות האישיות'
     });
     this.loadCalendarEvents();
+    this.api.getExams().subscribe(exams => this.exams.set(exams));
+    this.api.getStudents().subscribe(s => this.allStudents.set(s));
   }
 
   private toDateString(date: Date): string {
@@ -473,7 +548,8 @@ export class MonthlyCalendarComponent implements OnInit {
         gregorianMonth: gregorian.getMonth() + 1,
         loans: this.loansForDate(date),
         tasks: this.tasksForDate(date),
-        calendarEvents: this.eventsForDate(date)
+        calendarEvents: this.eventsForDate(date),
+        exams: this.examsForDate(date)
       });
     }
     while (cells.length % 7 !== 0) cells.push(null);
@@ -492,6 +568,53 @@ export class MonthlyCalendarComponent implements OnInit {
 
   private tasksForDate(date: string): PersonalTask[] {
     return this.tasks().filter(task => task.due_date === date);
+  }
+
+  private examsForDate(date: string): any[] {
+    return this.exams().filter(e => e.exam_date === date);
+  }
+
+  toStudyYear = toStudyYear;
+
+  toStudyYearSuffix(year?: string): string {
+    const y = toStudyYear(year);
+    return y ? ' ' + y : '';
+  }
+
+  trackOptions(): string[] {
+    return [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
+  }
+
+  yearOptions(): string[] {
+    return [...new Set(this.allStudents().map(s => s.year).filter(Boolean))] as string[];
+  }
+
+  openAddExam() {
+    this.examDraft = { name: '', track: null, year: null, exam_date: this.selectedDate() };
+    this.examError.set('');
+    this.addExamOpen.set(true);
+  }
+
+  saveExam() {
+    if (!this.examDraft.name.trim() || this.savingExam()) return;
+    this.savingExam.set(true);
+    this.examError.set('');
+    this.api.createExam({
+      name: this.examDraft.name.trim(),
+      track: this.examDraft.track || undefined,
+      year: this.examDraft.year || undefined,
+      exam_date: this.examDraft.exam_date || undefined
+    }).subscribe({
+      next: () => {
+        this.savingExam.set(false);
+        this.addExamOpen.set(false);
+        this.api.getExams().subscribe(exams => this.exams.set(exams));
+      },
+      error: (e) => {
+        this.savingExam.set(false);
+        this.examError.set(e.error?.error || 'שמירת המבחן נכשלה');
+      }
+    });
   }
 
   private eventsForDate(date: string): CalendarEvent[] {
@@ -529,7 +652,8 @@ export class MonthlyCalendarComponent implements OnInit {
     return [
       ...(this.has('equipment') ? day.loans.map((loan): CalendarItem => ({ kind: 'loan', loan })) : []),
       ...(this.has('personal') ? day.tasks.map((task): CalendarItem => ({ kind: 'task', task, completed: task.completed })) : []),
-      ...(this.has('schedule') ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : [])
+      ...(this.has('schedule') ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : []),
+      ...(this.has('exams') ? day.exams.map((exam): CalendarItem => ({ kind: 'exam', exam })) : [])
     ];
   }
 
