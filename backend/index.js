@@ -228,14 +228,38 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     decided_at TEXT,
+    seen_at TEXT,
+    granted_seen_at TEXT,
     UNIQUE (page_id, user_id)
   );
 `);
+
+// הוספת seen_at לטבלאות קיימות (CREATE IF NOT EXISTS לא מוסיף עמודות)
+const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().map((c) => c.name);
+if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
+if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
 
 // ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
 function pageRow(row, userId) {
   if (!row) return row;
   return { ...row, is_owner: row.created_by === userId };
+}
+
+// מגדיר את הבקשות שהיוצר/ת כבר ראה/תה (לא חדשות יותר)
+function markRequestsSeen(userId, topicId) {
+  if (topicId) {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ? AND topic_id = ?)
+    `).run(userId, topicId);
+  } else {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ?)
+    `).run(userId);
+  }
 }
 
 app.get('/api/pages/topics', (req, res) => {
@@ -244,9 +268,11 @@ app.get('/api/pages/topics', (req, res) => {
       (SELECT COUNT(*) FROM personal_pages p WHERE p.topic_id = t.id AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
         SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count,
       (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
-        WHERE p.topic_id = t.id AND p.created_by = ? AND r.status = 'pending') AS pending_requests
+        WHERE p.topic_id = t.id AND p.created_by = ? AND r.status = 'pending' AND r.seen_at IS NULL) AS pending_requests,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND r.user_id = ? AND r.status = 'approved' AND r.granted_seen_at IS NULL) AS granted_requests
     FROM page_topics t ORDER BY t.name
-  `).all(req.user.id, req.user.id, req.user.id);
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id);
   res.json(topics);
 });
 
@@ -261,17 +287,25 @@ app.post('/api/pages/topics', (req, res) => {
 
 app.get('/api/pages/topics/:id/pages', (req, res) => {
   const topicId = Number(req.params.id);
+  markRequestsSeen(req.user.id, topicId);
+  // מסמן שהמבקש/ת ראה/תה את האישורים בנושא הזה
+  db.prepare(`
+    UPDATE page_access_requests SET granted_seen_at = datetime('now')
+    WHERE user_id = ? AND status = 'approved' AND granted_seen_at IS NULL
+      AND page_id IN (SELECT id FROM personal_pages WHERE topic_id = ?)
+  `).run(req.user.id, topicId);
   const rows = db.prepare(`
     SELECT p.*, u.name AS creator_name,
       (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
       (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
         SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
         THEN 1 ELSE 0 END) AS can_view,
-      (SELECT COUNT(*) FROM page_access_requests r WHERE r.page_id = p.id AND r.status = 'pending') AS pending_requests
+      (SELECT COUNT(*) FROM page_access_requests r WHERE r.page_id = p.id AND r.status = 'pending') AS pending_requests,
+      (SELECT r.status FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ?) AS my_request_status
     FROM personal_pages p JOIN users u ON u.id = p.created_by
     WHERE p.topic_id = ?
     ORDER BY p.created_at DESC
-  `).all(req.user.id, req.user.id, req.user.id, topicId);
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id, topicId);
   res.json(rows);
 });
 

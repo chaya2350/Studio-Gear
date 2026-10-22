@@ -25,7 +25,7 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
         <a routerLink="/pages" routerLinkActive="active" class="pages-nav-link">
           📚 דפים
-          <span class="nav-badge" *ngIf="accessRequests().length">{{ accessRequests().length }}</span>
+          <span class="nav-badge" *ngIf="accessRequests().length + grantedCount > 0">{{ accessRequests().length + grantedCount }}</span>
         </a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
         <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
@@ -181,6 +181,7 @@ export class App implements OnInit {
   approvalTypes: any[] = [];
   logoutError = '';
   accessRequests = signal<any[]>([]);
+  grantedCount = 0;
 
   constructor(
     public cart: CartService,
@@ -212,6 +213,11 @@ export class App implements OnInit {
   refreshAccessRequests() {
     this.api.getIncomingPageRequests().subscribe({
       next: (r) => this.accessRequests.set(r),
+      error: () => {},
+    });
+    // ספירת אישורי גישה חדשים (למבקשות) — עיגול בתפריט ליד "דפים"
+    this.api.getPageTopics().subscribe({
+      next: (t) => this.grantedCount = t.reduce((s: number, x: any) => s + (x.granted_requests || 0), 0),
       error: () => {},
     });
   }

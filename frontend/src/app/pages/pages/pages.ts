@@ -27,7 +27,7 @@ import { AuthService } from '../../services/auth.service';
       <div *ngFor="let t of filteredTopics()" class="topic-card" (click)="selectTopic(t)">
         <div class="topic-icon">
           🗂️
-          <span class="card-badge" *ngIf="t.pending_requests > 0">{{ t.pending_requests }}</span>
+          <span class="card-badge" *ngIf="t.pending_requests > 0 || t.granted_requests > 0">{{ t.pending_requests + t.granted_requests }}</span>
         </div>
         <div class="topic-info">
           <strong>{{ t.name }}</strong>
@@ -73,8 +73,11 @@ import { AuthService } from '../../services/auth.service';
             <span class="badge" [class.public-badge]="p.visibility === 'public'" [class.private-badge]="p.visibility === 'private'">
               {{ p.visibility === 'public' ? '🌍 ציבורי' : '🔒 פרטי' }}
             </span>
-            <span class="badge locked" *ngIf="!p.can_view">🚫 אין גישה</span>
-            <span class="badge pending-badge" *ngIf="p.pending_requests > 0">{{ p.pending_requests }} בקשות</span>
+            <span class="badge locked" *ngIf="!p.can_view && !p.my_request_status">🚫 אין גישה</span>
+            <span class="badge pending-badge" *ngIf="p.my_request_status === 'pending'">⏳ בקשה ממתינה</span>
+            <span class="badge approved-badge" *ngIf="p.my_request_status === 'approved'">✅ קיבלת גישה — פתחי</span>
+            <span class="badge denied-badge" *ngIf="p.my_request_status === 'denied'">❌ הבקשה נדחתה</span>
+            <span class="badge pending-badge" *ngIf="p.can_view && p.pending_requests > 0">{{ p.pending_requests }} בקשות</span>
           </div>
         </div>
         <div *ngIf="!pages().length" class="empty-state">
@@ -213,6 +216,8 @@ import { AuthService } from '../../services/auth.service';
     .public-badge { background: #e6faf4; color: #059669; }
     .private-badge { background: #fef3e2; color: #d97706; }
     .pending-badge { background: var(--primary-light); color: var(--primary); }
+    .approved-badge { background: #e6faf4; color: #059669; }
+    .denied-badge { background: #fde8e8; color: #b91c1c; }
     .badge.locked { background: var(--surface-2); color: var(--text-muted); }
 
     .requests-card { margin-bottom: 16px; }
@@ -354,6 +359,7 @@ export class PagesComponent implements OnInit {
     this.editorOpen.set(false);
     this.message.set(msg);
     this.loadPages(this.selectedTopic()!.id);
+    this.loadTopics(); // עדכון ספירת הדפים על כרטיסי הנושאים
   }
 
   private saveError(e: any) {
@@ -383,6 +389,7 @@ export class PagesComponent implements OnInit {
     if (!confirm(`למחוק את הדף "${page.title}"?`)) return;
     this.api.deletePage(page.id).subscribe(() => {
       this.closePage();
+      this.loadTopics();
     });
   }
 
@@ -397,6 +404,7 @@ export class PagesComponent implements OnInit {
         this.api.getPageRequests(pageId).subscribe(r => this.pageRequests.set(r));
       }
       this.loadIncomingRequests();
+      this.loadTopics();
       const topic = this.selectedTopic();
       if (topic) this.loadPages(topic.id);
     });
