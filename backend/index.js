@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -204,7 +204,174 @@ db.exec(`
     UNIQUE (event_date, title, category, source_sheet)
   );
   CREATE INDEX IF NOT EXISTS calendar_events_date_idx ON calendar_events(event_date);
+  CREATE TABLE IF NOT EXISTS page_topics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS personal_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id INTEGER NOT NULL REFERENCES page_topics(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private','public')),
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS personal_pages_topic_idx ON personal_pages(topic_id);
+  CREATE TABLE IF NOT EXISTS page_access_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id INTEGER NOT NULL REFERENCES personal_pages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT,
+    UNIQUE (page_id, user_id)
+  );
 `);
+
+// ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
+function pageRow(row, userId) {
+  if (!row) return row;
+  return { ...row, is_owner: row.created_by === userId };
+}
+
+app.get('/api/pages/topics', (req, res) => {
+  const topics = db.prepare(`
+    SELECT t.id, t.name, t.created_by,
+      (SELECT COUNT(*) FROM personal_pages p WHERE p.topic_id = t.id AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count
+    FROM page_topics t ORDER BY t.name
+  `).all(req.user.id, req.user.id);
+  res.json(topics);
+});
+
+app.post('/api/pages/topics', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'נא להזין שם נושא' });
+  const existing = db.prepare('SELECT id FROM page_topics WHERE name = ?').get(name);
+  if (existing) return res.json(existing);
+  const result = db.prepare('INSERT INTO page_topics (name, created_by) VALUES (?, ?)').run(name, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid, name });
+});
+
+app.get('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  const rows = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view,
+      (SELECT COUNT(*) FROM page_access_requests r WHERE r.page_id = p.id AND r.status = 'pending') AS pending_requests
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.topic_id = ?
+    ORDER BY p.created_at DESC
+  `).all(req.user.id, req.user.id, req.user.id, topicId);
+  res.json(rows);
+});
+
+app.post('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  const topic = db.prepare('SELECT id FROM page_topics WHERE id = ?').get(topicId);
+  if (!topic) return res.status(404).json({ error: 'נושא לא נמצא' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  const result = db.prepare(`
+    INSERT INTO personal_pages (topic_id, title, body, visibility, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(topicId, title, body, visibility, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.get('/api/pages/:id', (req, res) => {
+  const page = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.id = ?
+  `).get(req.user.id, req.user.id, req.user.id, Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (!page.can_view) return res.status(403).json({ error: 'אין לך הרשאת גישה לדף זה' });
+  res.json(pageRow(page, req.user.id));
+});
+
+app.put('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לערוך את הדף' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  db.prepare(`
+    UPDATE personal_pages SET title = ?, body = ?, visibility = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(title, body, visibility, page.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה למחוק את הדף' });
+  db.prepare('DELETE FROM personal_pages WHERE id = ?').run(page.id);
+  res.json({ success: true });
+});
+
+// הרשאות גישה לדפים פרטיים
+app.post('/api/pages/:id/request-access', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by === req.user.id) return res.status(400).json({ error: 'זה הדף שלך' });
+  const existing = db.prepare('SELECT id, status FROM page_access_requests WHERE page_id = ? AND user_id = ?').get(page.id, req.user.id);
+  if (existing) return res.json({ status: existing.status });
+  db.prepare('INSERT INTO page_access_requests (page_id, user_id) VALUES (?, ?)').run(page.id, req.user.id);
+  res.status(201).json({ status: 'pending' });
+});
+
+app.get('/api/pages/:id/requests', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לצפות בבקשות' });
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, u.id AS user_id, u.name AS user_name
+    FROM page_access_requests r JOIN users u ON u.id = r.user_id
+    WHERE r.page_id = ? ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+  `).all(page.id);
+  res.json(rows);
+});
+
+app.put('/api/pages/requests/:id', (req, res) => {
+  const request = db.prepare(`
+    SELECT r.*, p.created_by AS page_owner FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id WHERE r.id = ?
+  `).get(Number(req.params.id));
+  if (!request) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  if (request.page_owner !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לאשר בקשות' });
+  const status = req.body?.status === 'approved' ? 'approved' : req.body?.status === 'denied' ? 'denied' : null;
+  if (!status) return res.status(400).json({ error: 'ערך לא תקין' });
+  db.prepare('UPDATE page_access_requests SET status = ?, decided_at = datetime(\'now\') WHERE id = ?').run(status, request.id);
+  res.json({ success: true, status });
+});
+
+app.get('/api/pages/requests/incoming', (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, p.id AS page_id, p.title AS page_title, u.name AS user_name
+    FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id
+    JOIN users u ON u.id = r.user_id
+    WHERE p.created_by = ? AND r.status = 'pending'
+    ORDER BY r.created_at DESC
+  `).all(req.user.id);
+  res.json(rows);
+});
 
 const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
 

@@ -24,6 +24,10 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
         <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
         <a routerLink="/database" [class.active]="isDatabaseSection()">🗃️ מסד נתונים</a>
+        <a routerLink="/pages" routerLinkActive="active" class="pages-nav-link">
+          📚 דפים
+          <span class="nav-badge" *ngIf="accessRequests().length">{{ accessRequests().length }}</span>
+        </a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
         <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
