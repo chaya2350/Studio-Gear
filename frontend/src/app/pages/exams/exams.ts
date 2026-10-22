@@ -228,6 +228,7 @@ export class ExamsComponent implements OnInit {
   studentQuery = '';
   studentResults = signal<any[]>([]);
   private allStudents = signal<any[]>([]);
+  trackNames = signal<string[]>([]);
 
   toStudyYear = toStudyYear;
 
@@ -238,6 +239,7 @@ export class ExamsComponent implements OnInit {
       this.allStudents.set(s);
       this.handleDeepLink();
     });
+    this.api.getTracks().subscribe(t => this.trackNames.set(t.tracks.map(x => x.name)));
     this.loadExams();
   }
 
@@ -276,11 +278,17 @@ export class ExamsComponent implements OnInit {
   }
 
   trackOptions(): string[] {
-    return [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
+    return this.trackNames();
   }
 
   yearOptions(): string[] {
-    return [...new Set(this.allStudents().map(s => s.year).filter(Boolean))] as string[];
+    // דה-דופליקציה לפי שם השנה המוצג (למשל 'א' שמופיעה בשני פורמטים בDB)
+    const seen = new Map<string, string>();
+    for (const y of this.allStudents().map(s => s.year).filter(Boolean)) {
+      const label = toStudyYear(y);
+      if (!seen.has(label)) seen.set(label, y);
+    }
+    return [...seen.values()];
   }
 
   openNewExam() {
@@ -357,6 +365,14 @@ export class ExamsComponent implements OnInit {
     });
   }
 
+  // הדפסה רק אחרי שכל תמונות הברקוד נטענו — כדי שאף כרטיס לא יצא ריק
+  private printWhenImagesLoaded(win: Window) {
+    const imgs = Array.from(win.document.images);
+    Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+      img.onload = img.onerror = () => res(null);
+    }))).then(() => setTimeout(() => win.print(), 150));
+  }
+
   printClassCodes(examName: string) {
     this.api.getExam(this.selectedExam()!.id).subscribe(exam => {
       const base = window.location.origin;
@@ -373,11 +389,11 @@ export class ExamsComponent implements OnInit {
         .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
         .bc-card{border:1.5px dashed #999;border-radius:10px;padding:12px 8px;text-align:center;page-break-inside:avoid;}
         .bc-name{font-weight:800;font-size:15px;}.bc-exam{font-size:11px;color:#555;margin-bottom:6px;}
-        img{width:82%;} .bc-code{font-family:monospace;font-size:10px;color:#666;}
+        img{width:82%;min-height:36px;display:block;margin:0 auto;} .bc-code{font-family:monospace;font-size:10px;color:#666;}
         @media print{.grid{grid-template-columns:repeat(2,1fr);}}</style></head>
         <body><div class="grid">${cards}</div></body></html>`);
       win!.document.close();
-      setTimeout(() => win!.print(), 600);
+      this.printWhenImagesLoaded(win!);
     });
   }
 
@@ -406,6 +422,6 @@ export class ExamsComponent implements OnInit {
         <div class="grid">${cards}</div>
       </body></html>`);
     win!.document.close();
-    setTimeout(() => win!.print(), 600);
+    this.printWhenImagesLoaded(win!);
   }
 }
