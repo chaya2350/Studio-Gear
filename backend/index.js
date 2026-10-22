@@ -242,9 +242,11 @@ app.get('/api/pages/topics', (req, res) => {
   const topics = db.prepare(`
     SELECT t.id, t.name, t.created_by,
       (SELECT COUNT(*) FROM personal_pages p WHERE p.topic_id = t.id AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
-        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND p.created_by = ? AND r.status = 'pending') AS pending_requests
     FROM page_topics t ORDER BY t.name
-  `).all(req.user.id, req.user.id);
+  `).all(req.user.id, req.user.id, req.user.id);
   res.json(topics);
 });
 

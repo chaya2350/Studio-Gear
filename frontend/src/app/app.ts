@@ -1,4 +1,4 @@
-import { Component, OnInit, effect } from '@angular/core';
+import { Component, OnInit, effect, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { CartService } from './services/cart.service';
@@ -23,7 +23,6 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
         <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
-        <a routerLink="/database" [class.active]="isDatabaseSection()">🗃️ מסד נתונים</a>
         <a routerLink="/pages" routerLinkActive="active" class="pages-nav-link">
           📚 דפים
           <span class="nav-badge" *ngIf="accessRequests().length">{{ accessRequests().length }}</span>
@@ -90,6 +89,13 @@ import { filter } from 'rxjs/operators';
   `,
   styles: [
     `
+      .nav-badge {
+        background: var(--danger); color: white; border-radius: 50%;
+        min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+        font-size: 0.68rem; font-weight: 800; padding: 0 4px; margin-right: 4px;
+        animation: badge-pulse 1.5s ease infinite;
+      }
+      @keyframes badge-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
       .brand {
         text-decoration: none;
       }
@@ -174,6 +180,7 @@ export class App implements OnInit {
   currentQuery = '';
   approvalTypes: any[] = [];
   logoutError = '';
+  accessRequests = signal<any[]>([]);
 
   constructor(
     public cart: CartService,
@@ -194,9 +201,18 @@ export class App implements OnInit {
         this.api.getApprovalTypes().subscribe((t) => {
           if (this.auth.user()) this.approvalTypes = t;
         });
+        this.refreshAccessRequests();
       } else {
         this.approvalTypes = [];
+        this.accessRequests.set([]);
       }
+    });
+  }
+
+  refreshAccessRequests() {
+    this.api.getIncomingPageRequests().subscribe({
+      next: (r) => this.accessRequests.set(r),
+      error: () => {},
     });
   }
 
@@ -224,10 +240,6 @@ export class App implements OnInit {
 
   isExamsSection(): boolean {
     return this.currentPath === '/exams' || this.currentPath.startsWith('/exams/');
-  }
-
-  isDatabaseSection(): boolean {
-    return this.currentPath === '/database' || this.currentPath.startsWith('/database/');
   }
 
   isEquipmentSection(): boolean {

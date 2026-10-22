@@ -25,7 +25,10 @@ import { AuthService } from '../../services/auth.service';
 
     <div class="topics-grid" *ngIf="!selectedTopic()">
       <div *ngFor="let t of filteredTopics()" class="topic-card" (click)="selectTopic(t)">
-        <div class="topic-icon">🗂️</div>
+        <div class="topic-icon">
+          🗂️
+          <span class="card-badge" *ngIf="t.pending_requests > 0">{{ t.pending_requests }}</span>
+        </div>
         <div class="topic-info">
           <strong>{{ t.name }}</strong>
           <span>{{ t.page_count }} דפים</span>
@@ -181,7 +184,15 @@ import { AuthService } from '../../services/auth.service';
       cursor: pointer; transition: all var(--transition); background: var(--surface);
       &:hover { border-color: var(--primary); background: var(--primary-light); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
     }
-    .topic-icon { font-size: 1.8rem; }
+    .topic-icon { font-size: 1.8rem; position: relative; }
+    .card-badge {
+      position: absolute; top: -6px; left: -8px;
+      background: var(--danger); color: white; border-radius: 50%;
+      min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.66rem; font-weight: 800; padding: 0 4px;
+      animation: badge-pulse 1.5s ease infinite;
+    }
+    @keyframes badge-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
     .topic-info { display: flex; flex-direction: column; gap: 2px;
       strong { font-size: 1rem; } span { font-size: 0.78rem; color: var(--text-muted); } }
 
