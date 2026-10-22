@@ -46,6 +46,19 @@ interface UserAccount {
     <div *ngIf="activeSection() === 'users'" class="card user-management">
       <div class="section-title">👥 ניהול משתמשות והרשאות</div>
       <p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
+
+      <div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
+        <div class="danger-title">⚠️ איפוס מסד נתונים (תלמידות)</div>
+        <p>
+          הפעולה תמחק את כל נתוני התלמידות, המסלולים, הדרישות והמבחנים כדי להתחיל הזנה מהתחלה.
+          משתמשות מערכת, הודעות, ציוד והשאלות לא נמחקים.
+        </p>
+        <button class="btn btn-danger" [disabled]="resettingDb()" (click)="resetDatabase()">
+          {{ resettingDb() ? 'מאפסת...' : '🧨 איפוס נתוני תלמידות' }}
+        </button>
+        <p *ngIf="resetDbMessage()" class="danger-result">{{ resetDbMessage() }}</p>
+      </div>
+
       <div class="user-form">
         <input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
         <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
@@ -245,6 +258,18 @@ interface UserAccount {
     .approval-save-error { color: #991b1b; margin-bottom: 10px; }
     code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
     .user-management { max-width: 1000px; margin-bottom: 24px; }
+    .danger-zone {
+      margin: 0 0 16px;
+      padding: 14px;
+      border: 1.5px solid #fecaca;
+      border-radius: var(--radius-sm);
+      background: #fff1f2;
+      display: grid;
+      gap: 8px;
+    }
+    .danger-title { font-weight: 800; color: #9f1239; }
+    .danger-zone p { margin: 0; color: #881337; font-size: 0.85rem; }
+    .danger-result { font-weight: 700; color: #9f1239; }
     .user-help { color: var(--text-muted); font-size: 0.85rem; margin: -4px 0 14px; }
     .user-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: center; }
     .user-form input, .user-form select, .user-row select {
@@ -296,6 +321,8 @@ export class AdminComponent {
   approvalSaveError = signal('');
   savingApproval = signal(false);
   section = signal<AdminSection | null>(null);
+  resettingDb = signal(false);
+  resetDbMessage = signal('');
 
   constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
     this.loadTotal();
@@ -365,6 +392,27 @@ export class AdminComponent {
     this.http.post<{ password: string }>(`/api/users/${user.id}/reset-password`, {}).subscribe({
       next: result => this.resetResult.set({ name: user.name, password: result.password }),
       error: error => this.userError.set(error.error?.error || 'לא ניתן לאפס את הסיסמה')
+    });
+  }
+
+  resetDatabase() {
+    this.resetDbMessage.set('');
+    const first = confirm('לאפס את נתוני התלמידות מהמערכת? הפעולה מוחקת נתוני תלמידות/מסלולים/דרישות/מבחנים.');
+    if (!first) return;
+    const second = confirm('אישור סופי: פעולה זו בלתי הפיכה. להמשיך?');
+    if (!second) return;
+
+    this.resettingDb.set(true);
+    this.api.resetDatabase().subscribe({
+      next: (result) => {
+        this.resettingDb.set(false);
+        this.loadTotal();
+        this.resetDbMessage.set(`${result.message} (נמחקו תלמידות: ${result.cleared['students']}, מסלולים: ${result.cleared['tracks']}, מבחנים: ${result.cleared['exams']})`);
+      },
+      error: (error) => {
+        this.resettingDb.set(false);
+        this.resetDbMessage.set(error.error?.error || 'איפוס מסד הנתונים נכשל');
+      }
     });
   }
 

@@ -111,6 +111,9 @@ export class ApiService {
   deleteStudent(id_number: string) {
     return this.http.delete<{ success: boolean; id_number: string; name: string }>(`${this.base}/students/${encodeURIComponent(id_number)}`);
   }
+  resetDatabase() {
+    return this.http.post<{ success: boolean; message: string; cleared: Record<string, number> }>(`${this.base}/admin/reset-database`, {});
+  }
 
   getApprovalTypes() { return this.http.get<any[]>(`${this.base}/approval-types`); }
   createApprovalType(data: { name: string; template: string; signature: string; type: 'single' | 'regular' }) {

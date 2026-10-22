@@ -732,6 +732,44 @@ app.delete('/api/students/:id_number', (req, res) => {
   res.json({ success: true, id_number: student.id_number, name: student.name });
 });
 
+app.post('/api/admin/reset-database', (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'פעולה זו מיועדת למנהלת מערכת בלבד' });
+  }
+
+  const count = (table) => db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get().c;
+  const before = {
+    students: count('students'),
+    student_requirements: count('student_requirements'),
+    tracks: count('tracks'),
+    track_requirements: count('track_requirements'),
+    exams: count('exams'),
+    exam_codes: count('exam_codes'),
+    exam_grades: count('exam_grades')
+  };
+
+  const resetTx = db.transaction(() => {
+    const files = db.prepare('SELECT file_stored FROM student_requirements WHERE file_stored IS NOT NULL').all();
+    removeStoredFiles(files);
+
+    db.prepare('DELETE FROM student_requirements').run();
+    db.prepare('DELETE FROM students').run();
+    db.prepare('DELETE FROM track_requirements').run();
+    db.prepare('DELETE FROM tracks').run();
+    db.prepare('DELETE FROM exam_grades').run();
+    db.prepare('DELETE FROM exam_codes').run();
+    db.prepare('DELETE FROM exams').run();
+    db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('students','tracks','track_requirements','exams')").run();
+  });
+
+  resetTx();
+  res.json({
+    success: true,
+    message: 'נתוני התלמידות והמסלולים אופסו בהצלחה',
+    cleared: before
+  });
+});
+
 // ── Tracks and requirements ────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS tracks (
@@ -1095,16 +1133,16 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'תז תלמידה', 'ת.ז תלמידה',
         'id_number', 'ID', 'id'
       ],
-      firstName: ['שם פרטי', 'שם פרטי תלמידה'],
-      lastName: ['משפחה', 'שם משפחה', 'משפחה תלמידה'],
-      name: ['שם', 'שם מלא', 'שם תלמידה', 'name', 'student_name'],
+      firstName: ['שם פרטי', 'שם פרטי תלמידה', 'פרטי'],
+      lastName: ['משפחה', 'שם משפחה', 'משפחה תלמידה', 'שם משפחה תלמידה'],
+      name: ['שם מלא', 'שם תלמידה', 'name', 'student_name'],
       phone: ['נייד אישי', 'טלפון', 'phone'],
       phoneCode: ['קוד לטלפון', 'קידומת', 'קוד טלפון', 'phone code', 'phone_code', 'קוד-טלפון'],
       track: ['התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track'],
       year: ['כיתה', 'שנה', 'year'],
       birthDate: ['ת. לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth', 'ת. לידה עברי'],
       address: ['כתובת', 'כתובת מגורים', 'address'],
-      house: ['מספר בית', 'מספר'],
+      house: ['מספר בית', 'מס בית', 'בית'],
       city: ['עיר', 'יישוב']
     };
     const knownHeaderSet = new Set(
@@ -1246,9 +1284,17 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
           return '';
         };
         const id_number = normalizeIdNumber(getValue(...knownHeaders.id)) || findIdCandidateFromRow(row);
-        const firstName = String(getValue(...knownHeaders.firstName)).trim();
-        const lastName = String(getValue(...knownHeaders.lastName)).trim();
-        const name = [lastName, firstName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
+        const rowKeys = Object.keys(row);
+        const hasFamilyColumn = rowKeys.some((column) => {
+          const token = compactHeader(column);
+          return ['משפחה', 'שםמשפחה', 'משפחהתלמידה', 'שםמשפחהתלמידה'].includes(token);
+        });
+        const explicitFirstName = String(getValue(...knownHeaders.firstName)).trim();
+        const explicitLastName = String(getValue(...knownHeaders.lastName)).trim();
+        const genericName = String(getValue('שם')).trim();
+        const firstName = explicitFirstName || (hasFamilyColumn ? genericName : '');
+        const lastName = explicitLastName || (!hasFamilyColumn ? genericName : '');
+        const name = [firstName, lastName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
         const phone = String(getValue(...knownHeaders.phone)).trim();
         const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
         const explicitTrack = String(getValue(...knownHeaders.track)).trim();

@@ -124,9 +124,13 @@ import { Student } from '../../models';
               <span class="info-label">טלפון</span>
               <span class="info-value">{{ student()!.phone }}</span>
             </div>
-            <div class="info-row" *ngIf="student()!.address">
+            <div class="info-row" *ngIf="safeAddress()">
               <span class="info-label">כתובת</span>
-              <span class="info-value">{{ student()!.address }}</span>
+              <span class="info-value">{{ safeAddress() }}</span>
+            </div>
+            <div class="info-row" *ngIf="classDisplayValue()">
+              <span class="info-label">כיתה</span>
+              <span class="info-value">{{ classDisplayValue() }}</span>
             </div>
             <div class="info-row" *ngIf="student()!.track">
               <span class="info-label">מסלול</span>
@@ -737,6 +741,14 @@ export class StudentComponent implements OnInit {
     return !l.actual_return && l.expected_return < this.today;
   }
 
+  safeAddress() {
+    const raw = String(this.student()?.address || '').trim();
+    if (!raw) return '';
+    // Numeric-only address is a known bad import artifact, so hide it from UI.
+    if (/^\d+$/.test(raw)) return '';
+    return raw;
+  }
+
   extraFields() {
     const data = this.student()?.extra_data;
     if (!data || typeof data !== 'object') return [];
@@ -744,7 +756,8 @@ export class StudentComponent implements OnInit {
       .map(([key, value]) => ({ key: String(key), value: String(value ?? '').trim() }))
       .filter((field) => field.key && field.value)
       .filter((field) => !this.isPhoneCodeKey(field.key) && !this.isPhoneExtensionKey(field.key))
-      .filter((field) => !this.isUsernameKey(field.key) && !this.isPasswordKey(field.key));
+      .filter((field) => !this.isUsernameKey(field.key) && !this.isPasswordKey(field.key))
+      .filter((field) => !this.isNameKey(field.key));
   }
 
   hasPublicPhoneBlock() {
@@ -782,7 +795,7 @@ export class StudentComponent implements OnInit {
 
   isPhoneExtensionKey(key: string) {
     const normalized = this.normalizeFieldKey(key);
-    return normalized.includes('שלוחה') || normalized.includes('הארכה') || normalized.includes('extension') || normalized.endsWith('ext');
+    return normalized.includes('שלוחה') || normalized.includes('שלוחת') || normalized.includes('הארכה') || normalized.includes('extension') || normalized.endsWith('ext');
   }
 
   usernameValue() {
@@ -806,6 +819,72 @@ export class StudentComponent implements OnInit {
 
   isPasswordKey(key: string) {
     const normalized = this.normalizeFieldKey(key);
-    return normalized.includes('סיסמה') || normalized.includes('סיסמא') || normalized.includes('ססמה') || normalized.includes('password') || normalized === 'pass';
+    return normalized.includes('סיסמ') || normalized.includes('ססמ') || normalized.includes('password') || normalized === 'pass';
+  }
+
+  isNameKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized === 'שם' || normalized === 'שםמלא' || normalized === 'שםפרטי' || normalized === 'שםמשפחה';
+  }
+
+  classDisplayValue() {
+    const baseClass = String(this.student()?.year || '').trim() || this.extraValueByKey((key) => this.isClassKey(key));
+    if (!baseClass) return '';
+
+    const normalizedClass = this.normalizeFieldKey(baseClass);
+    if (normalizedClass.includes('התמח')) {
+      return 'התמחות';
+    }
+
+    const parallel = this.parallelValue();
+    if (!parallel) return baseClass;
+
+    const numericParallel = Number(String(parallel).trim());
+    if (Number.isFinite(numericParallel)) {
+      return `${baseClass}${numericParallel + 1}`;
+    }
+
+    return `${baseClass}${parallel}`;
+  }
+
+  parallelValue() {
+    const direct = this.extraValueByKey((key) => this.isParallelKey(key));
+    if (direct) return direct;
+
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+
+    const entries = Object.entries(data)
+      .map(([key, value]) => ({ key: String(key || '').trim(), value: String(value || '').trim() }))
+      .filter((entry) => entry.key && entry.value);
+
+    // Some imported sheets use numeric technical keys (e.g. "230") for the parallel column.
+    const numericKeyCandidate = entries.find((entry) => /^\d{2,4}$/.test(entry.key) && /^\d{1,2}$/.test(entry.value));
+    if (numericKeyCandidate) return numericKeyCandidate.value;
+
+    const numericValueInGenericKey = entries.find((entry) => {
+      const normalizedKey = this.normalizeFieldKey(entry.key);
+      return /^\d{1,2}$/.test(entry.value) && (normalizedKey.includes('עמודה') || normalizedKey.includes('column'));
+    });
+    if (numericValueInGenericKey) return numericValueInGenericKey.value;
+
+    return '';
+  }
+
+  extraValueByKey(matcher: (key: string) => boolean) {
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+    const found = Object.entries(data).find(([key, value]) => matcher(key) && String(value || '').trim());
+    return found ? String(found[1] || '').trim() : '';
+  }
+
+  isClassKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized === 'כיתה' || normalized === 'class' || normalized === 'year';
+  }
+
+  isParallelKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('מקביל') || normalized.includes('parallel') || normalized.includes('קבוצה');
   }
 }
