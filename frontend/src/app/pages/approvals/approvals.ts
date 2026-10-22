@@ -211,8 +211,8 @@ export class ApprovalsComponent implements OnInit {
     const studyYear = toStudyYear(student?.year);
     const track = student ? `${student.track || ''}${studyYear ? ' ' + studyYear : ''}` : '';
     return template
-      .replace(/{{שם}}/g, student?.name || 'שם התלמידה')
-      .replace(/{{תז}}/g, student?.id_number || '000000000')
+      .replace(/{{שם}}/g, `<strong>${student?.name || 'שם התלמידה'}</strong>`)
+      .replace(/{{תז}}/g, `<strong>${student?.id_number || '000000000'}</strong>`)
       .replace(/{{שנה}}/g, this.academicYear)
       .replace(/{{מסלול}}/g, track || 'מסלול לימודים')
       .replace(/{{תאריך לידה}}/g, student?.birth_date || '___')
@@ -293,7 +293,7 @@ export class ApprovalsComponent implements OnInit {
         .ap-body { font-size: 0.92rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; padding-right: 3mm; }
         .ap-body p { margin: 0; }
         .ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
-        .ap-footer { margin-top: 7mm; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
+        .ap-footer { margin-top: 0; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
         .ap-sig-block { display: flex; flex-direction: column; align-items: center; gap: 3px; }
         .ap-sig-img { height: 46px; width: auto; }
         .ap-sig-name { font-size: 0.68rem; color: #444; }
