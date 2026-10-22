@@ -1,7 +1,7 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { toStudyYear } from '../approvals/study-year';
 
@@ -231,11 +231,32 @@ export class ExamsComponent implements OnInit {
 
   toStudyYear = toStudyYear;
 
-  constructor(private api: ApiService, private route: ActivatedRoute) { }
+  constructor(private api: ApiService, private route: ActivatedRoute, private router: Router) { }
 
   ngOnInit() {
-    this.api.getStudents().subscribe(s => this.allStudents.set(s));
+    this.api.getStudents().subscribe(s => {
+      this.allStudents.set(s);
+      this.handleDeepLink();
+    });
     this.loadExams();
+  }
+
+  // נחיתה מהלוח השנתי (?exam=ID&print=1): פותח את המבחן עם המסלול והשנה ממולאים ומדפיס
+  private handleDeepLink() {
+    const examId = Number(this.route.snapshot.queryParamMap.get('exam'));
+    if (!examId) return;
+    const print = this.route.snapshot.queryParamMap.get('print') === '1';
+    this.api.getExams().subscribe(exams => {
+      const exam = exams.find(e => e.id === examId);
+      if (!exam) return;
+      this.exams.set(exams);
+      this.selectedExam.set(exam);
+      this.classForm = { track: exam.track || null, year: exam.year || null };
+      if (print) {
+        this.generateClass();
+        this.router.navigate([], { queryParams: { exam: null, print: null }, queryParamsHandling: 'merge' });
+      }
+    });
   }
 
   loadExams() {
