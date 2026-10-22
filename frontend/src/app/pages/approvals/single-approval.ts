@@ -220,8 +220,8 @@ export class SingleApprovalComponent implements OnInit {
 
   fillTemplate(template: string): string {
     return template
-      .replace(/{{שם}}/g, this.name || 'שם התלמידה')
-      .replace(/{{תז}}/g, this.idNumber || '000000000')
+      .replace(/{{שם}}/g, `<strong>${this.name || 'שם התלמידה'}</strong>`)
+      .replace(/{{תז}}/g, `<strong>${this.idNumber || '000000000'}</strong>`)
       .replace(/{{שנה}}/g, this.academicYear)
       .replace(/{{מסלול}}/g, this.track || '___')
       .replace(/{{תאריך לידה}}/g, this.birthDate || '___')
@@ -283,7 +283,7 @@ export class SingleApprovalComponent implements OnInit {
         .ap-body { font-size: 0.92rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; padding-right: 3mm; }
         .ap-body p { margin: 0; }
         .ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
-        .ap-footer { margin-top: 7mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
+        .ap-footer { margin-top: 0; display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
         .ap-sig { display: flex; flex-direction: column; align-items: center; }
         .ap-sig-img { height: 46px; width: auto; }
         .ap-sig-name { font-size: 0.68rem; color: #555; margin-top: 3px; }
