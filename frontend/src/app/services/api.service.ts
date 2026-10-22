@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Equipment, Loan, Category, Student } from '../models';
 
@@ -65,6 +65,25 @@ export interface StudentRequirements {
   requirements: StudentRequirement[];
 }
 
+export interface DataReportColumn {
+  key: string;
+  label: string;
+}
+
+export interface TrackReport {
+  track: string;
+  year: string;
+  columns: DataReportColumn[];
+  rows: Record<string, string | number>[];
+}
+
+export interface ClassReport {
+  year: string;
+  columns: DataReportColumn[];
+  rows: Record<string, string | number>[];
+  exams: { id: number; name: string; year: string | null }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private base = '/api';
@@ -105,8 +124,14 @@ export class ApiService {
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year'>) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'>) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
+  }
+  deleteStudent(id_number: string) {
+    return this.http.delete<{ success: boolean; id_number: string; name: string }>(`${this.base}/students/${encodeURIComponent(id_number)}`);
+  }
+  resetDatabase() {
+    return this.http.post<{ success: boolean; message: string; cleared: Record<string, number> }>(`${this.base}/admin/reset-database`, {});
   }
 
   getApprovalTypes() { return this.http.get<any[]>(`${this.base}/approval-types`); }
@@ -136,6 +161,12 @@ export class ApiService {
     return this.http.post<{ added: number; skipped: number }>(`${this.base}/track-requirements/bulk`, data);
   }
   getTrackStats(id: number) { return this.http.get<TrackStats>(`${this.base}/tracks/${id}/stats`); }
+  getDatabaseTrackReport(track: string, year: string) {
+    return this.http.get<TrackReport>(`${this.base}/reports/track`, { params: { track, year } });
+  }
+  getDatabaseClassReport(className: string) {
+    return this.http.get<ClassReport>(`${this.base}/reports/class`, { params: { class_name: className } });
+  }
   requirementFileUrl(id_number: string, requirementId: number) {
     return `${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}/file`;
   }
@@ -150,4 +181,35 @@ export class ApiService {
   setStudentRequirement(id_number: string, requirementId: number, completed: boolean) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}`, { completed });
   }
+
+  // ── Exams ──
+  getExams() { return this.http.get<any[]>(`${this.base}/exams`); }
+  getExam(id: number) { return this.http.get<any>(`${this.base}/exams/${id}`); }
+  createExam(data: { name: string; track?: string; year?: string; exam_date?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
+  deleteExam(id: number) { return this.http.delete(`${this.base}/exams/${id}`); }
+  generateExamCodes(id: number, data: { track?: string; year?: string; id_number?: string }) { return this.http.post<{ created: number }>(`${this.base}/exams/${id}/codes`, data); }
+  getExamCode(code: string) { return this.http.get<any>(`${this.base}/exam-codes/${encodeURIComponent(code)}`); }
+  setExamCodeGrade(code: string, grade: number) { return this.http.put(`${this.base}/exam-codes/${encodeURIComponent(code)}/grade`, { grade }); }
+  getExamStats() { return this.http.get<{ byStudent: any[]; byExam: any[] }>(`${this.base}/exams-stats/summary`); }
+  getStudentExams(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/exams`); }
+  getExamBarcodeUrl(code: string) { return `${this.base}/exam-codes/${encodeURIComponent(code)}/barcode`; }
+
+  // ── דפים אישיים ──
+  getPageTopics() { return this.http.get<any[]>(`${this.base}/pages/topics`); }
+  createPageTopic(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/pages/topics`, { name }); }
+  getTopicPages(topicId: number) { return this.http.get<any[]>(`${this.base}/pages/topics/${topicId}/pages`); }
+  createPage(topicId: number, data: { title: string; body: string; visibility: 'private' | 'public' }) {
+    return this.http.post<{ id: number }>(`${this.base}/pages/topics/${topicId}/pages`, data);
+  }
+  getPage(id: number) { return this.http.get<any>(`${this.base}/pages/${id}`); }
+  updatePage(id: number, data: { title: string; body: string; visibility: 'private' | 'public' }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/pages/${id}`, data);
+  }
+  deletePage(id: number) { return this.http.delete<{ success: boolean }>(`${this.base}/pages/${id}`); }
+  requestPageAccess(id: number) { return this.http.post<{ status: string }>(`${this.base}/pages/${id}/request-access`, {}); }
+  getPageRequests(id: number) { return this.http.get<any[]>(`${this.base}/pages/${id}/requests`); }
+  decidePageRequest(requestId: number, status: 'approved' | 'denied') {
+    return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
+  }
+  getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
 }

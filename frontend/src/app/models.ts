@@ -60,9 +60,11 @@ export interface Student {
   id_number: string;
   name: string;
   phone?: string;
+  phone_code?: string;
   track?: string;
   year?: string;
   birth_date?: string;
   address?: string;
+  extra_data?: Record<string, string>;
   loans?: Loan[];
 }

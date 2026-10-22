@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, effect, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { CartService } from './services/cart.service';
@@ -16,15 +16,18 @@ import { filter } from 'rxjs/operators';
         <span>סמינר גור</span>
       </a>
       <div class="nav-links">
-        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
-          >🏠 בית</a
-        >
-        <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">🪪 תלמידות</a>
-        <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
-        <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
-        <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
-        <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
-        <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
+        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">בית</a>
+        <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">תלמידות</a>
+        <a routerLink="/equipment" [class.active]="isEquipmentSection()">השאלת ציוד</a>
+        <a routerLink="/approvals" [class.active]="isApprovalsSection()">אישורים</a>
+        <a routerLink="/exams" [class.active]="isExamsSection()">מבחנים</a>
+        <a routerLink="/pages" routerLinkActive="active" class="pages-nav-link">
+          דפים
+          <span class="nav-badge" *ngIf="accessRequests().length + grantedCount > 0">{{ accessRequests().length + grantedCount }}</span>
+        </a>
+        <a routerLink="/messages" routerLinkActive="active">הודעות</a>
+        <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">לוח שנה</a>
+        <a routerLink="/admin" routerLinkActive="active">ניהול</a>
       </div>
       <div class="account-actions" *ngIf="auth.user() as user">
         <span>{{ user.name }} · {{ roleLabel(user.role) }}</span>
@@ -41,7 +44,7 @@ import { filter } from 'rxjs/operators';
           [queryParams]="{ type: t.id }"
           [class.active]="isApprovalTypeActive(t.id)"
         >
-          📄 {{ t.name }}
+          {{ t.name }}
         </a>
         <a
           *ngIf="t.type === 'single'"
@@ -49,9 +52,14 @@ import { filter } from 'rxjs/operators';
           [queryParams]="{ type: t.id }"
           [class.active]="isSingleApprovalActive(t.id)"
         >
-          💍 {{ t.name }}
+          {{ t.name }}
         </a>
       </ng-container>
+    </nav>
+
+    <nav class="subnav" *ngIf="currentPath !== '/login' && isExamsSection()">
+      <a routerLink="/exams" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">ניהול מבחנים וברקודים</a>
+      <a routerLink="/exams/scan" routerLinkActive="active">רישום ציון</a>
     </nav>
 
     <nav class="subnav" *ngIf="currentPath !== '/login' && isEquipmentSection()">
@@ -59,11 +67,11 @@ import { filter } from 'rxjs/operators';
         routerLink="/equipment"
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: true }"
-        >📦 ציוד</a
+        >ציוד</a
       >
-      <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-      <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
-      <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
+      <a routerLink="/scan" routerLinkActive="active">סריקה</a>
+      <a routerLink="/loans" routerLinkActive="active">השאלות</a>
+      <a routerLink="/checkout" routerLinkActive="active">הזמנה</a>
     </nav>
 
     <main class="container" [class.login-container]="currentPath === '/login'">
@@ -73,12 +81,18 @@ import { filter } from 'rxjs/operators';
       <span>כל הזכויות שמורות למלי וחיה</span>
     </footer>
     <a *ngIf="currentPath !== '/login' && cart.count() > 0" routerLink="/checkout" class="cart-fab">
-      🛒 הזמנה
+      הזמנה
       <span class="cart-badge">{{ cart.count() }}</span>
     </a>
   `,
   styles: [
     `
+      .nav-badge {
+        background: var(--danger); color: white; border-radius: 999px;
+        min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+        font-size: 0.62rem; font-weight: 800; padding: 0 4px; margin-right: 4px;
+        vertical-align: 2px;
+      }
       .brand {
         text-decoration: none;
       }
@@ -163,6 +177,8 @@ export class App implements OnInit {
   currentQuery = '';
   approvalTypes: any[] = [];
   logoutError = '';
+  accessRequests = signal<any[]>([]);
+  grantedCount = 0;
 
   constructor(
     public cart: CartService,
@@ -176,15 +192,34 @@ export class App implements OnInit {
       this.currentPath = e.urlAfterRedirects.split('?')[0];
       this.currentQuery = e.urlAfterRedirects;
     });
+    // טעינת סוגי האישורים בכל פעם שמשתמשת מתחברת
+    effect(() => {
+      const user = this.auth.user();
+      if (user) {
+        this.api.getApprovalTypes().subscribe((t) => {
+          if (this.auth.user()) this.approvalTypes = t;
+        });
+        this.refreshAccessRequests();
+      } else {
+        this.approvalTypes = [];
+        this.accessRequests.set([]);
+      }
+    });
   }
 
-  ngOnInit() {
-    if (this.auth.user()) {
-      this.api.getApprovalTypes().subscribe((t) => {
-        this.approvalTypes = t;
-      });
-    }
+  refreshAccessRequests() {
+    this.api.getIncomingPageRequests().subscribe({
+      next: (r) => this.accessRequests.set(r),
+      error: () => {},
+    });
+    // ספירת אישורי גישה חדשים (למבקשות) — עיגול בתפריט ליד "דפים"
+    this.api.getPageTopics().subscribe({
+      next: (t) => this.grantedCount = t.reduce((s: number, x: any) => s + (x.granted_requests || 0), 0),
+      error: () => {},
+    });
   }
+
+  ngOnInit() {}
 
   roleLabel(role: UserRole): string {
     return role === 'admin' ? 'מנהלת מערכת' : role === 'secretary' ? 'מזכירות' : 'לבורנטית';
@@ -204,6 +239,10 @@ export class App implements OnInit {
 
   isSingleApprovalActive(id: number): boolean {
     return this.currentPath === '/approvals/single' && this.currentQuery.includes(`type=${id}`);
+  }
+
+  isExamsSection(): boolean {
+    return this.currentPath === '/exams' || this.currentPath.startsWith('/exams/');
   }
 
   isEquipmentSection(): boolean {

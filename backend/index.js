@@ -9,6 +9,8 @@ const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
+const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
+const { buildTrackReport, buildClassReport, splitTrackValues } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -118,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/requirements\/\d+(?:\/file)?)?)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -202,7 +204,210 @@ db.exec(`
     UNIQUE (event_date, title, category, source_sheet)
   );
   CREATE INDEX IF NOT EXISTS calendar_events_date_idx ON calendar_events(event_date);
+  CREATE TABLE IF NOT EXISTS page_topics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS personal_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id INTEGER NOT NULL REFERENCES page_topics(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private','public')),
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS personal_pages_topic_idx ON personal_pages(topic_id);
+  CREATE TABLE IF NOT EXISTS page_access_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id INTEGER NOT NULL REFERENCES personal_pages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT,
+    seen_at TEXT,
+    granted_seen_at TEXT,
+    UNIQUE (page_id, user_id)
+  );
 `);
+
+// הוספת seen_at לטבלאות קיימות (CREATE IF NOT EXISTS לא מוסיף עמודות)
+const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().map((c) => c.name);
+if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
+if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
+
+// ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
+function pageRow(row, userId) {
+  if (!row) return row;
+  return { ...row, is_owner: row.created_by === userId };
+}
+
+// מגדיר את הבקשות שהיוצר/ת כבר ראה/תה (לא חדשות יותר)
+function markRequestsSeen(userId, topicId) {
+  if (topicId) {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ? AND topic_id = ?)
+    `).run(userId, topicId);
+  } else {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ?)
+    `).run(userId);
+  }
+}
+
+app.get('/api/pages/topics', (req, res) => {
+  const topics = db.prepare(`
+    SELECT t.id, t.name, t.created_by,
+      (SELECT COUNT(*) FROM personal_pages p WHERE p.topic_id = t.id AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND p.created_by = ? AND r.status = 'pending' AND r.seen_at IS NULL) AS pending_requests,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND r.user_id = ? AND r.status = 'approved' AND r.granted_seen_at IS NULL) AS granted_requests
+    FROM page_topics t ORDER BY t.name
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id);
+  res.json(topics);
+});
+
+app.post('/api/pages/topics', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'נא להזין שם נושא' });
+  const existing = db.prepare('SELECT id FROM page_topics WHERE name = ?').get(name);
+  if (existing) return res.json(existing);
+  const result = db.prepare('INSERT INTO page_topics (name, created_by) VALUES (?, ?)').run(name, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid, name });
+});
+
+app.get('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  markRequestsSeen(req.user.id, topicId);
+  // מסמן שהמבקש/ת ראה/תה את האישורים בנושא הזה
+  db.prepare(`
+    UPDATE page_access_requests SET granted_seen_at = datetime('now')
+    WHERE user_id = ? AND status = 'approved' AND granted_seen_at IS NULL
+      AND page_id IN (SELECT id FROM personal_pages WHERE topic_id = ?)
+  `).run(req.user.id, topicId);
+  const rows = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view,
+      (SELECT COUNT(*) FROM page_access_requests r WHERE r.page_id = p.id AND r.status = 'pending') AS pending_requests,
+      (SELECT r.status FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ?) AS my_request_status
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.topic_id = ?
+    ORDER BY p.created_at DESC
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id, topicId);
+  res.json(rows);
+});
+
+app.post('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  const topic = db.prepare('SELECT id FROM page_topics WHERE id = ?').get(topicId);
+  if (!topic) return res.status(404).json({ error: 'נושא לא נמצא' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  const result = db.prepare(`
+    INSERT INTO personal_pages (topic_id, title, body, visibility, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(topicId, title, body, visibility, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.get('/api/pages/:id', (req, res) => {
+  const page = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.id = ?
+  `).get(req.user.id, req.user.id, req.user.id, Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (!page.can_view) return res.status(403).json({ error: 'אין לך הרשאת גישה לדף זה' });
+  res.json(pageRow(page, req.user.id));
+});
+
+app.put('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לערוך את הדף' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  db.prepare(`
+    UPDATE personal_pages SET title = ?, body = ?, visibility = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(title, body, visibility, page.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה למחוק את הדף' });
+  db.prepare('DELETE FROM personal_pages WHERE id = ?').run(page.id);
+  res.json({ success: true });
+});
+
+// הרשאות גישה לדפים פרטיים
+app.post('/api/pages/:id/request-access', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by === req.user.id) return res.status(400).json({ error: 'זה הדף שלך' });
+  const existing = db.prepare('SELECT id, status FROM page_access_requests WHERE page_id = ? AND user_id = ?').get(page.id, req.user.id);
+  if (existing) return res.json({ status: existing.status });
+  db.prepare('INSERT INTO page_access_requests (page_id, user_id) VALUES (?, ?)').run(page.id, req.user.id);
+  res.status(201).json({ status: 'pending' });
+});
+
+app.get('/api/pages/:id/requests', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לצפות בבקשות' });
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, u.id AS user_id, u.name AS user_name
+    FROM page_access_requests r JOIN users u ON u.id = r.user_id
+    WHERE r.page_id = ? ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+  `).all(page.id);
+  res.json(rows);
+});
+
+app.put('/api/pages/requests/:id', (req, res) => {
+  const request = db.prepare(`
+    SELECT r.*, p.created_by AS page_owner FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id WHERE r.id = ?
+  `).get(Number(req.params.id));
+  if (!request) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  if (request.page_owner !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לאשר בקשות' });
+  const status = req.body?.status === 'approved' ? 'approved' : req.body?.status === 'denied' ? 'denied' : null;
+  if (!status) return res.status(400).json({ error: 'ערך לא תקין' });
+  db.prepare('UPDATE page_access_requests SET status = ?, decided_at = datetime(\'now\') WHERE id = ?').run(status, request.id);
+  res.json({ success: true, status });
+});
+
+app.get('/api/pages/requests/incoming', (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, p.id AS page_id, p.title AS page_title, u.name AS user_name
+    FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id
+    JOIN users u ON u.id = r.user_id
+    WHERE p.created_by = ? AND r.status = 'pending'
+    ORDER BY r.created_at DESC
+  `).all(req.user.id);
+  res.json(rows);
+});
 
 const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
 
@@ -622,15 +827,33 @@ db.exec(`
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
 if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
 if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
+if (!studentCols.includes('phone_code')) db.exec('ALTER TABLE students ADD COLUMN phone_code TEXT');
+if (!studentCols.includes('extra_data')) db.exec("ALTER TABLE students ADD COLUMN extra_data TEXT NOT NULL DEFAULT '{}'");
+
+function parseExtraData(rawValue) {
+  if (!rawValue) return {};
+  if (typeof rawValue === 'object') return rawValue;
+  try {
+    const parsed = JSON.parse(String(rawValue));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function mapStudentRow(row) {
+  if (!row) return row;
+  return { ...row, extra_data: parseExtraData(row.extra_data) };
+}
 
 app.get('/api/students', (req, res) => {
   const { q } = req.query;
   if (q) {
     const rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
       .all(`%${q}%`, `%${q}%`);
-    return res.json(rows);
+    return res.json(rows.map(mapStudentRow));
   }
-  res.json(db.prepare('SELECT * FROM students ORDER BY name').all());
+  res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
 });
 
 app.get('/api/students/:id_number', (req, res) => {
@@ -642,24 +865,114 @@ app.get('/api/students/:id_number', (req, res) => {
     WHERE l.borrower_id_number = ?
     ORDER BY l.loan_date DESC
   `).all(req.params.id_number);
-  res.json({ ...student, loans });
+  res.json({ ...mapStudentRow(student), loans });
 });
 
 app.put('/api/students/:id_number', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
+  const existing = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!existing) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+
+  const optionalText = (value, currentValue) => {
+    if (value === undefined) return currentValue ?? null;
+    const text = String(value || '').trim();
+    return text || null;
+  };
+
+  const sanitizeExtraData = (value, currentValue) => {
+    if (value === undefined) return parseExtraData(currentValue);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const clean = {};
+    for (const [key, raw] of Object.entries(value)) {
+      const cleanKey = String(key || '').trim();
+      const cleanValue = String(raw || '').trim();
+      if (!cleanKey || !cleanValue) continue;
+      clean[cleanKey] = cleanValue;
+    }
+    return clean;
+  };
+
+  const phone = optionalText(req.body?.phone, existing.phone);
+  const track = optionalText(req.body?.track, existing.track);
+  const year = optionalText(req.body?.year, existing.year);
+  const phoneCode = optionalText(req.body?.phone_code, existing.phone_code);
+  const extraData = sanitizeExtraData(req.body?.extra_data, existing.extra_data);
+
   const result = db.prepare(`
-    UPDATE students SET name = ?, phone = ?, track = ?, year = ?
+    UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, extra_data = ?
     WHERE id_number = ?
-  `).run(name, req.body.phone || null, req.body.track || null, req.body.year || null, req.params.id_number);
-  if (!result.changes) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+  `).run(name, phone, phoneCode, track, year, JSON.stringify(extraData), req.params.id_number);
   res.json({ success: true });
 });
 
 app.get('/api/students/:id_number/details', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
-  res.json(student);
+  res.json(mapStudentRow(student));
+});
+
+app.delete('/api/students/:id_number', (req, res) => {
+  const idNumber = String(req.params.id_number || '').trim();
+  const student = db.prepare('SELECT id_number, name FROM students WHERE id_number = ?').get(idNumber);
+  if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+
+  const activeLoan = db.prepare(`
+    SELECT id FROM loans
+    WHERE borrower_id_number = ? AND actual_return IS NULL
+    LIMIT 1
+  `).get(idNumber);
+  if (activeLoan) {
+    return res.status(400).json({ error: 'לא ניתן למחוק תלמידה עם השאלות פעילות' });
+  }
+
+  const removeStudent = db.transaction(() => {
+    const files = db.prepare('SELECT file_stored FROM student_requirements WHERE id_number = ?').all(idNumber);
+    removeStoredFiles(files);
+    db.prepare('DELETE FROM student_requirements WHERE id_number = ?').run(idNumber);
+    db.prepare('DELETE FROM students WHERE id_number = ?').run(idNumber);
+  });
+
+  removeStudent();
+  res.json({ success: true, id_number: student.id_number, name: student.name });
+});
+
+app.post('/api/admin/reset-database', (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'פעולה זו מיועדת למנהלת מערכת בלבד' });
+  }
+
+  const count = (table) => db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get().c;
+  const before = {
+    students: count('students'),
+    student_requirements: count('student_requirements'),
+    tracks: count('tracks'),
+    track_requirements: count('track_requirements'),
+    exams: count('exams'),
+    exam_codes: count('exam_codes'),
+    exam_grades: count('exam_grades')
+  };
+
+  const resetTx = db.transaction(() => {
+    const files = db.prepare('SELECT file_stored FROM student_requirements WHERE file_stored IS NOT NULL').all();
+    removeStoredFiles(files);
+
+    db.prepare('DELETE FROM student_requirements').run();
+    db.prepare('DELETE FROM students').run();
+    db.prepare('DELETE FROM track_requirements').run();
+    db.prepare('DELETE FROM tracks').run();
+    db.prepare('DELETE FROM exam_grades').run();
+    db.prepare('DELETE FROM exam_codes').run();
+    db.prepare('DELETE FROM exams').run();
+    db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('students','tracks','track_requirements','exams')").run();
+  });
+
+  resetTx();
+  res.json({
+    success: true,
+    message: 'נתוני התלמידות והמסלולים אופסו בהצלחה',
+    cleared: before
+  });
 });
 
 // ── Tracks and requirements ────────────────────────────────
@@ -749,8 +1062,10 @@ app.get('/api/tracks', (req, res) => {
   const counts = new Map();
   const rows = db.prepare("SELECT track, COUNT(*) AS n FROM students WHERE track IS NOT NULL GROUP BY track").all();
   for (const row of rows) {
-    const name = normalizeTrackName(row.track);
-    if (name) counts.set(name, (counts.get(name) || 0) + row.n);
+    const names = splitTrackValues(row.track);
+    for (const name of names) {
+      if (name) counts.set(name, (counts.get(name) || 0) + row.n);
+    }
   }
   const defined = new Set(tracks.map((t) => t.name));
   const trackById = new Map(tracks.map((t) => [t.id, t]));
@@ -971,6 +1286,62 @@ app.get('/api/students/:id_number/requirements/:requirement_id/file', (req, res)
   });
 });
 
+app.get('/api/reports/track', (req, res) => {
+  const track = String(req.query.track || '').trim();
+  const year = String(req.query.year || '').trim();
+  if (!track) return res.status(400).json({ error: 'יש לבחור מסלול' });
+  if (!year) return res.status(400).json({ error: 'יש לבחור שנה' });
+
+  const students = db.prepare('SELECT * FROM students ORDER BY name').all();
+  const exams = db.prepare('SELECT * FROM exams ORDER BY created_at DESC').all();
+  const gradeRows = db.prepare(`
+    SELECT e.id AS exam_id, c.id_number, g.grade
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE e.track = ? OR e.track IS NULL
+  `).all(track);
+
+  const gradesByExam = {};
+  for (const row of gradeRows) {
+    if (!gradesByExam[row.exam_id]) gradesByExam[row.exam_id] = {};
+    if (row.grade != null) gradesByExam[row.exam_id][row.id_number] = row.grade;
+  }
+
+  const report = buildTrackReport(students, exams, track, year, gradesByExam);
+  res.json(report);
+});
+
+app.get('/api/reports/class', (req, res) => {
+  const className = String(req.query.class_name || req.query.year || '').trim();
+  if (!className) return res.status(400).json({ error: 'יש לבחור כיתה' });
+
+  const { year } = (() => {
+    const raw = className.replace(/\s+/g, ' ').trim();
+    const match = raw.match(/^([א-ת]+)(\d+)?$/);
+    return match ? { year: match[1] } : { year: raw };
+  })();
+
+  const students = db.prepare('SELECT * FROM students ORDER BY name').all();
+  const exams = db.prepare('SELECT * FROM exams WHERE year IS NULL OR year = ? ORDER BY created_at DESC').all(year);
+  const gradeRows = db.prepare(`
+    SELECT e.id AS exam_id, c.id_number, g.grade
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE e.year IS NULL OR e.year = ?
+  `).all(year);
+
+  const gradesByExam = {};
+  for (const row of gradeRows) {
+    if (!gradesByExam[row.exam_id]) gradesByExam[row.exam_id] = {};
+    if (row.grade != null) gradesByExam[row.exam_id][row.id_number] = row.grade;
+  }
+
+  const report = buildClassReport(students, exams, gradesByExam, className);
+  res.json(report);
+});
+
 app.get('/api/tracks/:id/stats', (req, res) => {
   const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
@@ -1011,92 +1382,109 @@ app.get('/api/tracks/:id/stats', (req, res) => {
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   try {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false });
-    let allRows = [];
-    for (const sheetName of wb.SheetNames) {
-      const sheet = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      if (rows.length > 0) console.log(`Sheet "${sheetName}" columns:`, Object.keys(rows[0]));
-      allRows = allRows.concat(rows);
-    }
-    const rows = allRows;
-    const normalizeHeader = (value) => String(value || '')
-      .replace(/[\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLocaleLowerCase();
-    const compactHeader = (value) => normalizeHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
+    const rows = parseStudentWorkbook(req.file.buffer);
 
-    const insert = db.prepare(`
-      INSERT INTO students (id_number, name, phone, track, year, birth_date, address)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    const upsert = db.prepare(`
+      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, extra_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id_number) DO UPDATE SET
         name=excluded.name,
         phone=excluded.phone,
+        phone_code=excluded.phone_code,
         track=excluded.track,
         year=excluded.year,
-        birth_date=COALESCE(excluded.birth_date, students.birth_date),
-        address=COALESCE(excluded.address, students.address)
+        birth_date=excluded.birth_date,
+        address=excluded.address,
+        extra_data=excluded.extra_data
     `);
+    const getExistingStudent = db.prepare('SELECT * FROM students WHERE id_number = ?');
 
-    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0;
+    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0, withPhoneCode = 0, mergedExisting = 0, addedExtraFields = 0;
+
+    const pickValue = (existingValue, incomingValue) => {
+      const current = String(existingValue || '').trim();
+      if (current) return current;
+      const next = String(incomingValue || '').trim();
+      return next || null;
+    };
+
+    const mergeTrackValues = (existingValue, incomingValue) => {
+      const values = [];
+      const add = (rawValue) => {
+        const cleaned = normalizeTrackName(rawValue);
+        if (!cleaned) return;
+        const exists = values.some((value) => normalizeTrackName(value).toLocaleLowerCase() === cleaned.toLocaleLowerCase());
+        if (!exists) values.push(cleaned);
+      };
+      add(existingValue);
+      add(incomingValue);
+      return values.join(' / ');
+    };
+
+    const mergeExtraFields = (existing, incoming) => {
+      const merged = { ...existing };
+      let added = 0;
+      for (const [key, value] of Object.entries(incoming)) {
+        const cleanKey = String(key || '').trim();
+        const cleanValue = String(value || '').trim();
+        if (!cleanKey || !cleanValue) continue;
+        const existingValue = String(merged[cleanKey] || '').trim();
+        if (!existingValue) {
+          merged[cleanKey] = cleanValue;
+          added++;
+        }
+      }
+      return { merged, added };
+    };
+
     const importMany = db.transaction((rows) => {
       for (const row of rows) {
-        const getValue = (...headers) => {
-          for (const header of headers) {
-            const normalized = normalizeHeader(header);
-            const compact = compactHeader(header);
-            const key = Object.keys(row).find((column) =>
-              normalizeHeader(column) === normalized || compactHeader(column) === compact
-            );
-            if (key !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
-              return row[key];
-            }
-          }
-          return '';
-        };
-        const id_number = String(getValue("מס' זהות", 'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'id_number', 'ID')).trim();
-        const firstName = String(getValue('שם פרטי')).trim();
-        const lastName = String(getValue('משפחה')).trim();
-        const name = [lastName, firstName].filter(Boolean).join(' ') || String(getValue('שם', 'שם מלא', 'name')).trim();
-        const phone = String(getValue('נייד אישי', 'טלפון', 'phone')).trim();
-        const track = String(getValue('התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track')).trim();
-        const year = String(getValue('כיתה', 'שנה', 'year')).trim();
-        const birthDateValue = getValue(
-          'ת. לידה לועזי',
-          'תאריך לידה',
-          'birth_date',
-          'date_of_birth',
-          'ת. לידה עברי'
-        ) || Object.keys(row)
-          .filter((header) => compactHeader(header).includes('לידה'))
-          .sort((a, b) => Number(compactHeader(b).includes('לועזי')) - Number(compactHeader(a).includes('לועזי')))
-          .map((header) => row[header])
-          .find((value) => value !== null && String(value).trim() !== '') || '';
-        const parsedBirthDate = typeof birthDateValue === 'number'
-          ? XLSX.SSF.parse_date_code(birthDateValue, {
-            date1904: Boolean(wb.Workbook?.WBProps?.date1904)
-          })
-          : null;
-        const birth_date = birthDateValue instanceof Date && !Number.isNaN(birthDateValue.getTime())
-          ? `${String(birthDateValue.getDate()).padStart(2, '0')}/${String(birthDateValue.getMonth() + 1).padStart(2, '0')}/${birthDateValue.getFullYear()}`
-          : parsedBirthDate
-            ? `${String(parsedBirthDate.d).padStart(2, '0')}/${String(parsedBirthDate.m).padStart(2, '0')}/${parsedBirthDate.y}`
-            : String(birthDateValue || '').trim();
-        const address = [
-          getValue('כתובת', 'כתובת מגורים', 'address'),
-          getValue('מספר בית', 'מספר'),
-          getValue('עיר', 'יישוב')
-        ].map(value => String(value || '').trim()).filter(Boolean).join(' ');
-        if (!id_number || !name) { skipped++; continue; }
-        insert.run(id_number, name, phone, track, year, birth_date || null, address || null);
+        const id_number = normalizeIdNumber(row.id_number || '');
+        const name = String(row.name || '').trim();
+        const phone = String(row.phone || '').trim();
+        const phone_code = String(row.phone_code || '').trim();
+        const track = String(row.track || '').trim();
+        const year = String(row.year || '').trim();
+        const birth_date = String(row.birth_date || '').trim();
+        const address = String(row.address || '').trim();
+        const extraFields = row.extra_fields || {};
+
+        const existing = getExistingStudent.get(id_number);
+        if (!id_number) { skipped++; continue; }
+        if (!name && !existing) { skipped++; continue; }
+        if (existing) mergedExisting++;
+
+        const existingExtra = parseExtraData(existing?.extra_data);
+        const mergedExtra = mergeExtraFields(existingExtra, extraFields);
+        addedExtraFields += mergedExtra.added;
+
+        const mergedName = pickValue(existing?.name, name);
+        const mergedPhone = pickValue(existing?.phone, phone);
+        const mergedPhoneCode = pickValue(existing?.phone_code, phone_code);
+        const mergedTrack = mergeTrackValues(existing?.track, track);
+        const mergedYear = pickValue(existing?.year, year);
+        const mergedBirthDate = pickValue(existing?.birth_date, birth_date);
+        const mergedAddress = pickValue(existing?.address, address);
+
+        upsert.run(
+          id_number,
+          mergedName,
+          mergedPhone,
+          mergedPhoneCode,
+          mergedTrack,
+          mergedYear,
+          mergedBirthDate,
+          mergedAddress,
+          JSON.stringify(mergedExtra.merged)
+        );
         imported++;
-        if (birth_date) withBirthDate++;
-        if (address) withAddress++;
+        if (mergedBirthDate) withBirthDate++;
+        if (mergedAddress) withAddress++;
+        if (mergedPhoneCode) withPhoneCode++;
       }
     });
     importMany(rows);
-    res.json({ imported, skipped, withBirthDate, withAddress, total: rows.length });
+    res.json({ imported, skipped, withBirthDate, withAddress, withPhoneCode, mergedExisting, addedExtraFields, total: rows.length });
   } catch (e) {
     console.error('Import error:', e);
     res.status(500).json({ error: 'שגיאה בקריאת הקובץ: ' + e.message });
@@ -1514,6 +1902,185 @@ app.put('/api/approval-types/:id', (req, res) => {
 app.delete('/api/approval-types/:id', (req, res) => {
   db.prepare('DELETE FROM approval_types WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ── Exams & barcode grades ───────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS exams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    track TEXT,
+    year TEXT,
+    exam_date TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS exam_codes (
+    code TEXT PRIMARY KEY,
+    exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
+    id_number TEXT NOT NULL,
+    UNIQUE (exam_id, id_number)
+  );
+  CREATE TABLE IF NOT EXISTS exam_grades (
+    code TEXT PRIMARY KEY REFERENCES exam_codes(code) ON DELETE CASCADE,
+    grade REAL NOT NULL,
+    graded_by INTEGER,
+    graded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS exam_codes_student_idx ON exam_codes(id_number);
+`);
+
+// רשימת מבחנים + סטטיסטיקות בסיסיות
+app.get('/api/exams', (req, res) => {
+  res.json(db.prepare(`
+    SELECT e.*,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count,
+      (SELECT ROUND(AVG(g.grade),1) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS avg_grade
+    FROM exams e ORDER BY e.created_at DESC
+  `).all());
+});
+
+app.post('/api/exams', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'שם המבחן הוא שדה חובה' });
+  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date) VALUES (?, ?, ?, ?)')
+    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null);
+  res.json({ id: result.lastInsertRowid });
+});
+
+app.delete('/api/exams/:id', (req, res) => {
+  db.prepare('DELETE FROM exams WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// פרטי מבחן: כל התלמידות עם קוד/ציון
+app.get('/api/exams/:id', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const rows = db.prepare(`
+    SELECT s.id_number, s.name, s.track, s.year, c.code, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN students s ON s.id_number = c.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.exam_id = ?
+    ORDER BY s.name
+  `).all(req.params.id);
+  res.json({ ...exam, students: rows });
+});
+
+// הפקת ברקודים: לכיתה/מסלול ושנה או לתלמידה בודדת בכל המבחנים הפעילים
+function encodeExamCode(examId, idNumber) {
+  return `EX${examId}-${idNumber}`;
+}
+
+app.post('/api/exams/:id/codes', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const { track, year, id_number } = req.body || {};
+  let students;
+  if (id_number) {
+    students = db.prepare('SELECT * FROM students WHERE id_number = ?').all(String(id_number));
+  } else {
+    const conds = [];
+    const params = [];
+    if (track) { conds.push('track = ?'); params.push(track); }
+    if (year) { conds.push('year = ?'); params.push(String(year)); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
+  }
+  if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
+  const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
+  const tx = db.transaction(() => {
+    for (const s of students) insert.run(encodeExamCode(exam.id, s.id_number), exam.id, s.id_number);
+  });
+  tx();
+  res.json({ created: students.length, students });
+});
+
+// תמונת ברקוד לקוד מבחן
+app.get('/api/exam-codes/:code/barcode', async (req, res) => {
+  const row = db.prepare(`
+    SELECT c.code, c.id_number, s.name, e.name AS exam_name
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    JOIN students s ON s.id_number = c.id_number
+    WHERE c.code = ?
+  `).get(req.params.code);
+  if (!row) return res.status(404).json({ error: 'קוד לא נמצא' });
+  try {
+    const png = await bwipjs.toBuffer({ bcid: 'code128', text: row.code, scale: 3, height: 12, includetext: false });
+    res.type('image/png');
+    res.set('X-Student-Name', encodeURIComponent(row.name));
+    res.send(png);
+  } catch {
+    res.status(500).json({ error: 'Barcode generation failed' });
+  }
+});
+
+// סריקה/הזנת קוד → פרטי המבחן והתלמידה + ציון קיים
+app.get('/api/exam-codes/:code', (req, res) => {
+  const row = db.prepare(`
+    SELECT c.code, c.exam_id, c.id_number, s.name AS student_name, s.track, s.year,
+      e.name AS exam_name, e.exam_date, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    JOIN students s ON s.id_number = c.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.code = ?
+  `).get(req.params.code.trim());
+  if (!row) return res.status(404).json({ error: 'ברקוד לא מוכר' });
+  res.json(row);
+});
+
+// רישום/עדכון ציון לברקוד
+app.put('/api/exam-codes/:code/grade', (req, res) => {
+  const code = req.params.code.trim();
+  const row = db.prepare('SELECT code FROM exam_codes WHERE code = ?').get(code);
+  if (!row) return res.status(404).json({ error: 'ברקוד לא מוכר' });
+  const grade = Number(req.body?.grade);
+  if (!Number.isFinite(grade) || grade < 0 || grade > 100) {
+    return res.status(400).json({ error: 'ציון חייב להיות מספר בין 0 ל-100' });
+  }
+  db.prepare(`
+    INSERT INTO exam_grades (code, grade, graded_by) VALUES (?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET grade = excluded.grade, graded_by = excluded.graded_by, graded_at = datetime('now')
+  `).run(code, grade, req.user?.id || null);
+  res.json({ success: true, grade });
+});
+
+// ממוצעים: לפי תלמידה, מבחן, מסלול-שנה
+app.get('/api/exams-stats/summary', (req, res) => {
+  const byStudent = db.prepare(`
+    SELECT s.id_number, s.name, s.track, s.year,
+      COUNT(g.grade) AS graded, ROUND(AVG(g.grade),1) AS avg_grade,
+      SUM(CASE WHEN g.grade IS NULL THEN 1 ELSE 0 END) AS missing
+    FROM students s
+    LEFT JOIN exam_codes c ON c.id_number = s.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    GROUP BY s.id_number
+    ORDER BY s.name
+  `).all();
+  const byExam = db.prepare(`
+    SELECT e.id, e.name,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count,
+      (SELECT ROUND(AVG(g.grade),1) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS avg_grade
+    FROM exams e ORDER BY e.created_at DESC
+  `).all();
+  res.json({ byStudent, byExam });
+});
+
+// כל המבחנים והציונים של תלמידה אחת (להצגה בדף התלמידה)
+app.get('/api/students/:id_number/exams', (req, res) => {
+  const rows = db.prepare(`
+    SELECT e.id AS exam_id, e.name AS exam_name, e.exam_date, c.code, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.id_number = ?
+    ORDER BY e.created_at DESC
+  `).all(req.params.id_number);
+  res.json(rows);
 });
 
 const port = process.env.PORT || 3000;
