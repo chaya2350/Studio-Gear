@@ -9,6 +9,7 @@ const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
+const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -1119,95 +1120,7 @@ app.get('/api/tracks/:id/stats', (req, res) => {
 app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   try {
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false });
-    const normalizeHeader = (value) => String(value || '')
-      .replace(/[\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLocaleLowerCase();
-    const compactHeader = (value) => normalizeHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
-
-    const knownHeaders = {
-      id: [
-        "מס' זהות", 'מס זהות', 'מספר זהות', 'מספר תעודת זהות', 'תעודת זהות',
-        'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'תז תלמידה', 'ת.ז תלמידה',
-        'id_number', 'ID', 'id'
-      ],
-      firstName: ['שם פרטי', 'שם פרטי תלמידה', 'פרטי'],
-      lastName: ['משפחה', 'שם משפחה', 'משפחה תלמידה', 'שם משפחה תלמידה'],
-      name: ['שם מלא', 'שם תלמידה', 'name', 'student_name'],
-      phone: ['נייד אישי', 'טלפון', 'phone'],
-      phoneCode: ['קוד לטלפון', 'קידומת', 'קוד טלפון', 'phone code', 'phone_code', 'קוד-טלפון'],
-      track: ['התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track'],
-      year: ['כיתה', 'שנה', 'year'],
-      birthDate: ['ת. לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth', 'ת. לידה עברי'],
-      address: ['כתובת', 'כתובת מגורים', 'address'],
-      house: ['מספר בית', 'מס בית', 'בית'],
-      city: ['עיר', 'יישוב']
-    };
-    const knownHeaderSet = new Set(
-      Object.values(knownHeaders)
-        .flat()
-        .map((header) => compactHeader(header))
-    );
-
-    const buildRowsFromSheet = (sheetName, sheet) => {
-      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-      const headersCompact = new Set([...knownHeaderSet]);
-      let headerRowIndex = -1;
-      for (let i = 0; i < Math.min(matrix.length, 40); i++) {
-        const row = Array.isArray(matrix[i]) ? matrix[i] : [];
-        const matches = row
-          .map((cell) => compactHeader(cell))
-          .filter((token) => token && headersCompact.has(token)).length;
-        if (matches >= 2) {
-          headerRowIndex = i;
-          break;
-        }
-      }
-
-      if (headerRowIndex >= 0) {
-        const rawHeaders = matrix[headerRowIndex] || [];
-        const headers = rawHeaders.map((value, index) => {
-          const text = String(value || '').trim();
-          return text || `__COL_${index + 1}`;
-        });
-        const rows = [];
-        for (let r = headerRowIndex + 1; r < matrix.length; r++) {
-          const rowValues = Array.isArray(matrix[r]) ? matrix[r] : [];
-          if (!rowValues.some((value) => String(value || '').trim() !== '')) continue;
-          const rowObj = { __sheetName: sheetName };
-          headers.forEach((header, index) => {
-            rowObj[header] = rowValues[index] ?? '';
-          });
-          rows.push(rowObj);
-        }
-        console.log(`Sheet "${sheetName}": detected headers at row ${headerRowIndex + 1}`);
-        return rows;
-      }
-
-      const rows = [];
-      for (const rowValues of matrix) {
-        if (!Array.isArray(rowValues)) continue;
-        if (!rowValues.some((value) => String(value || '').trim() !== '')) continue;
-        const rowObj = { __sheetName: sheetName };
-        rowValues.forEach((value, index) => {
-          rowObj[`__COL_${index + 1}`] = value ?? '';
-        });
-        rows.push(rowObj);
-      }
-      console.log(`Sheet "${sheetName}": no headers detected, using positional columns`);
-      return rows;
-    };
-
-    let allRows = [];
-    for (const sheetName of wb.SheetNames) {
-      const sheet = wb.Sheets[sheetName];
-      const rows = buildRowsFromSheet(sheetName, sheet);
-      if (rows.length > 0) console.log(`Sheet "${sheetName}" parsed rows: ${rows.length}`);
-      allRows = allRows.concat(rows);
-    }
-    const rows = allRows;
+    const rows = parseStudentWorkbook(req.file.buffer);
 
     const upsert = db.prepare(`
       INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, extra_data)
@@ -1233,25 +1146,6 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       return next || null;
     };
 
-    const normalizeIdNumber = (value) => {
-      const raw = String(value || '').trim();
-      if (!raw) return '';
-      const digits = raw.replace(/\D/g, '');
-      if (digits && /^[\d\s-]+$/.test(raw) && digits.length >= 8 && digits.length <= 10) {
-        return digits;
-      }
-      return raw;
-    };
-
-    const findIdCandidateFromRow = (row) => {
-      for (const key of Object.keys(row)) {
-        if (key === '__sheetName') continue;
-        const value = normalizeIdNumber(row[key]);
-        if (/^\d{8,10}$/.test(value)) return value;
-      }
-      return '';
-    };
-
     const mergeExtraFields = (existing, incoming) => {
       const merged = { ...existing };
       let added = 0;
@@ -1270,75 +1164,21 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
 
     const importMany = db.transaction((rows) => {
       for (const row of rows) {
-        const getValue = (...headers) => {
-          for (const header of headers) {
-            const normalized = normalizeHeader(header);
-            const compact = compactHeader(header);
-            const key = Object.keys(row).find((column) =>
-              normalizeHeader(column) === normalized || compactHeader(column) === compact
-            );
-            if (key !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
-              return row[key];
-            }
-          }
-          return '';
-        };
-        const id_number = normalizeIdNumber(getValue(...knownHeaders.id)) || findIdCandidateFromRow(row);
-        const rowKeys = Object.keys(row);
-        const hasFamilyColumn = rowKeys.some((column) => {
-          const token = compactHeader(column);
-          return ['משפחה', 'שםמשפחה', 'משפחהתלמידה', 'שםמשפחהתלמידה'].includes(token);
-        });
-        const explicitFirstName = String(getValue(...knownHeaders.firstName)).trim();
-        const explicitLastName = String(getValue(...knownHeaders.lastName)).trim();
-        const genericName = String(getValue('שם')).trim();
-        const firstName = explicitFirstName || (hasFamilyColumn ? genericName : '');
-        const lastName = explicitLastName || (!hasFamilyColumn ? genericName : '');
-        const name = [firstName, lastName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
-        const phone = String(getValue(...knownHeaders.phone)).trim();
-        const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
-        const explicitTrack = String(getValue(...knownHeaders.track)).trim();
-        const sheetTrack = String(row.__sheetName || '').trim();
-        const track = explicitTrack || sheetTrack;
-        const year = String(getValue(...knownHeaders.year)).trim();
-        const birthDateValue = getValue(
-          ...knownHeaders.birthDate
-        ) || Object.keys(row)
-          .filter((header) => compactHeader(header).includes('לידה'))
-          .sort((a, b) => Number(compactHeader(b).includes('לועזי')) - Number(compactHeader(a).includes('לועזי')))
-          .map((header) => row[header])
-          .find((value) => value !== null && String(value).trim() !== '') || '';
-        const parsedBirthDate = typeof birthDateValue === 'number'
-          ? XLSX.SSF.parse_date_code(birthDateValue, {
-            date1904: Boolean(wb.Workbook?.WBProps?.date1904)
-          })
-          : null;
-        const birth_date = birthDateValue instanceof Date && !Number.isNaN(birthDateValue.getTime())
-          ? `${String(birthDateValue.getDate()).padStart(2, '0')}/${String(birthDateValue.getMonth() + 1).padStart(2, '0')}/${birthDateValue.getFullYear()}`
-          : parsedBirthDate
-            ? `${String(parsedBirthDate.d).padStart(2, '0')}/${String(parsedBirthDate.m).padStart(2, '0')}/${parsedBirthDate.y}`
-            : String(birthDateValue || '').trim();
-        const address = [
-          getValue(...knownHeaders.address),
-          getValue(...knownHeaders.house),
-          getValue(...knownHeaders.city)
-        ].map(value => String(value || '').trim()).filter(Boolean).join(' ');
-
-        const extraFields = Object.entries(row).reduce((acc, [header, value]) => {
-          if (header === '__sheetName') return acc;
-          if (/^__COL_\d+$/i.test(header) || /^__EMPTY/i.test(header)) return acc;
-          const normalizedHeader = compactHeader(header);
-          if (!normalizedHeader || knownHeaderSet.has(normalizedHeader)) return acc;
-          const cleanValue = String(value || '').trim();
-          if (!cleanValue) return acc;
-          acc[String(header).trim()] = cleanValue;
-          return acc;
-        }, {});
+        const id_number = normalizeIdNumber(row.id_number || '');
+        const name = String(row.name || '').trim();
+        const phone = String(row.phone || '').trim();
+        const phone_code = String(row.phone_code || '').trim();
+        const track = String(row.track || '').trim();
+        const year = String(row.year || '').trim();
+        const birth_date = String(row.birth_date || '').trim();
+        const address = String(row.address || '').trim();
+        const extraFields = row.extra_fields || {};
 
         const existing = getExistingStudent.get(id_number);
         if (!id_number) { skipped++; continue; }
         if (!name && !existing) { skipped++; continue; }
         if (existing) mergedExisting++;
+
         const existingExtra = parseExtraData(existing?.extra_data);
         const mergedExtra = mergeExtraFields(existingExtra, extraFields);
         addedExtraFields += mergedExtra.added;
