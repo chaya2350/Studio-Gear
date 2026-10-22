@@ -31,23 +31,51 @@ function canonicalTrackValue(value) {
     'רווח': 'רוח',
     'רוחח': 'רוח',
     'רוחה': 'רוח',
-    'ראייתחשבון': 'רוח',
-    'ראיית חשבון': 'רוח',
+    'ראייתחשבון': 'ראיית חשבון',
+    'ראיית חשבון': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
+    'הוראה': 'הוראה מתקנת',
     'הוראהמתקנת': 'הוראה מתקנת',
-    'הרמתקנת': 'הוראה מתקנת'
+    'הרמתקנת': 'הוראה מתקנת',
+    'חמ': 'חינוך מיוחד',
+    'חינוך': 'חינוך מיוחד',
+    'חינוךמיוחד': 'חינוך מיוחד',
+    'חינוךממיוחד': 'חינוך מיוחד',
+    'ללאמיסים': 'ייעוץ מס',
+    'ייעוץמס': 'ייעוץ מס',
+    'הנדסתחשמל': 'הנדסת אנרגיה',
+    'הנדסתאנרגיה': 'הנדסת אנרגיה',
+    'אנרגיה': 'הנדסת אנרגיה',
+    'רו"ח': 'ראיית חשבון',
+    'רוחח': 'ראיית חשבון',
+    'תיכנות': 'תכנות',
+    'תכנות': 'תכנות'
   };
   return aliases[normalized] || raw;
 }
 
-function canonicalYearValue(value) {
+function canonicalYearValue(value, sheetName = '') {
   const raw = String(value ?? '').trim();
-  if (!raw) return '';
-  const normalized = normalizeAliasText(raw).replace(/[-_]/g, '');
+  const sheetNormalized = normalizeAliasText(sheetName).replace(/[\s_-]/g, '');
+
+  if (!raw) {
+    if (sheetNormalized.includes('שנהא')) return 'א';
+    if (sheetNormalized.includes('שנהב')) return 'ב';
+    return '';
+  }
+
+  const normalized = normalizeAliasText(raw).replace(/[\s_-]/g, '');
+  if (normalized === 'התמחות') {
+    if (sheetNormalized.includes('שנהא')) return 'א';
+    if (sheetNormalized.includes('שנהב')) return 'ב';
+    return 'א';
+  }
   if (normalized === 'יב' || normalized === 'י"ב') return 'יב';
   if (normalized === 'יא' || normalized === 'י"א') return 'יא';
+  if (normalized === 'א' || normalized === 'שנהא') return 'א';
+  if (normalized === 'ב' || normalized === 'שנהב') return 'ב';
   return raw;
 }
 
@@ -198,7 +226,7 @@ function parseStudentWorkbook(buffer) {
       const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
       const trackValue = String(getValue(...knownHeaders.track)).trim() || String(row.__sheetName || '').trim();
       const track = canonicalTrackValue(trackValue);
-      const year = canonicalYearValue(String(getValue(...knownHeaders.year)).trim());
+      const year = canonicalYearValue(String(getValue(...knownHeaders.year)).trim(), String(row.__sheetName || ''));
       const address = [
         getValue(...knownHeaders.address),
         getValue(...knownHeaders.house),

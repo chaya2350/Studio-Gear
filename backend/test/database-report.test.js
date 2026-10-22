@@ -1,6 +1,27 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildTrackReport, buildClassReport } = require('../database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues } = require('../database-report');
+
+test('splitTrackValues separates combined track values into clean track names', () => {
+  assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה מתקנת', 'אדריכלות']);
+  assert.deepEqual(splitTrackValues('רוח & ספורט טיפולי'), ['ראיית חשבון', 'ספורט טיפולי']);
+  assert.deepEqual(splitTrackValues('חינוך מיוחד / מתמטיקה / ח"מ'), ['חינוך מיוחד', 'מתמטיקה']);
+  assert.deepEqual(splitTrackValues('ייעוץ מס / ללא מיסים'), ['ייעוץ מס']);
+  assert.deepEqual(splitTrackValues('הנדסת חשמל / הנדסת אנרגיה'), ['הנדסת אנרגיה']);
+  assert.deepEqual(splitTrackValues('תיכנות / תכנות'), ['תכנות']);
+});
+
+test('buildClassReport normalizes year A/B into H/V for class matching and display', () => {
+  const students = [
+    { id_number: '111', name: 'אילנה כהן', track: 'חינוך מיוחד', year: 'א', extra_data: '{"מקבילה":"2"}' },
+    { id_number: '222', name: 'ברוריה לוי', track: 'תכנות', year: 'ב', extra_data: '{"מקבילה":"1"}' }
+  ];
+  const report = buildClassReport(students, [], {}, 'ה2');
+
+  assert.equal(report.year, 'ה');
+  assert.equal(report.rows.length, 1);
+  assert.equal(report.rows[0].id_number, '111');
+});
 
 test('buildTrackReport filters students by track and year and hides phone fields', () => {
   const students = [
@@ -11,7 +32,7 @@ test('buildTrackReport filters students by track and year and hides phone fields
 
   const report = buildTrackReport(students, [], 'רוח', 'יב');
 
-  assert.equal(report.track, 'רוח');
+  assert.equal(report.track, 'ראיית חשבון');
   assert.equal(report.year, 'יב');
   assert.equal(report.rows.length, 1);
   assert.equal(report.rows[0].name, 'אילנה כהן');
@@ -45,6 +66,16 @@ test('buildClassReport includes only the selected class plus its parallel and re
   assert.equal(report.students[0].id_number, '111');
   assert.equal(report.students[0].grades[1], 95);
   assert.equal(report.students[0].grades[2], undefined);
+});
+
+test('buildClassReport renders a canonical, deduplicated track list instead of the raw imported string', () => {
+  const students = [
+    { id_number: '111', name: 'אילנה כהן', track: 'חינוך מיוחד / הוראה / חינוך מיוחד', year: 'א', extra_data: '{"מקבילה":"2"}' }
+  ];
+
+  const report = buildClassReport(students, [], {}, 'ה2');
+
+  assert.equal(report.rows[0].track, 'חינוך מיוחד / הוראה מתקנת');
 });
 
 test('buildTrackReport shows only track-specific exams and credentials without phone prefix', () => {

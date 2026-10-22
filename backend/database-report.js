@@ -10,7 +10,12 @@ function parseExtraData(rawValue) {
 }
 
 function normalizeYear(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  const raw = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const clean = raw.replace(/[\u2018\u2019\u05F3\u05F4"'`]/g, '').replace(/\s*[-–—]\s*/g, '');
+  if (clean === 'א' || clean === 'כיתהא' || clean === 'שנהא') return 'ה';
+  if (clean === 'ב' || clean === 'כיתהב' || clean === 'שנהב') return 'ו';
+  return clean;
 }
 
 function normalizeClassValue(value) {
@@ -46,12 +51,24 @@ function displayTrackName(value) {
   if (!raw) return raw;
   const normalized = normalizeTrackKey(raw);
   const map = {
-    'רוח': 'רוח',
-    'ראייתחשבון': 'רוח',
+    'רוח': 'ראיית חשבון',
+    'ראייתחשבון': 'ראיית חשבון',
+    'רוחח': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
-    'הוראהמתקנת': 'הוראה מתקנת'
+    'הוראהמתקנת': 'הוראה מתקנת',
+    'חמ': 'חינוך מיוחד',
+    'חינוך': 'חינוך מיוחד',
+    'חינוךמיוחד': 'חינוך מיוחד',
+    'ללאמיסים': 'ייעוץ מס',
+    'ייעוץמס': 'ייעוץ מס',
+    'יעוץמסללאמיסים': 'ייעוץ מס',
+    'הנדסתחשמל': 'הנדסת אנרגיה',
+    'הנדסתאנרגיה': 'הנדסת אנרגיה',
+    'אנרגיה': 'הנדסת אנרגיה',
+    'תיכנות': 'תכנות',
+    'תכנות': 'תכנות'
   };
   return map[normalized] || raw;
 }
@@ -61,22 +78,41 @@ function displayExamName(value) {
   if (!raw) return raw;
   const normalized = normalizeTrackKey(raw);
   const map = {
-    'רוח': 'רוח',
-    'ראייתחשבון': 'רוח',
+    'רוח': 'ראיית חשבון',
+    'ראייתחשבון': 'ראיית חשבון',
+    'רוחח': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
-    'הוראהמתקנת': 'הוראה מתקנת'
+    'הוראהמתקנת': 'הוראה מתקנת',
+    'חמ': 'חינוך מיוחד',
+    'חינוך': 'חינוך מיוחד',
+    'חינוךמיוחד': 'חינוך מיוחד',
+    'ללאמיסים': 'ייעוץ מס',
+    'ייעוץמס': 'ייעוץ מס',
+    'יעוץמסללאמיסים': 'ייעוץ מס',
+    'הנדסתחשמל': 'הנדסת אנרגיה',
+    'הנדסתאנרגיה': 'הנדסת אנרגיה',
+    'אנרגיה': 'הנדסת אנרגיה',
+    'תיכנות': 'תכנות',
+    'תכנות': 'תכנות'
   };
   return map[normalized] || raw;
 }
 
 function splitTrackValues(value) {
+  const seen = new Set();
   return String(value || '')
     .split(/[\/,&]/)
     .map((item) => item.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
-    .map((item) => displayTrackName(item));
+    .map((item) => displayTrackName(item))
+    .filter((item) => {
+      const key = String(item || '').trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function buildTrackReport(students, examsOrTrackName, maybeTrackName, maybeYear, gradesByExam = {}) {
@@ -170,10 +206,11 @@ function buildClassReport(students, exams, gradesByExam, className) {
 
   const studentsWithGrades = filteredStudents.map((student) => {
     const grades = {};
+    const canonicalTracks = splitTrackValues(student.track).join(' / ');
     const row = {
       name: student.name || '',
       id_number: student.id_number || '',
-      track: student.track || '',
+      track: canonicalTracks,
       phone: student.phone || '',
       phone_code: student.phone_code || '',
       birth_date: student.birth_date || '',
@@ -194,4 +231,4 @@ function buildClassReport(students, exams, gradesByExam, className) {
   return { class_name: normalizedClass, year, parallel, columns, rows: studentsWithGrades, exams: filteredExams, students: studentsWithGrades };
 }
 
-module.exports = { buildTrackReport, buildClassReport };
+module.exports = { buildTrackReport, buildClassReport, splitTrackValues, displayTrackName, normalizeTrackKey };

@@ -10,7 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
-const { buildTrackReport, buildClassReport } = require('./database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -859,8 +859,10 @@ app.get('/api/tracks', (req, res) => {
   const counts = new Map();
   const rows = db.prepare("SELECT track, COUNT(*) AS n FROM students WHERE track IS NOT NULL GROUP BY track").all();
   for (const row of rows) {
-    const name = normalizeTrackName(row.track);
-    if (name) counts.set(name, (counts.get(name) || 0) + row.n);
+    const names = splitTrackValues(row.track);
+    for (const name of names) {
+      if (name) counts.set(name, (counts.get(name) || 0) + row.n);
+    }
   }
   const defined = new Set(tracks.map((t) => t.name));
   const trackById = new Map(tracks.map((t) => [t.id, t]));

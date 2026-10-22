@@ -153,9 +153,26 @@ export class DatabaseComponent implements OnInit {
 
   constructor(private api: ApiService) {}
 
+  private splitTrackNames(value: string): string[] {
+    const seen = new Set<string>();
+    return String(value || '')
+      .split(/[\/,&]/)
+      .map((part) => part.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .map((part) => part.replace(/[\u2018\u2019\u05F3\u05F4'"`]/g, ''))
+      .filter((part) => {
+        if (!part || seen.has(part)) return false;
+        seen.add(part);
+        return true;
+      });
+  }
+
   ngOnInit() {
     this.api.getTracks().subscribe((resp) => {
-      this.trackOptions.set(resp.tracks.map((t) => t.name));
+      const trackNames = [...new Set(
+        resp.tracks.flatMap((t) => this.splitTrackNames(t.name))
+      )].sort((a, b) => a.localeCompare(b, 'he'));
+      this.trackOptions.set(trackNames);
     });
 
     this.api.getStudents().subscribe((students) => {
@@ -163,13 +180,15 @@ export class DatabaseComponent implements OnInit {
         students
           .map((s) => s.year)
           .filter((y): y is string => typeof y === 'string' && !!y.trim())
-          .map((y) => y.trim()),
+          .map((y) => y.trim())
+          .map((y) => y === 'א' ? 'ה' : y === 'ב' ? 'ו' : y),
       )].sort((a, b) => a.localeCompare(b, 'he'));
       this.yearOptions.set(years);
 
       const classNames = [...new Set(
         students.flatMap((s) => {
-          const base = typeof s.year === 'string' ? s.year.trim() : '';
+          const baseRaw = typeof s.year === 'string' ? s.year.trim() : '';
+          const base = baseRaw === 'א' ? 'ה' : baseRaw === 'ב' ? 'ו' : baseRaw;
           if (!base) return [] as string[];
 
           const values = [base];

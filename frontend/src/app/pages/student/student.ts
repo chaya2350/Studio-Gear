@@ -757,7 +757,25 @@ export class StudentComponent implements OnInit {
       .filter((field) => field.key && field.value)
       .filter((field) => !this.isPhoneCodeKey(field.key) && !this.isPhoneExtensionKey(field.key))
       .filter((field) => !this.isUsernameKey(field.key) && !this.isPasswordKey(field.key))
-      .filter((field) => !this.isNameKey(field.key));
+      .filter((field) => !this.isNameKey(field.key))
+      .filter((field) => !this.isHiddenExtraField(field.key));
+  }
+
+  isHiddenExtraField(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('מקבילה')
+      || normalized.includes('מספר')
+      || normalized.includes('אופציהב')
+      || normalized.includes('אבאחוץ')
+      || normalized.includes('אמהחוץ')
+      || normalized.includes('אמאחוץ')
+      || normalized.includes('ארץלידה')
+      || normalized.includes('מסרישום')
+      || normalized.includes('אחרמותרשום')
+      || normalized.includes('אחרמות')
+      || normalized.includes('א תשלום')
+      || normalized.includes('payment')
+      || normalized.includes('parallel');
   }
 
   hasPublicPhoneBlock() {

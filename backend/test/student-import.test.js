@@ -72,3 +72,33 @@ test('normalizes Hebrew aliases for track and phone-code fields', () => {
   assert.equal(rows[0].track, 'רוח');
   assert.equal(rows[0].year, 'יב');
 });
+
+test('converts specialization year values to the real workbook year names: שנה א תשפז and שנה ב תשפז', () => {
+  const workbook = XLSX.utils.book_new();
+
+  const sheetA = {};
+  setCell(sheetA, 'A1', 'מספר זהות');
+  setCell(sheetA, 'B1', 'שם מלא');
+  setCell(sheetA, 'C1', 'כיתה');
+  setCell(sheetA, 'A2', '111');
+  setCell(sheetA, 'B2', 'אילה כהן');
+  setCell(sheetA, 'C2', 'התמחות');
+  sheetA['!ref'] = 'A1:C2';
+  XLSX.utils.book_append_sheet(workbook, sheetA, 'שנה א תשפז');
+
+  const sheetB = {};
+  setCell(sheetB, 'A1', 'מספר זהות');
+  setCell(sheetB, 'B1', 'שם מלא');
+  setCell(sheetB, 'C1', 'כיתה');
+  setCell(sheetB, 'A2', '222');
+  setCell(sheetB, 'B2', 'בנה כהן');
+  setCell(sheetB, 'C2', 'התמחות');
+  sheetB['!ref'] = 'A1:C2';
+  XLSX.utils.book_append_sheet(workbook, sheetB, 'שנה ב תשפז');
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const rows = parseStudentWorkbook(buffer);
+
+  assert.equal(rows[0].year, 'א');
+  assert.equal(rows[1].year, 'ב');
+});
