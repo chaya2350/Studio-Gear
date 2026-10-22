@@ -87,6 +87,14 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/checkout/checkout').then((m) => m.CheckoutComponent),
       },
       {
+        path: 'exams',
+        loadComponent: () => import('./pages/exams/exams').then((m) => m.ExamsComponent),
+      },
+      {
+        path: 'exams/scan',
+        loadComponent: () => import('./pages/exams/exam-scan').then((m) => m.ExamScanComponent),
+      },
+      {
         path: 'students',
         loadComponent: () =>
           import('./pages/student-search/student-search').then((m) => m.StudentSearchComponent),

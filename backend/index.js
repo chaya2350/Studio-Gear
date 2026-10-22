@@ -118,7 +118,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/requirements\/\d+(?:\/file)?)?)?|approval-types(?:\/\d+)?|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -1514,6 +1514,185 @@ app.put('/api/approval-types/:id', (req, res) => {
 app.delete('/api/approval-types/:id', (req, res) => {
   db.prepare('DELETE FROM approval_types WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ── Exams & barcode grades ───────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS exams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    track TEXT,
+    year TEXT,
+    exam_date TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS exam_codes (
+    code TEXT PRIMARY KEY,
+    exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
+    id_number TEXT NOT NULL,
+    UNIQUE (exam_id, id_number)
+  );
+  CREATE TABLE IF NOT EXISTS exam_grades (
+    code TEXT PRIMARY KEY REFERENCES exam_codes(code) ON DELETE CASCADE,
+    grade REAL NOT NULL,
+    graded_by INTEGER,
+    graded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS exam_codes_student_idx ON exam_codes(id_number);
+`);
+
+// רשימת מבחנים + סטטיסטיקות בסיסיות
+app.get('/api/exams', (req, res) => {
+  res.json(db.prepare(`
+    SELECT e.*,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count,
+      (SELECT ROUND(AVG(g.grade),1) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS avg_grade
+    FROM exams e ORDER BY e.created_at DESC
+  `).all());
+});
+
+app.post('/api/exams', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'שם המבחן הוא שדה חובה' });
+  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date) VALUES (?, ?, ?, ?)')
+    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null);
+  res.json({ id: result.lastInsertRowid });
+});
+
+app.delete('/api/exams/:id', (req, res) => {
+  db.prepare('DELETE FROM exams WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// פרטי מבחן: כל התלמידות עם קוד/ציון
+app.get('/api/exams/:id', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const rows = db.prepare(`
+    SELECT s.id_number, s.name, s.track, s.year, c.code, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN students s ON s.id_number = c.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.exam_id = ?
+    ORDER BY s.name
+  `).all(req.params.id);
+  res.json({ ...exam, students: rows });
+});
+
+// הפקת ברקודים: לכיתה/מסלול ושנה או לתלמידה בודדת בכל המבחנים הפעילים
+function encodeExamCode(examId, idNumber) {
+  return `EX${examId}-${idNumber}`;
+}
+
+app.post('/api/exams/:id/codes', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const { track, year, id_number } = req.body || {};
+  let students;
+  if (id_number) {
+    students = db.prepare('SELECT * FROM students WHERE id_number = ?').all(String(id_number));
+  } else {
+    const conds = [];
+    const params = [];
+    if (track) { conds.push('track = ?'); params.push(track); }
+    if (year) { conds.push('year = ?'); params.push(String(year)); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
+  }
+  if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
+  const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
+  const tx = db.transaction(() => {
+    for (const s of students) insert.run(encodeExamCode(exam.id, s.id_number), exam.id, s.id_number);
+  });
+  tx();
+  res.json({ created: students.length, students });
+});
+
+// תמונת ברקוד לקוד מבחן
+app.get('/api/exam-codes/:code/barcode', async (req, res) => {
+  const row = db.prepare(`
+    SELECT c.code, c.id_number, s.name, e.name AS exam_name
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    JOIN students s ON s.id_number = c.id_number
+    WHERE c.code = ?
+  `).get(req.params.code);
+  if (!row) return res.status(404).json({ error: 'קוד לא נמצא' });
+  try {
+    const png = await bwipjs.toBuffer({ bcid: 'code128', text: row.code, scale: 3, height: 12, includetext: false });
+    res.type('image/png');
+    res.set('X-Student-Name', encodeURIComponent(row.name));
+    res.send(png);
+  } catch {
+    res.status(500).json({ error: 'Barcode generation failed' });
+  }
+});
+
+// סריקה/הזנת קוד → פרטי המבחן והתלמידה + ציון קיים
+app.get('/api/exam-codes/:code', (req, res) => {
+  const row = db.prepare(`
+    SELECT c.code, c.exam_id, c.id_number, s.name AS student_name, s.track, s.year,
+      e.name AS exam_name, e.exam_date, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    JOIN students s ON s.id_number = c.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.code = ?
+  `).get(req.params.code.trim());
+  if (!row) return res.status(404).json({ error: 'ברקוד לא מוכר' });
+  res.json(row);
+});
+
+// רישום/עדכון ציון לברקוד
+app.put('/api/exam-codes/:code/grade', (req, res) => {
+  const code = req.params.code.trim();
+  const row = db.prepare('SELECT code FROM exam_codes WHERE code = ?').get(code);
+  if (!row) return res.status(404).json({ error: 'ברקוד לא מוכר' });
+  const grade = Number(req.body?.grade);
+  if (!Number.isFinite(grade) || grade < 0 || grade > 100) {
+    return res.status(400).json({ error: 'ציון חייב להיות מספר בין 0 ל-100' });
+  }
+  db.prepare(`
+    INSERT INTO exam_grades (code, grade, graded_by) VALUES (?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET grade = excluded.grade, graded_by = excluded.graded_by, graded_at = datetime('now')
+  `).run(code, grade, req.user?.id || null);
+  res.json({ success: true, grade });
+});
+
+// ממוצעים: לפי תלמידה, מבחן, מסלול-שנה
+app.get('/api/exams-stats/summary', (req, res) => {
+  const byStudent = db.prepare(`
+    SELECT s.id_number, s.name, s.track, s.year,
+      COUNT(g.grade) AS graded, ROUND(AVG(g.grade),1) AS avg_grade,
+      SUM(CASE WHEN g.grade IS NULL THEN 1 ELSE 0 END) AS missing
+    FROM students s
+    LEFT JOIN exam_codes c ON c.id_number = s.id_number
+    LEFT JOIN exam_grades g ON g.code = c.code
+    GROUP BY s.id_number
+    ORDER BY s.name
+  `).all();
+  const byExam = db.prepare(`
+    SELECT e.id, e.name,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count,
+      (SELECT ROUND(AVG(g.grade),1) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS avg_grade
+    FROM exams e ORDER BY e.created_at DESC
+  `).all();
+  res.json({ byStudent, byExam });
+});
+
+// כל המבחנים והציונים של תלמידה אחת (להצגה בדף התלמידה)
+app.get('/api/students/:id_number/exams', (req, res) => {
+  const rows = db.prepare(`
+    SELECT e.id AS exam_id, e.name AS exam_name, e.exam_date, c.code, g.grade, g.graded_at
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE c.id_number = ?
+    ORDER BY e.created_at DESC
+  `).all(req.params.id_number);
+  res.json(rows);
 });
 
 const port = process.env.PORT || 3000;

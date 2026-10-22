@@ -22,6 +22,7 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">🪪 תלמידות</a>
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
+        <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
         <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
@@ -52,6 +53,11 @@ import { filter } from 'rxjs/operators';
           💍 {{ t.name }}
         </a>
       </ng-container>
+    </nav>
+
+    <nav class="subnav" *ngIf="currentPath !== '/login' && isExamsSection()">
+      <a routerLink="/exams" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">📋 ניהול מבחנים וברקודים</a>
+      <a routerLink="/exams/scan" routerLinkActive="active">✏️ רישום ציון</a>
     </nav>
 
     <nav class="subnav" *ngIf="currentPath !== '/login' && isEquipmentSection()">
@@ -209,6 +215,10 @@ export class App implements OnInit {
 
   isSingleApprovalActive(id: number): boolean {
     return this.currentPath === '/approvals/single' && this.currentQuery.includes(`type=${id}`);
+  }
+
+  isExamsSection(): boolean {
+    return this.currentPath === '/exams' || this.currentPath.startsWith('/exams/');
   }
 
   isEquipmentSection(): boolean {

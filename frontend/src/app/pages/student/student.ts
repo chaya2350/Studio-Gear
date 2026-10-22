@@ -134,6 +134,29 @@ import { Student } from '../../models';
         </ng-container>
       </div>
 
+      <div class="card" style="margin-top:20px;" *ngIf="exams() as ex">
+        <div class="section-title">📝 מבחנים וציונים</div>
+        <p *ngIf="!ex.length" class="req-note">עדיין אין מבחנים רשומים לתלמידה זו.</p>
+        <div class="table-wrap" *ngIf="ex.length">
+          <table>
+            <thead>
+              <tr><th>מבחן</th><th>תאריך</th><th>ציון</th><th>סטטוס</th></tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let e of ex">
+                <td>{{ e.exam_name }}</td>
+                <td>{{ e.exam_date || '—' }}</td>
+                <td [class.grade-val]="e.grade != null">{{ e.grade != null ? e.grade : '—' }}</td>
+                <td><span class="badge" [class.badge-green]="e.grade != null" [class.badge-red]="e.grade == null">{{ e.grade != null ? 'נבחנה' : 'לא נבחנה' }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="exam-average" *ngIf="studentExamAvg()">
+          📊 ממוצע כללי: <strong>{{ studentExamAvg() }}</strong>
+        </div>
+      </div>
+
       <div class="card" style="margin-top:20px;">
         <div class="section-title">🕓 היסטוריית השאלות ({{ student()!.loans?.length || 0 }})</div>
         <div *ngIf="!student()!.loans?.length" class="empty-state" style="padding:30px 0;">
@@ -248,6 +271,7 @@ export class StudentComponent implements OnInit {
   requirements = signal<StudentRequirements | null>(null);
   requirementError = signal('');
   savingRequirementId = signal<number | null>(null);
+  exams = signal<any[]>([]);
 
   constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
 
@@ -264,9 +288,22 @@ export class StudentComponent implements OnInit {
 
   loadStudent(id: string) {
     this.api.getStudent(id).subscribe({
-      next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); },
+      next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); this.loadExams(s.id_number); },
       error: () => this.loading.set(false)
     });
+  }
+
+  loadExams(id_number: string) {
+    this.api.getStudentExams(id_number).subscribe({
+      next: rows => this.exams.set(rows),
+      error: () => this.exams.set([])
+    });
+  }
+
+  studentExamAvg(): string {
+    const graded = this.exams().filter(e => e.grade != null);
+    if (!graded.length) return '';
+    return (graded.reduce((sum, e) => sum + e.grade, 0) / graded.length).toFixed(1);
   }
 
   loadRequirements(id_number: string) {
