@@ -622,15 +622,33 @@ db.exec(`
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
 if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
 if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
+if (!studentCols.includes('phone_code')) db.exec('ALTER TABLE students ADD COLUMN phone_code TEXT');
+if (!studentCols.includes('extra_data')) db.exec("ALTER TABLE students ADD COLUMN extra_data TEXT NOT NULL DEFAULT '{}'");
+
+function parseExtraData(rawValue) {
+  if (!rawValue) return {};
+  if (typeof rawValue === 'object') return rawValue;
+  try {
+    const parsed = JSON.parse(String(rawValue));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function mapStudentRow(row) {
+  if (!row) return row;
+  return { ...row, extra_data: parseExtraData(row.extra_data) };
+}
 
 app.get('/api/students', (req, res) => {
   const { q } = req.query;
   if (q) {
     const rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
       .all(`%${q}%`, `%${q}%`);
-    return res.json(rows);
+    return res.json(rows.map(mapStudentRow));
   }
-  res.json(db.prepare('SELECT * FROM students ORDER BY name').all());
+  res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
 });
 
 app.get('/api/students/:id_number', (req, res) => {
@@ -642,24 +660,76 @@ app.get('/api/students/:id_number', (req, res) => {
     WHERE l.borrower_id_number = ?
     ORDER BY l.loan_date DESC
   `).all(req.params.id_number);
-  res.json({ ...student, loans });
+  res.json({ ...mapStudentRow(student), loans });
 });
 
 app.put('/api/students/:id_number', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
+  const existing = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!existing) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+
+  const optionalText = (value, currentValue) => {
+    if (value === undefined) return currentValue ?? null;
+    const text = String(value || '').trim();
+    return text || null;
+  };
+
+  const sanitizeExtraData = (value, currentValue) => {
+    if (value === undefined) return parseExtraData(currentValue);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const clean = {};
+    for (const [key, raw] of Object.entries(value)) {
+      const cleanKey = String(key || '').trim();
+      const cleanValue = String(raw || '').trim();
+      if (!cleanKey || !cleanValue) continue;
+      clean[cleanKey] = cleanValue;
+    }
+    return clean;
+  };
+
+  const phone = optionalText(req.body?.phone, existing.phone);
+  const track = optionalText(req.body?.track, existing.track);
+  const year = optionalText(req.body?.year, existing.year);
+  const phoneCode = optionalText(req.body?.phone_code, existing.phone_code);
+  const extraData = sanitizeExtraData(req.body?.extra_data, existing.extra_data);
+
   const result = db.prepare(`
-    UPDATE students SET name = ?, phone = ?, track = ?, year = ?
+    UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, extra_data = ?
     WHERE id_number = ?
-  `).run(name, req.body.phone || null, req.body.track || null, req.body.year || null, req.params.id_number);
-  if (!result.changes) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+  `).run(name, phone, phoneCode, track, year, JSON.stringify(extraData), req.params.id_number);
   res.json({ success: true });
 });
 
 app.get('/api/students/:id_number/details', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
-  res.json(student);
+  res.json(mapStudentRow(student));
+});
+
+app.delete('/api/students/:id_number', (req, res) => {
+  const idNumber = String(req.params.id_number || '').trim();
+  const student = db.prepare('SELECT id_number, name FROM students WHERE id_number = ?').get(idNumber);
+  if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
+
+  const activeLoan = db.prepare(`
+    SELECT id FROM loans
+    WHERE borrower_id_number = ? AND actual_return IS NULL
+    LIMIT 1
+  `).get(idNumber);
+  if (activeLoan) {
+    return res.status(400).json({ error: 'לא ניתן למחוק תלמידה עם השאלות פעילות' });
+  }
+
+  const removeStudent = db.transaction(() => {
+    const files = db.prepare('SELECT file_stored FROM student_requirements WHERE id_number = ?').all(idNumber);
+    removeStoredFiles(files);
+    db.prepare('DELETE FROM student_requirements WHERE id_number = ?').run(idNumber);
+    db.prepare('DELETE FROM students WHERE id_number = ?').run(idNumber);
+  });
+
+  removeStudent();
+  res.json({ success: true, id_number: student.id_number, name: student.name });
 });
 
 // ── Tracks and requirements ────────────────────────────────
@@ -1012,14 +1082,6 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   try {
     const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false });
-    let allRows = [];
-    for (const sheetName of wb.SheetNames) {
-      const sheet = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      if (rows.length > 0) console.log(`Sheet "${sheetName}" columns:`, Object.keys(rows[0]));
-      allRows = allRows.concat(rows);
-    }
-    const rows = allRows;
     const normalizeHeader = (value) => String(value || '')
       .replace(/[\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
       .replace(/\s+/g, ' ')
@@ -1027,19 +1089,147 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       .toLocaleLowerCase();
     const compactHeader = (value) => normalizeHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
 
-    const insert = db.prepare(`
-      INSERT INTO students (id_number, name, phone, track, year, birth_date, address)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    const knownHeaders = {
+      id: [
+        "מס' זהות", 'מס זהות', 'מספר זהות', 'מספר תעודת זהות', 'תעודת זהות',
+        'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'תז תלמידה', 'ת.ז תלמידה',
+        'id_number', 'ID', 'id'
+      ],
+      firstName: ['שם פרטי', 'שם פרטי תלמידה'],
+      lastName: ['משפחה', 'שם משפחה', 'משפחה תלמידה'],
+      name: ['שם', 'שם מלא', 'שם תלמידה', 'name', 'student_name'],
+      phone: ['נייד אישי', 'טלפון', 'phone'],
+      phoneCode: ['קוד לטלפון', 'קידומת', 'קוד טלפון', 'phone code', 'phone_code', 'קוד-טלפון'],
+      track: ['התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track'],
+      year: ['כיתה', 'שנה', 'year'],
+      birthDate: ['ת. לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth', 'ת. לידה עברי'],
+      address: ['כתובת', 'כתובת מגורים', 'address'],
+      house: ['מספר בית', 'מספר'],
+      city: ['עיר', 'יישוב']
+    };
+    const knownHeaderSet = new Set(
+      Object.values(knownHeaders)
+        .flat()
+        .map((header) => compactHeader(header))
+    );
+
+    const buildRowsFromSheet = (sheetName, sheet) => {
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      const headersCompact = new Set([...knownHeaderSet]);
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(matrix.length, 40); i++) {
+        const row = Array.isArray(matrix[i]) ? matrix[i] : [];
+        const matches = row
+          .map((cell) => compactHeader(cell))
+          .filter((token) => token && headersCompact.has(token)).length;
+        if (matches >= 2) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      if (headerRowIndex >= 0) {
+        const rawHeaders = matrix[headerRowIndex] || [];
+        const headers = rawHeaders.map((value, index) => {
+          const text = String(value || '').trim();
+          return text || `__COL_${index + 1}`;
+        });
+        const rows = [];
+        for (let r = headerRowIndex + 1; r < matrix.length; r++) {
+          const rowValues = Array.isArray(matrix[r]) ? matrix[r] : [];
+          if (!rowValues.some((value) => String(value || '').trim() !== '')) continue;
+          const rowObj = { __sheetName: sheetName };
+          headers.forEach((header, index) => {
+            rowObj[header] = rowValues[index] ?? '';
+          });
+          rows.push(rowObj);
+        }
+        console.log(`Sheet "${sheetName}": detected headers at row ${headerRowIndex + 1}`);
+        return rows;
+      }
+
+      const rows = [];
+      for (const rowValues of matrix) {
+        if (!Array.isArray(rowValues)) continue;
+        if (!rowValues.some((value) => String(value || '').trim() !== '')) continue;
+        const rowObj = { __sheetName: sheetName };
+        rowValues.forEach((value, index) => {
+          rowObj[`__COL_${index + 1}`] = value ?? '';
+        });
+        rows.push(rowObj);
+      }
+      console.log(`Sheet "${sheetName}": no headers detected, using positional columns`);
+      return rows;
+    };
+
+    let allRows = [];
+    for (const sheetName of wb.SheetNames) {
+      const sheet = wb.Sheets[sheetName];
+      const rows = buildRowsFromSheet(sheetName, sheet);
+      if (rows.length > 0) console.log(`Sheet "${sheetName}" parsed rows: ${rows.length}`);
+      allRows = allRows.concat(rows);
+    }
+    const rows = allRows;
+
+    const upsert = db.prepare(`
+      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, extra_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id_number) DO UPDATE SET
         name=excluded.name,
         phone=excluded.phone,
+        phone_code=excluded.phone_code,
         track=excluded.track,
         year=excluded.year,
-        birth_date=COALESCE(excluded.birth_date, students.birth_date),
-        address=COALESCE(excluded.address, students.address)
+        birth_date=excluded.birth_date,
+        address=excluded.address,
+        extra_data=excluded.extra_data
     `);
+    const getExistingStudent = db.prepare('SELECT * FROM students WHERE id_number = ?');
 
-    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0;
+    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0, withPhoneCode = 0, mergedExisting = 0, addedExtraFields = 0;
+
+    const pickValue = (existingValue, incomingValue) => {
+      const current = String(existingValue || '').trim();
+      if (current) return current;
+      const next = String(incomingValue || '').trim();
+      return next || null;
+    };
+
+    const normalizeIdNumber = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const digits = raw.replace(/\D/g, '');
+      if (digits && /^[\d\s-]+$/.test(raw) && digits.length >= 8 && digits.length <= 10) {
+        return digits;
+      }
+      return raw;
+    };
+
+    const findIdCandidateFromRow = (row) => {
+      for (const key of Object.keys(row)) {
+        if (key === '__sheetName') continue;
+        const value = normalizeIdNumber(row[key]);
+        if (/^\d{8,10}$/.test(value)) return value;
+      }
+      return '';
+    };
+
+    const mergeExtraFields = (existing, incoming) => {
+      const merged = { ...existing };
+      let added = 0;
+      for (const [key, value] of Object.entries(incoming)) {
+        const cleanKey = String(key || '').trim();
+        const cleanValue = String(value || '').trim();
+        if (!cleanKey || !cleanValue) continue;
+        const existingValue = String(merged[cleanKey] || '').trim();
+        if (!existingValue) {
+          merged[cleanKey] = cleanValue;
+          added++;
+        }
+      }
+      return { merged, added };
+    };
+
     const importMany = db.transaction((rows) => {
       for (const row of rows) {
         const getValue = (...headers) => {
@@ -1055,19 +1245,18 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
           }
           return '';
         };
-        const id_number = String(getValue("מס' זהות", 'ת. זהות', 'ת.ז', 'ת.ז.', 'תז', 'id_number', 'ID')).trim();
-        const firstName = String(getValue('שם פרטי')).trim();
-        const lastName = String(getValue('משפחה')).trim();
-        const name = [lastName, firstName].filter(Boolean).join(' ') || String(getValue('שם', 'שם מלא', 'name')).trim();
-        const phone = String(getValue('נייד אישי', 'טלפון', 'phone')).trim();
-        const track = String(getValue('התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track')).trim();
-        const year = String(getValue('כיתה', 'שנה', 'year')).trim();
+        const id_number = normalizeIdNumber(getValue(...knownHeaders.id)) || findIdCandidateFromRow(row);
+        const firstName = String(getValue(...knownHeaders.firstName)).trim();
+        const lastName = String(getValue(...knownHeaders.lastName)).trim();
+        const name = [lastName, firstName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
+        const phone = String(getValue(...knownHeaders.phone)).trim();
+        const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
+        const explicitTrack = String(getValue(...knownHeaders.track)).trim();
+        const sheetTrack = String(row.__sheetName || '').trim();
+        const track = explicitTrack || sheetTrack;
+        const year = String(getValue(...knownHeaders.year)).trim();
         const birthDateValue = getValue(
-          'ת. לידה לועזי',
-          'תאריך לידה',
-          'birth_date',
-          'date_of_birth',
-          'ת. לידה עברי'
+          ...knownHeaders.birthDate
         ) || Object.keys(row)
           .filter((header) => compactHeader(header).includes('לידה'))
           .sort((a, b) => Number(compactHeader(b).includes('לועזי')) - Number(compactHeader(a).includes('לועזי')))
@@ -1084,19 +1273,57 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
             ? `${String(parsedBirthDate.d).padStart(2, '0')}/${String(parsedBirthDate.m).padStart(2, '0')}/${parsedBirthDate.y}`
             : String(birthDateValue || '').trim();
         const address = [
-          getValue('כתובת', 'כתובת מגורים', 'address'),
-          getValue('מספר בית', 'מספר'),
-          getValue('עיר', 'יישוב')
+          getValue(...knownHeaders.address),
+          getValue(...knownHeaders.house),
+          getValue(...knownHeaders.city)
         ].map(value => String(value || '').trim()).filter(Boolean).join(' ');
-        if (!id_number || !name) { skipped++; continue; }
-        insert.run(id_number, name, phone, track, year, birth_date || null, address || null);
+
+        const extraFields = Object.entries(row).reduce((acc, [header, value]) => {
+          if (header === '__sheetName') return acc;
+          if (/^__COL_\d+$/i.test(header) || /^__EMPTY/i.test(header)) return acc;
+          const normalizedHeader = compactHeader(header);
+          if (!normalizedHeader || knownHeaderSet.has(normalizedHeader)) return acc;
+          const cleanValue = String(value || '').trim();
+          if (!cleanValue) return acc;
+          acc[String(header).trim()] = cleanValue;
+          return acc;
+        }, {});
+
+        const existing = getExistingStudent.get(id_number);
+        if (!id_number) { skipped++; continue; }
+        if (!name && !existing) { skipped++; continue; }
+        if (existing) mergedExisting++;
+        const existingExtra = parseExtraData(existing?.extra_data);
+        const mergedExtra = mergeExtraFields(existingExtra, extraFields);
+        addedExtraFields += mergedExtra.added;
+
+        const mergedName = pickValue(existing?.name, name);
+        const mergedPhone = pickValue(existing?.phone, phone);
+        const mergedPhoneCode = pickValue(existing?.phone_code, phone_code);
+        const mergedTrack = pickValue(existing?.track, track);
+        const mergedYear = pickValue(existing?.year, year);
+        const mergedBirthDate = pickValue(existing?.birth_date, birth_date);
+        const mergedAddress = pickValue(existing?.address, address);
+
+        upsert.run(
+          id_number,
+          mergedName,
+          mergedPhone,
+          mergedPhoneCode,
+          mergedTrack,
+          mergedYear,
+          mergedBirthDate,
+          mergedAddress,
+          JSON.stringify(mergedExtra.merged)
+        );
         imported++;
-        if (birth_date) withBirthDate++;
-        if (address) withAddress++;
+        if (mergedBirthDate) withBirthDate++;
+        if (mergedAddress) withAddress++;
+        if (mergedPhoneCode) withPhoneCode++;
       }
     });
     importMany(rows);
-    res.json({ imported, skipped, withBirthDate, withAddress, total: rows.length });
+    res.json({ imported, skipped, withBirthDate, withAddress, withPhoneCode, mergedExisting, addedExtraFields, total: rows.length });
   } catch (e) {
     console.error('Import error:', e);
     res.status(500).json({ error: 'שגיאה בקריאת הקובץ: ' + e.message });

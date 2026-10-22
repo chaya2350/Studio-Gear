@@ -27,44 +27,133 @@ import { Student } from '../../models';
         <div class="card">
           <div class="student-card-header">
             <div class="section-title">📋 פרטים אישיים</div>
-            <button *ngIf="!editing()" class="btn btn-secondary" (click)="startEditing()">✏️ עריכת פרטים</button>
+            <div class="student-actions" *ngIf="!editing()">
+              <button class="btn btn-secondary" (click)="startEditing()">✏️ עריכת פרטים</button>
+              <button class="btn btn-danger" [disabled]="deleting()" (click)="deleteStudent()">
+                {{ deleting() ? 'מוחקת...' : '🗑️ מחיקת תלמידה' }}
+              </button>
+            </div>
           </div>
           <form *ngIf="editing()" class="student-edit-form" (ngSubmit)="saveStudent()">
-            <label>שם מלא<input name="name" [(ngModel)]="studentDraft.name" required></label>
-            <label>טלפון<input name="phone" [(ngModel)]="studentDraft.phone"></label>
-            <label>מסלול<input name="track" [(ngModel)]="studentDraft.track"></label>
-            <label>שנה<input name="year" [(ngModel)]="studentDraft.year"></label>
+            <div class="edit-shell">
+              <section class="edit-section">
+                <h3>פרטים בסיסיים</h3>
+                <div class="edit-grid">
+                  <label class="field">
+                    <span>שם מלא</span>
+                    <input name="name" [(ngModel)]="studentDraft.name" required>
+                  </label>
+                  <label class="field">
+                    <span>טלפון אישי</span>
+                    <input name="phone" [(ngModel)]="studentDraft.phone">
+                  </label>
+                  <label class="field">
+                    <span>מסלול</span>
+                    <input name="track" [(ngModel)]="studentDraft.track">
+                  </label>
+                  <label class="field">
+                    <span>שנה</span>
+                    <input name="year" [(ngModel)]="studentDraft.year">
+                  </label>
+                </div>
+              </section>
+
+              <section class="edit-section">
+                <h3>טלפון ציבורי</h3>
+                <div class="edit-grid single-col">
+                  <label class="field">
+                    <span>קוד לטלפון ציבורי</span>
+                    <input name="phone_code" [(ngModel)]="studentDraft.phone_code" placeholder="למשל 02 / 03 / 04">
+                  </label>
+                </div>
+              </section>
+
+              <section class="edit-section">
+                <h3>פרטים נוספים</h3>
+                <div class="extra-edit" *ngIf="editingExtraFields.length">
+                  <div class="extra-edit-row" *ngFor="let f of editingExtraFields; let i = index">
+                    <input [name]="'extra_key_' + i" [(ngModel)]="f.key" placeholder="שם פרט">
+                    <input [name]="'extra_value_' + i" [(ngModel)]="f.value" placeholder="ערך">
+                    <button type="button" class="btn btn-danger" (click)="removeEditingExtraField(i)">מחיקה</button>
+                  </div>
+                </div>
+                <p *ngIf="!editingExtraFields.length" class="extra-empty">אין פרטים נוספים כרגע</p>
+
+                <div class="extra-add-row">
+                  <input name="newExtraKey" [(ngModel)]="newExtraField.key" placeholder="שם פרט חדש">
+                  <input name="newExtraValue" [(ngModel)]="newExtraField.value" placeholder="ערך">
+                  <button type="button" class="btn btn-secondary" (click)="addEditingExtraField()">הוספה</button>
+                </div>
+              </section>
+            </div>
+
             <div *ngIf="editError()" class="edit-error" role="alert">{{ editError() }}</div>
             <div class="edit-actions">
               <button class="btn btn-primary" type="submit" [disabled]="saving()">שמור</button>
               <button class="btn btn-secondary" type="button" (click)="editing.set(false)">ביטול</button>
             </div>
           </form>
-          <div class="info-row">
-            <span class="info-label">שם</span>
-            <span class="info-value">{{ student()!.name }}</span>
+
+          <div class="quick-stats">
+            <div class="stat-tile">
+              <span class="stat-label">סה"כ השאלות</span>
+              <strong class="stat-value">{{ student()!.loans?.length || 0 }}</strong>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-label">השאלות פעילות</span>
+              <strong class="stat-value">{{ activeLoans().length }}</strong>
+            </div>
+            <div class="stat-tile status" [class.active]="activeLoans().length > 0">
+              <span class="stat-label">מצב</span>
+              <span class="badge" [class]="activeLoans().length ? 'badge-loaned' : 'badge-available'">
+                {{ activeLoans().length ? 'פעילות' : 'ללא פעילות' }}
+              </span>
+            </div>
           </div>
-          <div class="info-row">
-            <span class="info-label">ת.ז.</span>
-            <span class="info-value barcode-val">{{ student()!.id_number }}</span>
+
+          <div class="info-grid">
+            <div class="info-row highlight">
+              <span class="info-label">שם</span>
+              <span class="info-value">{{ student()!.name }}</span>
+            </div>
+            <div class="info-row highlight">
+              <span class="info-label">ת.ז.</span>
+              <span class="info-value barcode-val">{{ student()!.id_number }}</span>
+            </div>
+            <div class="info-row" *ngIf="student()!.phone">
+              <span class="info-label">טלפון</span>
+              <span class="info-value">{{ student()!.phone }}</span>
+            </div>
+            <div class="info-row" *ngIf="student()!.address">
+              <span class="info-label">כתובת</span>
+              <span class="info-value">{{ student()!.address }}</span>
+            </div>
+            <div class="info-row" *ngIf="student()!.track">
+              <span class="info-label">מסלול</span>
+              <span class="info-value">{{ student()!.track }}{{ student()!.year ? ' ' + student()!.year : '' }}</span>
+            </div>
           </div>
-          <div class="info-row" *ngIf="student()!.phone">
-            <span class="info-label">טלפון</span>
-            <span class="info-value">{{ student()!.phone }}</span>
-          </div>
-          <div class="info-row" *ngIf="student()!.track">
-            <span class="info-label">מסלול</span>
-            <span class="info-value">{{ student()!.track }}{{ student()!.year ? ' ' + student()!.year : '' }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">סה"כ השאלות</span>
-            <span class="info-value">{{ student()!.loans?.length || 0 }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">פעילות</span>
-            <span class="badge" [class]="activeLoans().length ? 'badge-loaned' : 'badge-available'">
-              {{ activeLoans().length ? activeLoans().length + ' פעילות' : 'אין השאלות פעילות' }}
-            </span>
+
+          <div class="extra-fields" *ngIf="hasPublicPhoneBlock() || extraFields().length">
+            <h3>פרטים נוספים </h3>
+            <div class="extra-fields-grid" *ngIf="hasPublicPhoneBlock() || hasCredentialsBlock()">
+              <div class="info-row extra highlight-import">
+                <span class="info-label">טלפון ציבורי</span>
+                <span class="info-value" *ngIf="phoneCodeValue()">קוד: {{ phoneCodeValue() }}</span>
+                <span class="info-value" *ngIf="phoneExtensionValue()">שלוחה: {{ phoneExtensionValue() }}</span>
+              </div>
+              <div class="info-row extra highlight-import" *ngIf="hasCredentialsBlock()">
+                <span class="info-label">פרטי התחברות</span>
+                <span class="info-value" *ngIf="usernameValue()">שם משתמש: {{ usernameValue() }}</span>
+                <span class="info-value" *ngIf="passwordValue()">סיסמה: {{ passwordValue() }}</span>
+              </div>
+            </div>
+            <div class="extra-fields-grid">
+              <div class="info-row extra" *ngFor="let field of extraFields()">
+                <span class="info-label">{{ field.key }}</span>
+                <span class="info-value">{{ field.value }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -203,11 +292,177 @@ import { Student } from '../../models';
       transition: all var(--transition); box-shadow: var(--shadow-xs);
       &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
     }
-    .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .student-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .student-card-header .section-title { margin-bottom: 0; }
-    .student-edit-form { display: grid; gap: 10px; margin-bottom: 16px; }
-    .student-edit-form label { display: grid; gap: 5px; font-size: 0.82rem; font-weight: 700; }
-    .edit-actions { display: flex; gap: 8px; }
+    .student-edit-form {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 22px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, var(--surface), var(--surface-2));
+      box-shadow: var(--shadow-xs);
+    }
+    .edit-shell { display: grid; gap: 14px; }
+    .edit-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .edit-section h3 {
+      margin: 0;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .edit-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .edit-grid.single-col { grid-template-columns: 1fr; }
+    .field {
+      display: grid;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .field span { font-size: 0.77rem; }
+    .student-edit-form input {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+    .student-edit-form input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+      background: var(--surface);
+    }
+    .extra-edit {
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      background: var(--bg);
+      display: grid;
+      gap: 8px;
+    }
+    .extra-edit-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .extra-add-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .extra-empty {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--text-light);
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 9px 10px;
+    }
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-tile {
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, var(--surface), var(--surface-2));
+      display: grid;
+      gap: 5px;
+      min-height: 74px;
+      align-content: center;
+    }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 700; }
+    .stat-value { font-size: 1.1rem; color: var(--text); }
+    .stat-tile.status { align-items: start; }
+    .stat-tile.status.active { border-color: #fdba74; background: linear-gradient(180deg, #fffbeb, #fff7ed); }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .info-row {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      min-height: 64px;
+      align-content: center;
+    }
+    .info-row.highlight {
+      background: linear-gradient(180deg, #f8fbff, #f1f7ff);
+      border-color: #c8ddff;
+    }
+    .info-label {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.2px;
+    }
+    .info-value {
+      font-size: 0.92rem;
+      color: var(--text);
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .extra-fields {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border);
+    }
+    .extra-fields h3 {
+      margin: 0 0 10px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      font-weight: 800;
+    }
+    .extra-fields-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .info-row.extra {
+      background: var(--bg);
+    }
+    .info-row.extra.highlight-import {
+      background: linear-gradient(180deg, #f7fff9, #effcf3);
+      border-color: #b9efcc;
+    }
+    .edit-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      border-top: 1px dashed var(--border);
+      padding-top: 12px;
+    }
     .edit-error { color: var(--danger); font-size: 0.85rem; }
     .req-note { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
     .req-link { color: var(--primary); font-weight: 700; margin-inline-start: 6px; }
@@ -231,7 +486,16 @@ import { Student } from '../../models';
     .file-req .btn { padding: 6px 12px; font-size: 0.82rem; text-decoration: none; }
     .upload-btn { cursor: pointer; margin: 0; }
     .upload-btn.disabled { opacity: 0.6; pointer-events: none; }
-    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    @media (max-width: 1050px) {
+      .quick-stats { grid-template-columns: 1fr; }
+      .info-grid { grid-template-columns: 1fr; }
+      .extra-fields-grid { grid-template-columns: 1fr; }
+      .edit-grid { grid-template-columns: 1fr; }
+      .extra-edit-row, .extra-add-row { grid-template-columns: 1fr; }
+      .edit-actions { justify-content: stretch; }
+      .edit-actions .btn { width: 100%; }
+    }
     @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
     .barcode-val {
       font-family: monospace; background: var(--surface-2); padding: 3px 9px;
@@ -265,8 +529,11 @@ export class StudentComponent implements OnInit {
   loading = signal(true);
   editing = signal(false);
   saving = signal(false);
+  deleting = signal(false);
   editError = signal('');
-  studentDraft = { name: '', phone: '', track: '', year: '' };
+  studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '' };
+  editingExtraFields: { key: string; value: string }[] = [];
+  newExtraField = { key: '', value: '' };
   today = new Date().toISOString().split('T')[0];
   requirements = signal<StudentRequirements | null>(null);
   requirementError = signal('');
@@ -377,11 +644,47 @@ export class StudentComponent implements OnInit {
     this.studentDraft = {
       name: current.name,
       phone: current.phone || '',
+      phone_code: current.phone_code || '',
       track: current.track || '',
       year: current.year || ''
     };
+    this.editingExtraFields = this.extraFields().map((field) => ({ ...field }));
+    this.newExtraField = { key: '', value: '' };
     this.editError.set('');
     this.editing.set(true);
+  }
+
+  addEditingExtraField() {
+    const key = String(this.newExtraField.key || '').trim();
+    const value = String(this.newExtraField.value || '').trim();
+    if (!key || !value) return;
+    const exists = this.editingExtraFields.some((field) => field.key.trim() === key);
+    if (exists) {
+      this.editError.set('כבר קיים פרט בשם הזה. אפשר לערוך אותו ברשימה.');
+      return;
+    }
+    this.editError.set('');
+    this.editingExtraFields = [...this.editingExtraFields, { key, value }];
+    this.newExtraField = { key: '', value: '' };
+  }
+
+  removeEditingExtraField(index: number) {
+    this.editingExtraFields = this.editingExtraFields.filter((_, i) => i !== index);
+  }
+
+  buildExtraDataForSave() {
+    const data: Record<string, string> = {};
+    for (const field of this.editingExtraFields) {
+      const key = String(field.key || '').trim();
+      const value = String(field.value || '').trim();
+      if (!key || !value) continue;
+      data[key] = value;
+    }
+    const ext = String(this.phoneExtensionValue() || '').trim();
+    if (ext && !Object.keys(data).some((key) => this.isPhoneExtensionKey(key))) {
+      data['שלוחה'] = ext;
+    }
+    return data;
   }
 
   saveStudent() {
@@ -389,7 +692,11 @@ export class StudentComponent implements OnInit {
     if (!current || this.saving()) return;
     this.saving.set(true);
     this.editError.set('');
-    this.api.updateStudent(current.id_number, this.studentDraft).subscribe({
+    const payload = {
+      ...this.studentDraft,
+      extra_data: this.buildExtraDataForSave()
+    };
+    this.api.updateStudent(current.id_number, payload).subscribe({
       next: () => {
         this.editing.set(false);
         this.saving.set(false);
@@ -402,11 +709,103 @@ export class StudentComponent implements OnInit {
     });
   }
 
+  deleteStudent() {
+    const current = this.student();
+    if (!current || this.deleting()) return;
+    const ok = confirm(`למחוק את התלמידה ${current.name}? פעולה זו בלתי הפיכה.`);
+    if (!ok) return;
+
+    this.deleting.set(true);
+    this.editError.set('');
+    this.api.deleteStudent(current.id_number).subscribe({
+      next: () => {
+        this.deleting.set(false);
+        this.router.navigate(['/students']);
+      },
+      error: error => {
+        this.deleting.set(false);
+        this.editError.set(error.error?.error || 'לא ניתן למחוק את התלמידה');
+      }
+    });
+  }
+
   activeLoans() {
     return (this.student()?.loans || []).filter(l => !l.actual_return);
   }
 
   isOverdue(l: any) {
     return !l.actual_return && l.expected_return < this.today;
+  }
+
+  extraFields() {
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return [];
+    return Object.entries(data)
+      .map(([key, value]) => ({ key: String(key), value: String(value ?? '').trim() }))
+      .filter((field) => field.key && field.value)
+      .filter((field) => !this.isPhoneCodeKey(field.key) && !this.isPhoneExtensionKey(field.key))
+      .filter((field) => !this.isUsernameKey(field.key) && !this.isPasswordKey(field.key));
+  }
+
+  hasPublicPhoneBlock() {
+    return Boolean(this.phoneCodeValue() || this.phoneExtensionValue());
+  }
+
+  hasCredentialsBlock() {
+    return Boolean(this.usernameValue() || this.passwordValue());
+  }
+
+  phoneCodeValue() {
+    const direct = String(this.student()?.phone_code || '').trim();
+    if (direct) return direct;
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+    const found = Object.entries(data).find(([key, value]) => this.isPhoneCodeKey(key) && String(value || '').trim());
+    return found ? String(found[1] || '').trim() : '';
+  }
+
+  phoneExtensionValue() {
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+    const found = Object.entries(data).find(([key, value]) => this.isPhoneExtensionKey(key) && String(value || '').trim());
+    return found ? String(found[1] || '').trim() : '';
+  }
+
+  normalizeFieldKey(key: string) {
+    return String(key || '').toLocaleLowerCase().replace(/\s+/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  }
+
+  isPhoneCodeKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('קודלטלפון') || normalized.includes('קודטלפון') || normalized.includes('קידומת') || normalized.includes('phonecode');
+  }
+
+  isPhoneExtensionKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('שלוחה') || normalized.includes('הארכה') || normalized.includes('extension') || normalized.endsWith('ext');
+  }
+
+  usernameValue() {
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+    const found = Object.entries(data).find(([key, value]) => this.isUsernameKey(key) && String(value || '').trim());
+    return found ? String(found[1] || '').trim() : '';
+  }
+
+  passwordValue() {
+    const data = this.student()?.extra_data;
+    if (!data || typeof data !== 'object') return '';
+    const found = Object.entries(data).find(([key, value]) => this.isPasswordKey(key) && String(value || '').trim());
+    return found ? String(found[1] || '').trim() : '';
+  }
+
+  isUsernameKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('שםמשתמש') || normalized.includes('user') || normalized.includes('username') || normalized.includes('login');
+  }
+
+  isPasswordKey(key: string) {
+    const normalized = this.normalizeFieldKey(key);
+    return normalized.includes('סיסמה') || normalized.includes('סיסמא') || normalized.includes('ססמה') || normalized.includes('password') || normalized === 'pass';
   }
 }

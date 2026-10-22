@@ -103,7 +103,7 @@ interface UserAccount {
       <div class="section-title">📥 ייבוא תלמידות מאקסל</div>
       <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
         העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה, ת. לידה לועזי/עברית, כתובת, מספר בית, עיר</strong><br>
-        ניתן להעלות מספר קבצים (שנה א + שנה ב). רשומות קיימות יתעדכנו לפי ת.ז.
+        ניתן להעלות מספר קבצים (שנה א + שנה ב). המערכת ממזגת לפי ת.ז בלי לדרוס מידע קיים, ומוסיפה פרמטרים חדשים (כמו קוד לטלפון).
       </p>
 
       <div class="upload-area"
@@ -124,7 +124,9 @@ interface UserAccount {
 
       <div *ngFor="let r of results()" class="import-status" [class.success]="r.ok" [class.error]="!r.ok">
         <span *ngIf="r.ok">✅ <strong>{{ r.filename }}</strong> — יובאו {{ r.imported }} תלמידות
-          (תאריך לידה: {{ r.withBirthDate || 0 }}, כתובת: {{ r.withAddress || 0 }})
+          (תאריך לידה: {{ r.withBirthDate || 0 }}, כתובת: {{ r.withAddress || 0 }}, קוד טלפון: {{ r.withPhoneCode || 0 }})
+          <span *ngIf="r.mergedExisting"> · מוזגו {{ r.mergedExisting }} תלמידות קיימות</span>
+          <span *ngIf="r.addedExtraFields"> · נוספו {{ r.addedExtraFields }} פרמטרים נוספים</span>
           <span *ngIf="r.skipped">({{ r.skipped }} דולגו)</span>
         </span>
         <span *ngIf="!r.ok">❌ <strong>{{ r.filename }}</strong> — {{ r.error }}</span>
@@ -277,6 +279,9 @@ export class AdminComponent {
     skipped?: number;
     withBirthDate?: number;
     withAddress?: number;
+    withPhoneCode?: number;
+    mergedExisting?: number;
+    addedExtraFields?: number;
     error?: string;
   }[]>([]);
   totalImported = signal(0);
@@ -444,6 +449,9 @@ export class AdminComponent {
       skipped?: number;
       withBirthDate?: number;
       withAddress?: number;
+      withPhoneCode?: number;
+      mergedExisting?: number;
+      addedExtraFields?: number;
       error?: string;
     }[] = [];
 
@@ -458,7 +466,10 @@ export class AdminComponent {
             imported: r.imported,
             skipped: r.skipped,
             withBirthDate: r.withBirthDate,
-            withAddress: r.withAddress
+            withAddress: r.withAddress,
+            withPhoneCode: r.withPhoneCode,
+            mergedExisting: r.mergedExisting,
+            addedExtraFields: r.addedExtraFields
           });
           if (++done === files.length) { this.importing.set(false); this.results.set([...newResults]); this.loadTotal(); }
         },
