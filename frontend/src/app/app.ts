@@ -16,20 +16,18 @@ import { filter } from 'rxjs/operators';
         <span>סמינר גור</span>
       </a>
       <div class="nav-links">
-        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
-          >🏠 בית</a
-        >
-        <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">🪪 תלמידות</a>
-        <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
-        <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
-        <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
+        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">בית</a>
+        <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">תלמידות</a>
+        <a routerLink="/equipment" [class.active]="isEquipmentSection()">השאלת ציוד</a>
+        <a routerLink="/approvals" [class.active]="isApprovalsSection()">אישורים</a>
+        <a routerLink="/exams" [class.active]="isExamsSection()">מבחנים</a>
         <a routerLink="/pages" routerLinkActive="active" class="pages-nav-link">
-          📚 דפים
+          דפים
           <span class="nav-badge" *ngIf="accessRequests().length + grantedCount > 0">{{ accessRequests().length + grantedCount }}</span>
         </a>
-        <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
-        <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
-        <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
+        <a routerLink="/messages" routerLinkActive="active">הודעות</a>
+        <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">לוח שנה</a>
+        <a routerLink="/admin" routerLinkActive="active">ניהול</a>
       </div>
       <div class="account-actions" *ngIf="auth.user() as user">
         <span>{{ user.name }} · {{ roleLabel(user.role) }}</span>
@@ -46,7 +44,7 @@ import { filter } from 'rxjs/operators';
           [queryParams]="{ type: t.id }"
           [class.active]="isApprovalTypeActive(t.id)"
         >
-          📄 {{ t.name }}
+          {{ t.name }}
         </a>
         <a
           *ngIf="t.type === 'single'"
@@ -54,14 +52,14 @@ import { filter } from 'rxjs/operators';
           [queryParams]="{ type: t.id }"
           [class.active]="isSingleApprovalActive(t.id)"
         >
-          💍 {{ t.name }}
+          {{ t.name }}
         </a>
       </ng-container>
     </nav>
 
     <nav class="subnav" *ngIf="currentPath !== '/login' && isExamsSection()">
-      <a routerLink="/exams" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">📋 ניהול מבחנים וברקודים</a>
-      <a routerLink="/exams/scan" routerLinkActive="active">✏️ רישום ציון</a>
+      <a routerLink="/exams" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">ניהול מבחנים וברקודים</a>
+      <a routerLink="/exams/scan" routerLinkActive="active">רישום ציון</a>
     </nav>
 
     <nav class="subnav" *ngIf="currentPath !== '/login' && isEquipmentSection()">
@@ -69,11 +67,11 @@ import { filter } from 'rxjs/operators';
         routerLink="/equipment"
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: true }"
-        >📦 ציוד</a
+        >ציוד</a
       >
-      <a routerLink="/scan" routerLinkActive="active">📷 סריקה</a>
-      <a routerLink="/loans" routerLinkActive="active">📋 השאלות</a>
-      <a routerLink="/checkout" routerLinkActive="active">🛒 הזמנה</a>
+      <a routerLink="/scan" routerLinkActive="active">סריקה</a>
+      <a routerLink="/loans" routerLinkActive="active">השאלות</a>
+      <a routerLink="/checkout" routerLinkActive="active">הזמנה</a>
     </nav>
 
     <main class="container" [class.login-container]="currentPath === '/login'">
@@ -83,19 +81,18 @@ import { filter } from 'rxjs/operators';
       <span>כל הזכויות שמורות למלי וחיה</span>
     </footer>
     <a *ngIf="currentPath !== '/login' && cart.count() > 0" routerLink="/checkout" class="cart-fab">
-      🛒 הזמנה
+      הזמנה
       <span class="cart-badge">{{ cart.count() }}</span>
     </a>
   `,
   styles: [
     `
       .nav-badge {
-        background: var(--danger); color: white; border-radius: 50%;
-        min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
-        font-size: 0.68rem; font-weight: 800; padding: 0 4px; margin-right: 4px;
-        animation: badge-pulse 1.5s ease infinite;
+        background: var(--danger); color: white; border-radius: 999px;
+        min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+        font-size: 0.62rem; font-weight: 800; padding: 0 4px; margin-right: 4px;
+        vertical-align: 2px;
       }
-      @keyframes badge-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
       .brand {
         text-decoration: none;
       }
