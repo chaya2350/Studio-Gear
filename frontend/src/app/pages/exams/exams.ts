@@ -278,7 +278,8 @@ export class ExamsComponent implements OnInit {
   }
 
   trackOptions(): string[] {
-    return this.trackNames();
+    // מסנן ערכי "התמחות" שנכנסו מהאקסל — לא מסלולים אמיתיים
+    return this.trackNames().filter(t => !/התמחות/i.test(t));
   }
 
   yearOptions(): string[] {
