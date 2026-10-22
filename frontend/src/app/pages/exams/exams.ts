@@ -49,11 +49,17 @@ import { toStudyYear } from '../approvals/study-year';
           <div class="form-row">
             <div class="form-group">
               <label>מסלול (אופציונלי)</label>
-              <input [(ngModel)]="newExam.track" placeholder="לדוגמה: מסלול א'">
+              <select [(ngModel)]="newExam.track">
+                <option value="">כל המסלולים</option>
+                <option *ngFor="let t of trackOptions()" [value]="t">{{ t }}</option>
+              </select>
             </div>
             <div class="form-group">
               <label>שנה (אופציונלי)</label>
-              <input [(ngModel)]="newExam.year" placeholder="לדוגמה: א'">
+              <select [(ngModel)]="newExam.year">
+                <option value="">כל השנים</option>
+                <option *ngFor="let y of yearOptions()" [value]="y">{{ toStudyYear(y) }}</option>
+              </select>
             </div>
           </div>
           <div class="form-group">
@@ -221,13 +227,14 @@ export class ExamsComponent implements OnInit {
   classForm: { track: string | null; year: string | null } = { track: null, year: null };
   studentQuery = '';
   studentResults = signal<any[]>([]);
+  private allStudents = signal<any[]>([]);
 
   toStudyYear = toStudyYear;
 
   constructor(private api: ApiService, private route: ActivatedRoute) { }
 
   ngOnInit() {
-    this.route.queryParams.subscribe(() => { });
+    this.api.getStudents().subscribe(s => this.allStudents.set(s));
     this.loadExams();
   }
 
@@ -248,11 +255,11 @@ export class ExamsComponent implements OnInit {
   }
 
   trackOptions(): string[] {
-    return [...new Set((this.stats()?.byStudent || []).map(s => s.track).filter(Boolean))] as string[];
+    return [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
   }
 
   yearOptions(): string[] {
-    return [...new Set((this.stats()?.byStudent || []).map(s => s.year).filter(Boolean))] as string[];
+    return [...new Set(this.allStudents().map(s => s.year).filter(Boolean))] as string[];
   }
 
   openNewExam() {
