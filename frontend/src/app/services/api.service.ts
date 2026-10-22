@@ -65,6 +65,25 @@ export interface StudentRequirements {
   requirements: StudentRequirement[];
 }
 
+export interface DataReportColumn {
+  key: string;
+  label: string;
+}
+
+export interface TrackReport {
+  track: string;
+  year: string;
+  columns: DataReportColumn[];
+  rows: Record<string, string | number>[];
+}
+
+export interface ClassReport {
+  year: string;
+  columns: DataReportColumn[];
+  rows: Record<string, string | number>[];
+  exams: { id: number; name: string; year: string | null }[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private base = '/api';
@@ -142,6 +161,12 @@ export class ApiService {
     return this.http.post<{ added: number; skipped: number }>(`${this.base}/track-requirements/bulk`, data);
   }
   getTrackStats(id: number) { return this.http.get<TrackStats>(`${this.base}/tracks/${id}/stats`); }
+  getDatabaseTrackReport(track: string, year: string) {
+    return this.http.get<TrackReport>(`${this.base}/reports/track`, { params: { track, year } });
+  }
+  getDatabaseClassReport(className: string) {
+    return this.http.get<ClassReport>(`${this.base}/reports/class`, { params: { class_name: className } });
+  }
   requirementFileUrl(id_number: string, requirementId: number) {
     return `${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}/file`;
   }

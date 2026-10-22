@@ -91,6 +91,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/exams/exams').then((m) => m.ExamsComponent),
       },
       {
+        path: 'database',
+        loadComponent: () => import('./pages/database/database').then((m) => m.DatabaseComponent),
+      },
+      {
         path: 'exams/scan',
         loadComponent: () => import('./pages/exams/exam-scan').then((m) => m.ExamScanComponent),
       },

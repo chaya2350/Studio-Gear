@@ -10,6 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
+const { buildTrackReport, buildClassReport } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -1080,6 +1081,62 @@ app.get('/api/students/:id_number/requirements/:requirement_id/file', (req, res)
   });
 });
 
+app.get('/api/reports/track', (req, res) => {
+  const track = String(req.query.track || '').trim();
+  const year = String(req.query.year || '').trim();
+  if (!track) return res.status(400).json({ error: 'יש לבחור מסלול' });
+  if (!year) return res.status(400).json({ error: 'יש לבחור שנה' });
+
+  const students = db.prepare('SELECT * FROM students ORDER BY name').all();
+  const exams = db.prepare('SELECT * FROM exams ORDER BY created_at DESC').all();
+  const gradeRows = db.prepare(`
+    SELECT e.id AS exam_id, c.id_number, g.grade
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE e.track = ? OR e.track IS NULL
+  `).all(track);
+
+  const gradesByExam = {};
+  for (const row of gradeRows) {
+    if (!gradesByExam[row.exam_id]) gradesByExam[row.exam_id] = {};
+    if (row.grade != null) gradesByExam[row.exam_id][row.id_number] = row.grade;
+  }
+
+  const report = buildTrackReport(students, exams, track, year, gradesByExam);
+  res.json(report);
+});
+
+app.get('/api/reports/class', (req, res) => {
+  const className = String(req.query.class_name || req.query.year || '').trim();
+  if (!className) return res.status(400).json({ error: 'יש לבחור כיתה' });
+
+  const { year } = (() => {
+    const raw = className.replace(/\s+/g, ' ').trim();
+    const match = raw.match(/^([א-ת]+)(\d+)?$/);
+    return match ? { year: match[1] } : { year: raw };
+  })();
+
+  const students = db.prepare('SELECT * FROM students ORDER BY name').all();
+  const exams = db.prepare('SELECT * FROM exams WHERE year IS NULL OR year = ? ORDER BY created_at DESC').all(year);
+  const gradeRows = db.prepare(`
+    SELECT e.id AS exam_id, c.id_number, g.grade
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+    WHERE e.year IS NULL OR e.year = ?
+  `).all(year);
+
+  const gradesByExam = {};
+  for (const row of gradeRows) {
+    if (!gradesByExam[row.exam_id]) gradesByExam[row.exam_id] = {};
+    if (row.grade != null) gradesByExam[row.exam_id][row.id_number] = row.grade;
+  }
+
+  const report = buildClassReport(students, exams, gradesByExam, className);
+  res.json(report);
+});
+
 app.get('/api/tracks/:id/stats', (req, res) => {
   const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
@@ -1146,6 +1203,19 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       return next || null;
     };
 
+    const mergeTrackValues = (existingValue, incomingValue) => {
+      const values = [];
+      const add = (rawValue) => {
+        const cleaned = normalizeTrackName(rawValue);
+        if (!cleaned) return;
+        const exists = values.some((value) => normalizeTrackName(value).toLocaleLowerCase() === cleaned.toLocaleLowerCase());
+        if (!exists) values.push(cleaned);
+      };
+      add(existingValue);
+      add(incomingValue);
+      return values.join(' / ');
+    };
+
     const mergeExtraFields = (existing, incoming) => {
       const merged = { ...existing };
       let added = 0;
@@ -1186,7 +1256,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const mergedName = pickValue(existing?.name, name);
         const mergedPhone = pickValue(existing?.phone, phone);
         const mergedPhoneCode = pickValue(existing?.phone_code, phone_code);
-        const mergedTrack = pickValue(existing?.track, track);
+        const mergedTrack = mergeTrackValues(existing?.track, track);
         const mergedYear = pickValue(existing?.year, year);
         const mergedBirthDate = pickValue(existing?.birth_date, birth_date);
         const mergedAddress = pickValue(existing?.address, address);

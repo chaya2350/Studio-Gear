@@ -23,6 +23,7 @@ import { filter } from 'rxjs/operators';
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">📦 השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">📄 אישורים</a>
         <a routerLink="/exams" [class.active]="isExamsSection()">📝 מבחנים</a>
+        <a routerLink="/database" [class.active]="isDatabaseSection()">🗃️ מסד נתונים</a>
         <a routerLink="/messages" routerLinkActive="active">💬 הודעות</a>
         <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')">🗓 לוח שנה</a>
         <a routerLink="/admin" routerLinkActive="active">⚙️ ניהול</a>
@@ -219,6 +220,10 @@ export class App implements OnInit {
 
   isExamsSection(): boolean {
     return this.currentPath === '/exams' || this.currentPath.startsWith('/exams/');
+  }
+
+  isDatabaseSection(): boolean {
+    return this.currentPath === '/database' || this.currentPath.startsWith('/database/');
   }
 
   isEquipmentSection(): boolean {
