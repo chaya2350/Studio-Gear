@@ -1,7 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { interval, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { AuthService } from '../../services/auth.service';
 import { DirectMessage, MessageUser, MessagesService, PersonalTask } from '../../services/messages.service';
 
@@ -184,7 +186,8 @@ textarea { resize: vertical; line-height: 1.7; }
 @media (max-width: 800px) { .messages-layout { grid-template-columns: 1fr; } }
 `]
 })
-export class MessagesComponent implements OnInit {
+export class MessagesComponent implements OnInit, OnDestroy {
+private destroy$ = new Subject<void>();
 readonly emojis = ['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓'];
 users: MessageUser[] = [];
 messages: DirectMessage[] = [];
@@ -217,7 +220,11 @@ ngOnInit() {
 this.loadUsers();
 this.loadMessages();
 this.loadTasks();
+// רענון אוטומטי כל 30 שניות כדי לראות הודעות חדשות בלי לרענן ידנית
+interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages());
 }
+
+ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
 
 private localToday(): string {
 const today = new Date();

@@ -93,6 +93,7 @@ template: `
 {{ isOverdue(l) ? ' איחור' : 'מושאל' }}
 </span>
 <span *ngIf="l.actual_return" class="badge badge-available"> {{ l.actual_return }}</span>
+<span *ngIf="l.payment_status === 'pending'" class="badge badge-payment" title="השאלה הסתיימה אך התשלום טרם סומן כנגבה">תשלום פתוח</span>
 </td>
 </tr>
 </tbody>
@@ -166,6 +167,7 @@ border: 1px solid var(--border); background: white; color: var(--text); padding:
 border-radius: var(--radius-sm); font-size: 1.2rem; min-width: 46px;
 }
 .btn-ghost.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+.badge-payment { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
 .scan-video-wrap {
 margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: #0f172a;
 }

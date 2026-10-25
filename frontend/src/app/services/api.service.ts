@@ -197,6 +197,7 @@ export class ApiService {
   // ── דפים אישיים ──
   getPageTopics() { return this.http.get<any[]>(`${this.base}/pages/topics`); }
   createPageTopic(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/pages/topics`, { name }); }
+  deletePageTopic(id: number, force = false) { return this.http.delete<{ success: boolean; deleted_pages: number }>(`${this.base}/pages/topics/${id}${force ? '?force=1' : ''}`); }
   getTopicPages(topicId: number) { return this.http.get<any[]>(`${this.base}/pages/topics/${topicId}/pages`); }
   createPage(topicId: number, data: { title: string; body: string; visibility: 'private' | 'public' }) {
     return this.http.post<{ id: number }>(`${this.base}/pages/topics/${topicId}/pages`, data);
@@ -212,4 +213,5 @@ export class ApiService {
     return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
   }
   getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
+  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 }

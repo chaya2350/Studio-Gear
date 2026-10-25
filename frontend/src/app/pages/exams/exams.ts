@@ -75,7 +75,9 @@ template: `
 
 <!-- הפקת ברקודים למבחן שנבחר -->
 <div class="card" *ngIf="selectedExam()">
-<div class="section-title"> הפקת ברקודים — {{ selectedExam()?.name }}</div>
+<div class="section-title"> הפקת ברקודים — {{ selectedExam()?.name }}
+<button class="btn btn-ghost" (click)="exportGradesCsv()" style="margin-right:auto; font-size:0.78rem; padding:4px 12px;">ייצוא ציונים</button>
+</div>
 
 <div class="mode-toggle" style="margin-bottom:14px;">
 <button [class.active]="printMode()==='class'" (click)="printMode.set('class')"> לכיתה / מסלול</button>
@@ -278,8 +280,9 @@ this.api.getExamStats().subscribe(stats => this.stats.set(stats));
 }
 
 trackOptions(): string[] {
-// מסנן ערכי "התמחות" שנכנסו מהאקסל — לא מסלולים אמיתיים
-return this.trackNames().filter(t => !/התמחות/i.test(t));
+  // מסלולים מהתלמידות בפועל (טבלת tracks יכולה להיות ריקה), מסונן מערכי התמחות
+  const tracks = [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
+  return tracks.filter(t => !/התמחות/i.test(t)).sort((a, b) => a.localeCompare(b, 'he'));
 }
 
 yearOptions(): string[] {
@@ -326,7 +329,27 @@ this.error.set('');
 }
 
 missingStudents() {
-return (this.stats()?.byStudent || []).filter(s => s.missing > 0);
+  return (this.stats()?.byStudent || []).filter(s => s.missing > 0);
+}
+
+exportGradesCsv() {
+  const exam = this.selectedExam();
+  if (!exam) return;
+  this.api.getExam(exam.id).subscribe((data: any) => {
+    const rows = [['תעודת זהות', 'שם', 'ציון', 'תאריך רישום']];
+    for (const s of data.students || []) {
+      rows.push([s.id_number, s.name, s.grade != null ? String(s.grade) : '', s.graded_at || '']);
+    }
+    // BOM כדי שהאקסל יזה UTF-8 ויציג עברית תקין
+    const csv = '\uFEFF' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ציונים - ${exam.name}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 }
 
 searchStudents() {

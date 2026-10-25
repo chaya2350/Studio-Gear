@@ -5,6 +5,32 @@ import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
+interface PageTopic {
+  id: number;
+  name: string;
+  page_count: number;
+  pending_requests?: number;
+  granted_requests?: number;
+}
+interface PersonalPage {
+  id: number;
+  title: string;
+  body: string;
+  visibility: 'private' | 'public';
+  creator_name: string;
+  created_at: string;
+  can_edit: boolean;
+  can_view: boolean;
+  pending_requests: number;
+  my_request_status?: 'pending' | 'approved' | 'denied';
+}
+interface AccessRequest {
+  id: number;
+  user_name: string;
+  page_title: string;
+  status: 'pending' | 'approved' | 'denied';
+}
+
 @Component({
 selector: 'app-pages',
 imports: [CommonModule, FormsModule],
@@ -29,7 +55,7 @@ template: `
 <strong>{{ t.name }}</strong>
 <span>{{ t.page_count }} דפים</span>
 </div>
-<span class="topic-badge" *ngIf="t.pending_requests + t.granted_requests > 0">{{ t.pending_requests + t.granted_requests }}</span>
+<span class="topic-badge" *ngIf="(t.pending_requests || 0) + (t.granted_requests || 0) > 0">{{ (t.pending_requests || 0) + (t.granted_requests || 0) }}</span>
 </div>
 <div *ngIf="!filteredTopics().length" class="empty-state" style="grid-column: 1/-1;">
 <p>{{ topicQuery() ? 'לא נמצאו נושאים מתאימים' : 'עדיין אין נושאים. לחצי על "נושא חדש"' }}</p>
@@ -242,13 +268,14 @@ background: var(--surface); font: inherit; font-size: 0.83rem; font-weight: 600;
 &.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); } } }
 .hint { font-size: 0.82rem; margin-top: 10px; }
 `]
-})
+  })
+
 export class PagesComponent implements OnInit {
-topics = signal<any[]>([]);
-selectedTopic = signal<any | null>(null);
-pages = signal<any[]>([]);
-incomingRequests = signal<any[]>([]);
-pageRequests = signal<any[]>([]);
+  topics = signal<PageTopic[]>([]);
+  selectedTopic = signal<PageTopic | null>(null);
+  pages = signal<PersonalPage[]>([]);
+  incomingRequests = signal<AccessRequest[]>([]);
+  pageRequests = signal<(AccessRequest & { user_id: number })[]>([]);
 requestsPage = signal<any | null>(null);
 viewingPage = signal<any | null>(null);
 topicQuery = signal('');
@@ -406,6 +433,6 @@ if (topic) this.loadPages(topic.id);
 }
 
 statusLabel(status: string): string {
-return status === 'approved' ? 'אושרה' : status === 'denied' ? 'נדחתה' : 'ממתינה';
+  return status === 'approved' ? 'אושרה' : status === 'denied' ? 'נדחתה' : 'ממתינה';
 }
 }

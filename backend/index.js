@@ -285,6 +285,18 @@ app.post('/api/pages/topics', (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name });
 });
 
+app.delete('/api/pages/topics/:id', (req, res) => {
+  const topic = db.prepare('SELECT id, created_by FROM page_topics WHERE id = ?').get(Number(req.params.id));
+  if (!topic) return res.status(404).json({ error: 'נושא לא נמצא' });
+  if (topic.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה למחוק את הנושא' });
+  const count = db.prepare('SELECT COUNT(*) AS c FROM personal_pages WHERE topic_id = ?').get(topic.id).c;
+  if (count > 0 && !req.query.force) {
+    return res.status(409).json({ error: `קיימים ${count} דפים בנושא. הוסיפי ?force=1 למחיקה מלאה.` });
+  }
+  db.prepare('DELETE FROM page_topics WHERE id = ?').run(topic.id);
+  res.json({ success: true, deleted_pages: count });
+});
+
 app.get('/api/pages/topics/:id/pages', (req, res) => {
   const topicId = Number(req.params.id);
   markRequestsSeen(req.user.id, topicId);
@@ -854,6 +866,21 @@ app.get('/api/students', (req, res) => {
     return res.json(rows.map(mapStudentRow));
   }
   res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
+});
+
+// חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
+app.get('/api/search', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], pages: [] });
+  const like = `%${q}%`;
+  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like);
+  const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
+  const examCodes = db.prepare(`
+    SELECT c.code, e.name AS exam_name, s.name AS student_name
+    FROM exam_codes c JOIN exams e ON e.id = c.exam_id JOIN students s ON s.id_number = c.id_number
+    WHERE c.code LIKE ? LIMIT 5
+  `).all(like);
+  res.json({ students, equipment, examCodes });
 });
 
 app.get('/api/students/:id_number', (req, res) => {

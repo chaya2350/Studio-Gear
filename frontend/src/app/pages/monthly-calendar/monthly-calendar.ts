@@ -1,7 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, OnInit, signal } from '@angular/core';
+import { Component, computed, OnInit, OnDestroy, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { interval, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { HDate, months } from '@hebcal/core';
 import { ApiService, CalendarEvent } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
@@ -393,7 +395,7 @@ cursor: pointer; font-weight: 800;
 }
 `]
 })
-export class MonthlyCalendarComponent implements OnInit {
+export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 readonly dayNames = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 readonly today = this.toDateString(new Date());
 readonly layers = signal<Set<CalendarLayer>>(new Set<CalendarLayer>(['equipment']));
@@ -431,12 +433,14 @@ private colorMap = new Map<number, string>();
   private readonly colors = ['#0d9488', '#0891b2', '#f59e0b', '#6366f1', '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#06b6d4', '#84cc16'];
   private readonly eventColors = ['#0d9488', '#0891b2', '#f59e0b', '#6366f1', '#ec4899', '#14b8a6', '#8b5cf6', '#84cc16'];
 
-constructor(
+  constructor(
 private api: ApiService,
 private messages: MessagesService,
 private route: ActivatedRoute,
 private auth: AuthService
 ) {}
+
+private calendarDestroy$ = new Subject<void>();
 
 ngOnInit() {
 this.route.data.subscribe(data => {
@@ -462,7 +466,16 @@ error: error => this.loadError = error.error?.error || 'לא ניתן לטעון
 });
 this.loadCalendarEvents();
 this.api.getExams().subscribe(exams => this.exams.set(exams));
+// רענון אוטומטי כל 30 שניות
+interval(30000).pipe(takeUntil(this.calendarDestroy$)).subscribe(() => {
+this.api.getLoans().subscribe(loans => this.loans.set(loans));
+this.messages.getTasks().subscribe(tasks => this.tasks.set(tasks));
+this.loadCalendarEvents();
+this.api.getExams().subscribe(exams => this.exams.set(exams));
+});
 }
+
+ngOnDestroy() { this.calendarDestroy$.next(); this.calendarDestroy$.complete(); }
 
 private toDateString(date: Date): string {
 return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
