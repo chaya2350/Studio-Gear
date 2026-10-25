@@ -111,6 +111,10 @@ export const routes: Routes = [
         path: 'students/:id',
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },
+      {
+        path: 'kiosk',
+        loadComponent: () => import('./pages/kiosk/kiosk').then((m) => m.KioskComponent),
+      },
       { path: '**', redirectTo: '' },
     ],
   },

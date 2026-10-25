@@ -10,7 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
-const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack } = require('./database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -1064,11 +1064,10 @@ function requirementAppliesTo(requirement, student) {
   return requirement.years.split(',').includes(normalizeTrackName(student.year));
 }
 
-// A student's track may be merged into a main track, whose requirements then apply
-function findStudentTrack(student) {
-  const track = db.prepare('SELECT * FROM tracks WHERE name = ?').get(normalizeTrackName(student.track));
-  if (track?.merged_into) return db.prepare('SELECT * FROM tracks WHERE id = ?').get(track.merged_into) || track;
-  return track;
+function findStudentTrackIds(student) {
+  if (!student?.track) return [];
+  const tracks = db.prepare('SELECT id, name, merged_into FROM tracks').all();
+  return resolveStudentTrackIds(student.track, tracks);
 }
 
 function validTrackName(value) {
@@ -1240,26 +1239,27 @@ app.delete('/api/track-requirements/:id', (req, res) => {
 app.get('/api/students/:id_number/requirements', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
-  const trackName = normalizeTrackName(student.track);
-  const track = trackName ? findStudentTrack(student) : null;
-  if (!track) return res.json({ track: trackName || null, defined: false, requirements: [] });
+  const trackNames = splitTrackValues(student.track);
+  const trackIds = findStudentTrackIds(student);
+  if (!trackIds.length) return res.json({ track: trackNames.join(' / ') || null, defined: false, requirements: [] });
+  const placeholders = trackIds.map(() => '?').join(', ');
   const requirements = db.prepare(`
     SELECT r.id, r.title, r.required, r.requires_file, r.years, sr.completed_at, sr.completed_by, sr.file_name
     FROM track_requirements r
     LEFT JOIN student_requirements sr ON sr.requirement_id = r.id AND sr.id_number = ?
-    WHERE r.track_id = ?
+    WHERE r.track_id IN (${placeholders})
     ORDER BY r.sort_order, r.id
-  `).all(student.id_number, track.id).filter((r) => requirementAppliesTo(r, student));
-  res.json({ track: track.name, defined: true, requirements });
+  `).all(student.id_number, ...trackIds).filter((r) => requirementAppliesTo(r, student));
+  res.json({ track: trackNames.join(' / '), defined: true, requirements });
 });
 
 app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
   if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'ערך לא תקין' });
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
-  const track = findStudentTrack(student);
-  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
-    .get(req.params.requirement_id, track.id);
+  const trackIds = findStudentTrackIds(student);
+  const requirement = trackIds.length && db.prepare(`SELECT * FROM track_requirements WHERE id = ? AND track_id IN (${trackIds.map(() => '?').join(', ')})`)
+    .get(req.params.requirement_id, ...trackIds);
   if (!requirement || !requirementAppliesTo(requirement, student)) {
     return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
   }
@@ -1278,9 +1278,9 @@ app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
 
 function findStudentFileRequirement(idNumber, requirementId) {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(idNumber);
-  const track = student && findStudentTrack(student);
-  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
-    .get(requirementId, track.id);
+  const trackIds = student ? findStudentTrackIds(student) : [];
+  const requirement = trackIds.length && db.prepare(`SELECT * FROM track_requirements WHERE id = ? AND track_id IN (${trackIds.map(() => '?').join(', ')})`)
+    .get(requirementId, ...trackIds);
   return student && requirement && requirementAppliesTo(requirement, student) ? { student, requirement } : null;
 }
 
@@ -2115,6 +2115,154 @@ app.get('/api/students/:id_number/exams', (req, res) => {
     ORDER BY e.created_at DESC
   `).all(req.params.id_number);
   res.json(rows);
+});
+
+// ── Notifications ─────────────────────────────────────────────
+// Returns a combined list of smart alerts across all modules
+app.get('/api/notifications', (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  const notifications = [];
+
+  // 1. ציוד שחזרתו עברה (overdueLoans)
+  const overdueLoans = db.prepare(`
+    SELECT l.id, l.borrower_name, l.expected_return, e.name AS equipment_name
+    FROM loans l
+    JOIN equipment e ON e.id = l.equipment_id
+    WHERE l.actual_return IS NULL
+      AND l.loan_date <= ?
+      AND l.expected_return < ?
+      AND NOT (
+        e.category = 'מצלמות אישיות' OR
+        (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+      )
+    ORDER BY l.expected_return ASC
+    LIMIT 10
+  `).all(today, today);
+  for (const l of overdueLoans) {
+    const days = Math.round((new Date(today) - new Date(l.expected_return)) / 86400000);
+    notifications.push({
+      id: `loan-overdue-${l.id}`,
+      type: 'overdue',
+      severity: days >= 3 ? 'danger' : 'warning',
+      icon: '⚠️',
+      title: 'ציוד לא הוחזר',
+      body: `${l.equipment_name} — ${l.borrower_name} (${days} ימי איחור)`,
+      link: '/loans',
+      created_at: l.expected_return,
+    });
+  }
+
+  // 2. מבחנים שיש להם ברקודים שלא הודפסו (קוד הופק אבל ציון לא נרשם כלל)
+  const examsWithUngraded = db.prepare(`
+    SELECT e.id, e.name, e.exam_date,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS total_codes,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count
+    FROM exams e
+    WHERE (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) > 0
+      AND (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) = 0
+    ORDER BY e.exam_date DESC
+    LIMIT 5
+  `).all();
+  for (const ex of examsWithUngraded) {
+    notifications.push({
+      id: `exam-ungraded-${ex.id}`,
+      type: 'exam',
+      severity: 'info',
+      icon: '📋',
+      title: 'ברקודים ממתינים לציון',
+      body: `${ex.name} — ${ex.total_codes} ברקודים עדיין ללא ציון`,
+      link: '/exams',
+      created_at: ex.exam_date || today,
+    });
+  }
+
+  // 3. בקשות גישה לדפים שלי שממתינות לאישור
+  const pendingPageRequests = db.prepare(`
+    SELECT COUNT(*) AS c
+    FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id
+    WHERE p.created_by = ? AND r.status = 'pending' AND r.seen_at IS NULL
+  `).get(req.user.id);
+  if (pendingPageRequests.c > 0) {
+    notifications.push({
+      id: 'page-requests-pending',
+      type: 'pages',
+      severity: 'info',
+      icon: '📄',
+      title: 'בקשות גישה ממתינות',
+      body: `${pendingPageRequests.c} בקשות גישה לדפים שלך ממתינות לאישור`,
+      link: '/pages',
+      created_at: today,
+    });
+  }
+
+  // 4. הודעות שלא נקראו
+  const unread = db.prepare(`
+    SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL
+  `).get(req.user.id);
+  if (unread.c > 0) {
+    notifications.push({
+      id: 'messages-unread',
+      type: 'messages',
+      severity: 'info',
+      icon: '💬',
+      title: 'הודעות שלא נקראו',
+      body: `${unread.c} הודעות חדשות ממתינות לך`,
+      link: '/messages',
+      created_at: today,
+    });
+  }
+
+  // 5. משימות שתאריך היעד שלהן עבר
+  const overdueTasks = db.prepare(`
+    SELECT COUNT(*) AS c FROM personal_tasks
+    WHERE user_id = ? AND completed_at IS NULL AND due_date < ?
+  `).get(req.user.id, today);
+  if (overdueTasks.c > 0) {
+    notifications.push({
+      id: 'tasks-overdue',
+      type: 'tasks',
+      severity: 'warning',
+      icon: '⏰',
+      title: 'משימות שפג מועדן',
+      body: `${overdueTasks.c} משימות שלא הושלמו עברו את תאריך היעד`,
+      link: '/messages',
+      created_at: today,
+    });
+  }
+
+  // 6. תלמידות שיש להן דרישות חובה שלא הושלמו (admin/secretary only)
+  if (req.user.role === 'admin' || req.user.role === 'secretary') {
+    const incompleteMandatory = db.prepare(`
+      SELECT COUNT(DISTINCT s.id_number) AS c
+      FROM students s
+      JOIN tracks t ON (
+        s.track LIKE '%' || t.name || '%'
+      )
+      JOIN track_requirements tr ON tr.track_id = t.id AND tr.required = 1
+      LEFT JOIN student_requirements sr ON sr.id_number = s.id_number AND sr.requirement_id = tr.id
+      WHERE sr.id_number IS NULL
+        AND (tr.years IS NULL OR tr.years LIKE '%' || s.year || '%')
+    `).get();
+    if (incompleteMandatory.c > 0) {
+      notifications.push({
+        id: 'requirements-incomplete',
+        type: 'requirements',
+        severity: 'warning',
+        icon: '📁',
+        title: 'דרישות חובה חסרות',
+        body: `${incompleteMandatory.c} תלמידות עם דרישות חובה שלא הושלמו`,
+        link: '/students',
+        created_at: today,
+      });
+    }
+  }
+
+  // Sort by severity: danger first, then warning, then info
+  const order = { danger: 0, warning: 1, info: 2 };
+  notifications.sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
+
+  res.json(notifications);
 });
 
 const port = process.env.PORT || 3000;

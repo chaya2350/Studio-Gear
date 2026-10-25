@@ -5,10 +5,11 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
+import { ExamAnalyticsComponent } from '../../components/exam-analytics/exam-analytics';
 
 @Component({
 selector: 'app-exams',
-imports: [CommonModule, FormsModule],
+imports: [CommonModule, FormsModule, ExamAnalyticsComponent],
 template: `
 <div class="page-header">
 <div>
@@ -166,6 +167,14 @@ template: `
 </div>
 </div>
 </div>
+
+<!-- ניתוח ציונים גרפי למבחן שנבחר -->
+<div class="card" *ngIf="selectedExam() && selectedExamStudents().length > 0" style="margin-top:20px;">
+  <app-exam-analytics
+    [students]="selectedExamStudents()"
+    [examName]="selectedExam()?.name || ''">
+  </app-exam-analytics>
+</div>
 `,
 styles: [`
 .exams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
@@ -220,6 +229,7 @@ strong { display: block; } span { font-size: 0.75rem; color: var(--text-muted); 
 export class ExamsComponent implements OnInit {
 exams = signal<any[]>([]);
 selectedExam = signal<any | null>(null);
+selectedExamStudents = signal<any[]>([]);
 stats = signal<{ byStudent: any[]; byExam: any[] } | null>(null);
 creating = signal(false);
 printMode = signal<'class' | 'personal'>('class');
@@ -325,6 +335,10 @@ selectExam(e: any) {
 this.selectedExam.set(e);
 this.message.set('');
 this.error.set('');
+// Load full exam data for analytics
+this.api.getExam(e.id).subscribe(data => {
+  this.selectedExamStudents.set(data.students || []);
+});
 }
 
 missingStudents() {
@@ -368,6 +382,8 @@ next: (r) => {
 this.message.set(`הופקו ברקודים ל-${r.created} תלמידות. פותח חלון הדפסה...`);
 this.printClassCodes(this.selectedExam()!.name);
 this.loadExams();
+const exam = this.selectedExam();
+if (exam) this.api.getExam(exam.id).subscribe(data => this.selectedExamStudents.set(data.students || []));
 },
 error: (e) => this.error.set(e.error?.error || 'הפקה נכשלה')
 });

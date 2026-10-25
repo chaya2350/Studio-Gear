@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack } = require('../database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('../database-report');
 
 test('splitTrackValues separates combined track values into clean track names', () => {
   assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה מתקנת', 'אדריכלות']);
@@ -18,6 +18,15 @@ test('studentHasTrack matches a selected single track inside a combined student 
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'הוראה מתקנת'), true);
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה מתקדמת'), false);
   assert.equal(studentHasTrack('יעוץ מס / הוראה / ייעוץ מס', 'ייעוץ מס'), true);
+});
+
+test('resolveStudentTrackIds includes each constituent track and resolves merged tracks to their main track', () => {
+  const tracks = [
+    { id: 1, name: 'גרפיקה', merged_into: null },
+    { id: 2, name: 'הוראה מתקנת', merged_into: null },
+    { id: 3, name: 'ייעוץ מס', merged_into: 2 },
+  ];
+  assert.deepEqual(resolveStudentTrackIds('גרפיקה / הוראה / ייעוץ מס', tracks), [1, 2]);
 });
 
 test('buildClassReport normalizes year A/B into H/V for class matching and display', () => {

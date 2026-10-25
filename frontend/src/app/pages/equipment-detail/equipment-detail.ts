@@ -6,10 +6,11 @@ import { ApiService } from '../../services/api.service';
 import { CartService } from '../../services/cart.service';
 import { Equipment, Loan } from '../../models';
 import { BrowserMultiFormatReader } from '@zxing/browser';
+import { EquipmentTimelineComponent } from '../../components/equipment-timeline/equipment-timeline';
 
 @Component({
 selector: 'app-equipment-detail',
-imports: [CommonModule, RouterLink, FormsModule],
+imports: [CommonModule, RouterLink, FormsModule, EquipmentTimelineComponent],
 template: `
 <div *ngIf="item()">
 <div class="page-header">
@@ -437,6 +438,9 @@ maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length >
 </ng-template>
 </div>
 </div>
+
+<!-- Timeline -->
+<app-equipment-timeline [loans]="history()"></app-equipment-timeline>
 </div>
 `,
 styles: [`

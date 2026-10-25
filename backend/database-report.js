@@ -125,6 +125,13 @@ function studentHasTrack(trackValues, trackName) {
   return splitTrackValues(trackValues).includes(canonicalTrackName);
 }
 
+function resolveStudentTrackIds(trackValue, tracks) {
+  const matchingTracks = tracks.filter((track) => studentHasTrack(trackValue, track.name));
+  const trackById = new Map(tracks.map((track) => [track.id, track]));
+  return [...new Set(matchingTracks.map((track) => track.merged_into || track.id)
+    .filter((id) => trackById.has(id)))];
+}
+
 function buildTrackReport(students, examsOrTrackName, maybeTrackName, maybeYear, gradesByExam = {}) {
   const exams = Array.isArray(examsOrTrackName) ? examsOrTrackName : [];
   const trackName = Array.isArray(examsOrTrackName) ? String(maybeTrackName || '') : String(examsOrTrackName || '');
@@ -240,4 +247,4 @@ function buildClassReport(students, exams, gradesByExam, className) {
   return { class_name: normalizedClass, year, parallel, columns, rows: studentsWithGrades, exams: filteredExams, students: studentsWithGrades };
 }
 
-module.exports = { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, displayTrackName, normalizeTrackKey };
+module.exports = { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey };

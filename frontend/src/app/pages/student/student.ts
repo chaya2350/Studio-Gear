@@ -5,10 +5,11 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, StudentRequirement, StudentRequirements } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
+import { StudentProfileCardComponent } from '../../components/student-profile-card/student-profile-card';
 
 @Component({
 selector: 'app-student',
-imports: [CommonModule, FormsModule, RouterLink],
+imports: [CommonModule, FormsModule, RouterLink, StudentProfileCardComponent],
 template: `
 <div *ngIf="student()">
 <div class="page-header">
@@ -22,6 +23,22 @@ template: `
 </div>
 </div>
 </div>
+
+<!-- Profile Card -->
+<app-student-profile-card
+  [name]="student()!.name"
+  [idNumber]="student()!.id_number"
+  [track]="student()!.track || ''"
+  [year]="student()!.year || ''"
+  [phone]="student()!.phone || ''"
+  [totalReqs]="(requirements()?.requirements || []).length"
+  [completedReqs]="(requirements()?.requirements || []).filter(r => !!r.completed_at).length"
+  [missingRequired]="missingRequired()"
+  [totalLoans]="student()!.loans?.length || 0"
+  [activeLoans]="(student()!.loans || []).filter(l => !l.actual_return).length"
+  [examAvg]="examAvgNum()"
+  [examGrades]="examGradesForCard()">
+</app-student-profile-card>
 
 <div class="detail-grid">
 <div class="card">
@@ -575,6 +592,19 @@ studentExamAvg(): string {
 const graded = this.exams().filter(e => e.grade != null);
 if (!graded.length) return '';
 return (graded.reduce((sum, e) => sum + e.grade, 0) / graded.length).toFixed(1);
+}
+
+examAvgNum(): number | null {
+const graded = this.exams().filter(e => e.grade != null);
+if (!graded.length) return null;
+return graded.reduce((sum: number, e: any) => sum + Number(e.grade), 0) / graded.length;
+}
+
+examGradesForCard(): { name: string; grade: number }[] {
+return this.exams()
+  .filter(e => e.grade != null)
+  .slice(-12)
+  .map(e => ({ name: e.exam_name, grade: Number(e.grade) }));
 }
 
 loadRequirements(id_number: string) {
