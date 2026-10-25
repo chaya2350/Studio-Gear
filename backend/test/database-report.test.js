@@ -1,14 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildTrackReport, buildClassReport, splitTrackValues } = require('../database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack } = require('../database-report');
 
 test('splitTrackValues separates combined track values into clean track names', () => {
   assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה מתקנת', 'אדריכלות']);
   assert.deepEqual(splitTrackValues('רוח & ספורט טיפולי'), ['ראיית חשבון', 'ספורט טיפולי']);
   assert.deepEqual(splitTrackValues('חינוך מיוחד / מתמטיקה / ח"מ'), ['חינוך מיוחד', 'מתמטיקה']);
   assert.deepEqual(splitTrackValues('ייעוץ מס / ללא מיסים'), ['ייעוץ מס']);
+  assert.deepEqual(splitTrackValues('יעוץ מס / הוראה / ייעוץ מס'), ['ייעוץ מס', 'הוראה מתקנת']);
   assert.deepEqual(splitTrackValues('הנדסת חשמל / הנדסת אנרגיה'), ['הנדסת אנרגיה']);
+  assert.deepEqual(splitTrackValues('הנדסת חשמל / גרפיקה'), ['הנדסת אנרגיה', 'גרפיקה']);
   assert.deepEqual(splitTrackValues('תיכנות / תכנות'), ['תכנות']);
+});
+
+test('studentHasTrack matches a selected single track inside a combined student track', () => {
+  assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה'), true);
+  assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'הוראה מתקנת'), true);
+  assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה מתקדמת'), false);
+  assert.equal(studentHasTrack('יעוץ מס / הוראה / ייעוץ מס', 'ייעוץ מס'), true);
 });
 
 test('buildClassReport normalizes year A/B into H/V for class matching and display', () => {

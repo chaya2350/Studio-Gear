@@ -214,7 +214,7 @@ template: `
 <option>תקשורת</option>
 <option>גרפיקה</option>
 <option>בימוי</option>
-<option>יעוץ מס</option>
+<option>ייעוץ מס</option>
 <option value="אחר">אחר</option>
 </select>
 <select [(ngModel)]="loan.trackYear" style="flex:1" *ngIf="trackNeedsYear()">

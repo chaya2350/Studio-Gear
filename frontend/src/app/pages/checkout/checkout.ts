@@ -92,7 +92,7 @@ template: `
 <option value="">בחר מסלול</option>
 <option>אדריכלות</option><option>הנדסאים</option><option>הנדסת אנרגיה</option>
 <option>הוראה מתקנת</option><option>תקשורת</option><option>גרפיקה</option>
-<option>בימוי</option><option>יעוץ מס</option><option value="אחר">אחר</option>
+<option>בימוי</option><option>ייעוץ מס</option><option value="אחר">אחר</option>
 </select>
 <select [(ngModel)]="form.trackYear" style="flex:1" *ngIf="form.trackName && form.trackName !== 'אחר'">
 <option value="" disabled>שנה</option>

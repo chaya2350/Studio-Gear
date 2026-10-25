@@ -2,6 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { collectTrackNames } from '../../utils/track-names';
 import { toStudyYear } from '../approvals/study-year';
 
 @Component({
@@ -153,25 +154,9 @@ classLoaded = signal(false);
 
 constructor(private api: ApiService) {}
 
-private splitTrackNames(value: string): string[] {
-const seen = new Set<string>();
-return String(value || '')
-.split(/[\/,&]/)
-.map((part) => part.replace(/\s+/g, ' ').trim())
-.filter(Boolean)
-.map((part) => part.replace(/[\u2018\u2019\u05F3\u05F4'"`]/g, ''))
-.filter((part) => {
-if (!part || seen.has(part)) return false;
-seen.add(part);
-return true;
-});
-}
-
 ngOnInit() {
 this.api.getTracks().subscribe((resp) => {
-const trackNames = [...new Set(
-resp.tracks.flatMap((t) => this.splitTrackNames(t.name))
-)].sort((a, b) => a.localeCompare(b, 'he'));
+const trackNames = collectTrackNames(resp.tracks.map((t) => t.name));
 this.trackOptions.set(trackNames);
 });
 

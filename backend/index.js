@@ -10,7 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
-const { buildTrackReport, buildClassReport, splitTrackValues } = require('./database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -855,7 +855,11 @@ function parseExtraData(rawValue) {
 
 function mapStudentRow(row) {
   if (!row) return row;
-  return { ...row, extra_data: parseExtraData(row.extra_data) };
+  return {
+    ...row,
+    track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
+    extra_data: parseExtraData(row.extra_data)
+  };
 }
 
 app.get('/api/students', (req, res) => {
@@ -873,7 +877,7 @@ app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], pages: [] });
   const like = `%${q}%`;
-  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like);
+  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
   const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
   const examCodes = db.prepare(`
     SELECT c.code, e.name AS exam_name, s.name AS student_name
@@ -1374,7 +1378,7 @@ app.get('/api/tracks/:id/stats', (req, res) => {
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
   const names = new Set([track.name, ...db.prepare('SELECT name FROM tracks WHERE merged_into = ?').all(track.id).map((t) => t.name)]);
   const students = db.prepare('SELECT id_number, name, track, year FROM students').all()
-    .filter((s) => names.has(normalizeTrackName(s.track)));
+    .filter((s) => [...names].some((name) => studentHasTrack(s.track, name)));
   const requirements = db.prepare('SELECT id, title, required, requires_file, years FROM track_requirements WHERE track_id = ? ORDER BY sort_order, id').all(track.id);
   const done = new Set(
     db.prepare('SELECT id_number, requirement_id FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)')
@@ -2010,10 +2014,10 @@ app.post('/api/exams/:id/codes', (req, res) => {
   } else {
     const conds = [];
     const params = [];
-    if (track) { conds.push('track = ?'); params.push(track); }
     if (year) { conds.push('year = ?'); params.push(String(year)); }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
+    if (track) students = students.filter((student) => studentHasTrack(student.track, track));
   }
   if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
   const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
@@ -2021,7 +2025,7 @@ app.post('/api/exams/:id/codes', (req, res) => {
     for (const s of students) insert.run(encodeExamCode(exam.id, s.id_number), exam.id, s.id_number);
   });
   tx();
-  res.json({ created: students.length, students });
+  res.json({ created: students.length, students: students.map(mapStudentRow) });
 });
 
 // תמונת ברקוד לקוד מבחן
@@ -2086,7 +2090,10 @@ app.get('/api/exams-stats/summary', (req, res) => {
     LEFT JOIN exam_grades g ON g.code = c.code
     GROUP BY s.id_number
     ORDER BY s.name
-  `).all();
+  `).all().map((student) => ({
+    ...student,
+    track: splitTrackValues(student.track).join(' / '),
+  }));
   const byExam = db.prepare(`
     SELECT e.id, e.name,
       (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,

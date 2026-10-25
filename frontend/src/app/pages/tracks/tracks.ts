@@ -3,6 +3,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, Track, TrackRequirement, TracksOverview, TrackStats } from '../../services/api.service';
+import { splitTrackNames } from '../../utils/track-names';
 
 @Component({
 selector: 'app-tracks',
@@ -86,7 +87,7 @@ type="checkbox"
 <p class="help">לחצי על מסלול כדי להגדיר אותו ולהוסיף לו דרישות.</p>
 <div class="chips">
 <button
-*ngFor="let t of overview()!.undefined_tracks"
+*ngFor="let t of undefinedTracks()"
 class="chip"
 type="button"
 (click)="defineTrack(t.name)"
@@ -543,5 +544,16 @@ this.run(this.api.updateTrackRequirement(req.id, this.reqDraft), () => this.edit
 removeRequirement(req: TrackRequirement) {
 if (!confirm(`למחוק את הדרישה "${req.title}"? הסימונים של התלמידות לדרישה הזו יימחקו.`)) return;
 this.run(this.api.deleteTrackRequirement(req.id));
+}
+
+undefinedTracks(): { name: string; student_count: number }[] {
+  const counts = new Map<string, number>();
+  for (const track of this.overview()?.undefined_tracks || []) {
+    for (const name of splitTrackNames(track.name)) {
+      counts.set(name, (counts.get(name) || 0) + track.student_count);
+    }
+  }
+  return [...counts].map(([name, student_count]) => ({ name, student_count }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
 }
 }

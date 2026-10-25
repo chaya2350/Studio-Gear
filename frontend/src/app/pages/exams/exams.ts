@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { toStudyYear } from '../approvals/study-year';
+import { collectTrackNames } from '../../utils/track-names';
 
 @Component({
 selector: 'app-exams',
@@ -230,7 +231,6 @@ classForm: { track: string | null; year: string | null } = { track: null, year: 
 studentQuery = '';
 studentResults = signal<any[]>([]);
 private allStudents = signal<any[]>([]);
-trackNames = signal<string[]>([]);
 
 toStudyYear = toStudyYear;
 
@@ -241,7 +241,6 @@ this.api.getStudents().subscribe(s => {
 this.allStudents.set(s);
 this.handleDeepLink();
 });
-this.api.getTracks().subscribe(t => this.trackNames.set(t.tracks.map(x => x.name)));
 this.loadExams();
 }
 
@@ -281,8 +280,8 @@ this.api.getExamStats().subscribe(stats => this.stats.set(stats));
 
 trackOptions(): string[] {
   // מסלולים מהתלמידות בפועל (טבלת tracks יכולה להיות ריקה), מסונן מערכי התמחות
-  const tracks = [...new Set(this.allStudents().map(s => s.track).filter(Boolean))] as string[];
-  return tracks.filter(t => !/התמחות/i.test(t)).sort((a, b) => a.localeCompare(b, 'he'));
+  return collectTrackNames(this.allStudents().map(s => s.track))
+    .filter(t => !/התמחות/i.test(t));
 }
 
 yearOptions(): string[] {
