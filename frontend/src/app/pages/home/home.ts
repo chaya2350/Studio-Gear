@@ -268,19 +268,24 @@ interface DashboardStats {
 
     .hero-left { flex-shrink: 0; }
 
-    /* ── hero video ── */
+    /* סרטון הברכה גדול וקריא, משתלב כאיור לצד הכותרת. */
     .hero-video-wrap {
       flex-shrink: 0;
-      border-radius: var(--radius-lg);
+      order: -1;
+      width: 188px;
+      height: 188px;
+      border-radius: 50%;
       overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      border: 3px solid rgba(255,255,255,0.7);
+      box-shadow: 0 8px 28px rgba(0,0,0,0.28);
       line-height: 0;
+      background: rgba(255,255,255,0.12);
     }
     .hero-video {
-      height: 120px;
-      width: auto;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       display: block;
-      border-radius: var(--radius-lg);
     }
 
     .hero-eyebrow {
@@ -747,11 +752,12 @@ interface DashboardStats {
     @media (max-width: 740px) {
       .hero-content {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         padding: 32px 24px 28px;
-        gap: 28px;
+        gap: 24px;
       }
-      .hero-video-wrap { display: none; }
+      .hero-video-wrap { align-self: flex-start; order: -1; width: 156px; height: 156px; }
+      .hero-video { width: 100%; height: 100%; }
       .hero-metrics { justify-content: flex-start; width: 100%; }
       .metric { max-width: none; padding: 12px 16px 16px; }
       .metric-number { font-size: 2rem; }
@@ -760,6 +766,9 @@ interface DashboardStats {
     }
 
     @media (max-width: 480px) {
+      .hero-video-wrap { width: 132px; height: 132px; }
+      .hero-video { width: 100%; height: 100%; }
+      .hero-heading { font-size: 1.65rem; }
       .hero-metrics { gap: 0; }
       .metric { padding: 10px 10px 14px; }
       .metric-number { font-size: 1.6rem; }

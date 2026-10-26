@@ -14,6 +14,12 @@
   --surface:        #ffffff;
   --surface-2:      #f1f5f9;
   --surface-3:      #e2e8f0;
+  --surface-glass:  rgba(255,255,255,0.94);
+  --logo-backdrop:  #ffffff;
+  --logo-filter:    none;
+  --success-soft:   #dcfce7;
+  --warning-soft:   #fef3c7;
+  --danger-soft:    #ffe4e6;
 
   --text:           #1e293b;
   --text-muted:     #64748b;
@@ -47,14 +53,23 @@ html.dark {
   --surface:        #1e293b;
   --surface-2:      #172033;
   --surface-3:      #334155;
+  --surface-glass:  rgba(30,41,59,0.94);
+  --logo-backdrop:  #ffffff;
+  --logo-filter:    none;
+  --success-soft:   #064e3b;
+  --warning-soft:   #78350f;
+  --danger-soft:    #881337;
 
   --text:           #e2e8f0;
-  --text-muted:     #94a3b8;
-  --text-light:     #64748b;
+  --text-muted:     #cbd5e1;
+  --text-light:     #a8b6c8;
 
-  --border:         #334155;
-  --border-focus:   #2dd4bf;
+  --border:         #475569;
+  --border-focus:   #5eead4;
   --primary-light:  #134e4a;
+  --success:        #34d399;
+  --warning:        #fbbf24;
+  --danger:         #fb7185;
 
   --shadow-xs:  0 1px 3px rgba(0,0,0,0.3);
   --shadow-sm:  0 2px 8px rgba(0,0,0,0.35);
@@ -75,7 +90,9 @@ body {
 
 // ── Navbar ──────────────────────────────────────────────────
 .navbar {
-  background: var(--surface);
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
   padding: 0 32px;
   height: 66px;
