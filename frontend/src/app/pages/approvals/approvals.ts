@@ -131,12 +131,12 @@ opacity: 0.7;
 .doc-date { font-size: 0.7rem; color: #555; }
 .doc-logo { height: 48px; width: auto; }
 .doc-title { font-size: 1.2rem; font-weight: 900; text-align: center; margin-bottom: 12px; color: #1a1a1a; }
-.doc-body { font-size: 0.88rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; }
-.doc-body p { margin: 0; }
-.doc-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
-.doc-footer { margin-top: 14px; display: flex; justify-content: flex-start; align-items: flex-end; gap: 12px; }
-.doc-sig-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.doc-sig-img { height: 40px; width: auto; }
+.doc-body { font-size: 0.88rem; line-height: 1.65; text-align: right; color: #1a1a1a; }
+    .doc-body p { margin: 0 0 2mm; }
+    .doc-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; margin: 0; }
+    .doc-footer { margin-top: 14mm; display: flex; justify-content: flex-end; align-items: flex-end; gap: 12px; padding-left: 28mm; }
+    .doc-sig-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .doc-sig-img { height: 46px; width: auto; }
 .doc-sig-name { font-size: 0.68rem; color: #555; }
 .doc-footer-logo { height: 28px; width: auto; opacity: 0.6; margin-right: auto; }
 
@@ -294,11 +294,11 @@ break-inside: avoid; page-break-inside: avoid; isolation: isolate;
 .ap-date { font-size: 0.78rem; color: #444; }
 .ap-date-he { direction: rtl; unicode-bidi: isolate; text-align: right; font-size: 0.75rem; color: #555; }
 .ap-title { font-size: 1.45rem; font-weight: 900; text-align: center; margin-bottom: 5mm; color: #1a1a1a; letter-spacing: -0.5px; }
-.ap-body { font-size: 0.92rem; line-height: 1.65; text-align: right; color: #1a1a1a; flex: 1; padding-right: 3mm; }
-.ap-body p { margin: 0; }
-.ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; }
-.ap-footer { margin-top: 0; display: flex; justify-content: flex-start; align-items: flex-end; gap: 8mm; }
-.ap-sig-block { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ap-body { font-size: 0.95rem; line-height: 1.7; text-align: right; color: #1a1a1a; padding-right: 3mm; }
+        .ap-body p { margin: 0 0 2.5mm; }
+        .ap-body p.ap-spacer { height: 2mm; font-size: 0; line-height: 0; margin: 0; }
+        .ap-footer { margin-top: 14mm; display: flex; justify-content: flex-end; align-items: flex-end; gap: 8mm; padding-left: 28mm; }
+        .ap-sig-block { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .ap-sig-img { height: 46px; width: auto; }
 .ap-sig-name { font-size: 0.68rem; color: #444; }
 .page-break { page-break-after: always; }
