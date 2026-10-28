@@ -102,6 +102,22 @@ interface KioskEquipment {
           <h2 class="equip-title">בחרי ציוד להשאלה</h2>
           <p class="equip-sub">לחצי על פריט כדי להוסיפו לסל</p>
 
+          <!-- Availability date picker -->
+          <div class="date-picker-row">
+            <label class="date-picker-label">📅 בדיקת זמינות לתאריך:</label>
+            <input
+              type="date"
+              class="kiosk-input kiosk-input--sm"
+              [min]="todayStr"
+              [max]="maxDateStr"
+              [ngModel]="availabilityDate()"
+              (ngModelChange)="onAvailabilityChange($event)"
+            />
+            @if (availabilityDate() !== todayStr) {
+              <span class="date-hint">מוצג מה פנוי בתאריך {{ availabilityDate() }}</span>
+            }
+          </div>
+
           <!-- Filter tabs -->
           <div class="filter-tabs">
             @for (cat of categories; track cat) {
@@ -167,7 +183,10 @@ interface KioskEquipment {
 
             <div class="confirm-dates">
               <label>תאריך החזרה *
-                <input type="date" [(ngModel)]="returnDate" [min]="tomorrowStr" [max]="maxReturnStr" class="kiosk-input kiosk-input--sm">
+                @if (availabilityDate() > todayStr) {
+                  <span>(ההשאלה מתחילה בתאריך {{ loanStartDate() }})</span>
+                }
+                <input type="date" [(ngModel)]="returnDate" [min]="loanStartDate()" [max]="loanMaxReturn()" class="kiosk-input kiosk-input--sm">
               </label>
             </div>
 
@@ -475,6 +494,39 @@ interface KioskEquipment {
       margin-bottom: 20px;
     }
 
+    /* ── Availability date picker ── */
+    .date-picker-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 12px 18px;
+      margin-bottom: 16px;
+    }
+
+    .date-picker-label {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .date-picker-row input[type="date"] {
+      width: auto;
+      min-width: 180px;
+      color-scheme: dark;
+      letter-spacing: 0;
+      font-size: 1rem;
+    }
+
+    .date-hint {
+      font-size: 0.8rem;
+      color: #5eead4;
+      font-weight: 600;
+    }
+
     .filter-tabs {
       display: flex;
       gap: 8px;
@@ -706,6 +758,9 @@ export class KioskComponent implements OnInit, OnDestroy {
   confirmError = signal('');
   returnDate = '';
 
+  // Availability date — shows what's free on this future date
+  availabilityDate = signal<string>('');
+
   readonly todayStr = new Date().toISOString().slice(0, 10);
   readonly tomorrowStr = (() => {
     const d = new Date();
@@ -717,6 +772,19 @@ export class KioskComponent implements OnInit, OnDestroy {
     d.setDate(d.getDate() + 14);
     return d.toISOString().slice(0, 10);
   })();
+  readonly maxDateStr = this.maxReturnStr;
+
+  // Loan start = availability date if in future, else today
+  loanStartDate(): string {
+    return this.availabilityDate() > this.todayStr ? this.availabilityDate() : this.todayStr;
+  }
+
+  // Max return = loan start + 14 days
+  loanMaxReturn(): string {
+    const d = new Date(this.loanStartDate() + 'T00:00:00');
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  }
 
   private idleTimer: any;
 
@@ -730,7 +798,9 @@ export class KioskComponent implements OnInit, OnDestroy {
     return this.equipment().filter(e => e.category === cat);
   });
 
-  constructor(private http: HttpClient, private router: Router) {}
+  constructor(private http: HttpClient, private router: Router) {
+    this.availabilityDate.set(this.todayStr);
+  }
 
   ngOnInit() {
     // Request fullscreen
@@ -765,11 +835,21 @@ export class KioskComponent implements OnInit, OnDestroy {
   }
 
   goToEquipment() {
+    this.loadEquipment(this.availabilityDate());
     this.step.set('select-equipment');
   }
 
-  private loadEquipment() {
-    this.http.get<KioskEquipment[]>('/api/equipment').subscribe({
+  onAvailabilityChange(date: string) {
+    if (!date) return;
+    this.availabilityDate.set(date);
+    // Clear cart when changing date — items might not be available then
+    this.cartItems.set([]);
+    this.loadEquipment(date);
+  }
+
+  private loadEquipment(date?: string) {
+    const url = date && date !== this.todayStr ? `/api/equipment?date=${date}` : '/api/equipment';
+    this.http.get<KioskEquipment[]>(url).subscribe({
       next: list => {
         // Exclude personal cameras and laptops from kiosk
         const filtered = list.filter(e =>
@@ -799,7 +879,10 @@ export class KioskComponent implements OnInit, OnDestroy {
   }
 
   goToConfirm() {
-    this.returnDate = this.tomorrowStr;
+    // Default return date: day after the selected availability date
+    const base = new Date(this.availabilityDate() + 'T00:00:00');
+    base.setDate(base.getDate() + 1);
+    this.returnDate = base.toISOString().slice(0, 10);
     this.step.set('confirm');
   }
 
@@ -810,12 +893,15 @@ export class KioskComponent implements OnInit, OnDestroy {
     this.submitting.set(true);
     this.confirmError.set('');
 
+    // If availability date is in the future, the loan starts that day
+    const loanDate = this.availabilityDate() > this.todayStr ? this.availabilityDate() : this.todayStr;
+
     const loans = this.cartItems().map(eq => this.http.post('/api/loans', {
       equipment_id: eq.id,
       borrower_name: student.name,
       borrower_phone: student.phone || '',
       borrower_id_number: student.id_number,
-      loan_date: this.todayStr,
+      loan_date: loanDate,
       expected_return: this.returnDate,
       loan_type: 'loan',
       notes: 'קיוסק עצמאי',
@@ -853,6 +939,7 @@ export class KioskComponent implements OnInit, OnDestroy {
     this.lookupError.set('');
     this.confirmError.set('');
     this.returnDate = '';
+    this.availabilityDate.set(this.todayStr);
   }
 
   exitKiosk() {
