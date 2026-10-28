@@ -171,6 +171,11 @@ import { filter, takeUntil } from 'rxjs/operators';
         height: 42px;
         width: auto;
         object-fit: contain;
+        padding: 3px 5px;
+        border-radius: 8px;
+        background: var(--logo-backdrop);
+        filter: var(--logo-filter);
+        box-shadow: 0 1px 5px rgba(0,0,0,0.12);
       }
       .account-actions {
         display: flex;
@@ -290,7 +295,12 @@ import { filter, takeUntil } from 'rxjs/operators';
         height: 48px;
         width: auto;
         object-fit: contain;
-        opacity: 0.85;
+        opacity: 1;
+        padding: 4px 8px;
+        border-radius: 10px;
+        background: var(--logo-backdrop);
+        filter: var(--logo-filter);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.14);
       }
       .cart-fab {
         position: fixed;
