@@ -1080,7 +1080,7 @@ function mapStudentRow(row) {
   if (!row) return row;
   return {
     ...row,
-    class_name: row.class_name || buildClassName(row.year, row.parallel),
+    class_name: buildClassName(row.year, row.parallel) || String(row.class_name || '').trim(),
     track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
     extra_data: parseExtraData(row.extra_data)
   };

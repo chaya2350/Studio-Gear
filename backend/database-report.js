@@ -24,6 +24,14 @@ function normalizeClassValue(value) {
   return raw.replace(/\s*[-–—]\s*/g, '').trim();
 }
 
+function normalizeParallelValue(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const clean = raw.replace(/\s+/g, '');
+  const match = clean.match(/^(?:מקבילה)?["'׳’]?([א-ת0-9]+)["'׳’]?$/);
+  return match ? match[1] : clean;
+}
+
 function parseClassParts(classValue) {
   const normalized = normalizeClassValue(classValue);
   const match = normalized.match(/^([א-ת]+)(\d+)?$/);
@@ -32,8 +40,8 @@ function parseClassParts(classValue) {
 }
 
 function buildClassName(yearValue, parallelValue) {
-  const year = String(yearValue ?? '').replace(/\s+/g, '').trim();
-  const parallel = String(parallelValue ?? '').replace(/\s+/g, '').trim();
+  const year = normalizeClassValue(yearValue);
+  const parallel = normalizeParallelValue(parallelValue);
   if (!year && !parallel) return '';
   return `${year}${parallel}`;
 }
@@ -68,6 +76,7 @@ function displayTrackName(value) {
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
+    'הוראה': 'הוראה מתקנת',
     'הוראהמתקנת': 'הוראה מתקנת',
     'חמ': 'חינוך מיוחד',
     'חינוך': 'חינוך מיוחד',
@@ -215,9 +224,9 @@ function buildClassReport(students, exams, gradesByExam, className) {
       const normalizedKey = String(key || '').replace(/\s+/g, '').toLowerCase();
       return normalizedKey.includes('מקב') || normalizedKey.includes('parallel') || normalizedKey.includes('קבוצה');
     });
-    const studentParallel = parallelEntry ? String(parallelEntry[1] || '').trim() : '';
+    const studentParallel = normalizeParallelValue(student.parallel || parallelEntry?.[1]);
     const matchesYear = studentBaseYear === year;
-    const matchesParallel = !parallel || studentParallel === parallel;
+    const matchesParallel = !parallel || studentParallel === normalizeParallelValue(parallel);
     return matchesYear && matchesParallel;
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
@@ -240,9 +249,15 @@ function buildClassReport(students, exams, gradesByExam, className) {
   const studentsWithGrades = filteredStudents.map((student) => {
     const grades = {};
     const canonicalTracks = splitTrackValues(student.track).join(' / ');
+    const studentExtra = parseExtraData(student?.extra_data);
+    const parallelEntry = Object.entries(studentExtra).find(([key]) => {
+      const normalizedKey = String(key || '').replace(/\s+/g, '').toLowerCase();
+      return normalizedKey.includes('מקב') || normalizedKey.includes('parallel') || normalizedKey.includes('קבוצה');
+    });
     const row = {
       name: student.name || '',
       id_number: student.id_number || '',
+      class_name: buildClassName(student.year, student.parallel || parallelEntry?.[1]),
       track: canonicalTracks,
       phone: student.phone || '',
       phone_code: student.phone_code || '',
