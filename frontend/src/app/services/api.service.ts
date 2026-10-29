@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Equipment, Loan, Category, Student } from '../models';
 
@@ -193,4 +193,25 @@ export class ApiService {
   getExamStats() { return this.http.get<{ byStudent: any[]; byExam: any[] }>(`${this.base}/exams-stats/summary`); }
   getStudentExams(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/exams`); }
   getExamBarcodeUrl(code: string) { return `${this.base}/exam-codes/${encodeURIComponent(code)}/barcode`; }
+
+  // ── דפים אישיים ──
+  getPageTopics() { return this.http.get<any[]>(`${this.base}/pages/topics`); }
+  createPageTopic(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/pages/topics`, { name }); }
+  deletePageTopic(id: number, force = false) { return this.http.delete<{ success: boolean; deleted_pages: number }>(`${this.base}/pages/topics/${id}${force ? '?force=1' : ''}`); }
+  getTopicPages(topicId: number) { return this.http.get<any[]>(`${this.base}/pages/topics/${topicId}/pages`); }
+  createPage(topicId: number, data: { title: string; body: string; visibility: 'private' | 'public' }) {
+    return this.http.post<{ id: number }>(`${this.base}/pages/topics/${topicId}/pages`, data);
+  }
+  getPage(id: number) { return this.http.get<any>(`${this.base}/pages/${id}`); }
+  updatePage(id: number, data: { title: string; body: string; visibility: 'private' | 'public' }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/pages/${id}`, data);
+  }
+  deletePage(id: number) { return this.http.delete<{ success: boolean }>(`${this.base}/pages/${id}`); }
+  requestPageAccess(id: number) { return this.http.post<{ status: string }>(`${this.base}/pages/${id}/request-access`, {}); }
+  getPageRequests(id: number) { return this.http.get<any[]>(`${this.base}/pages/${id}/requests`); }
+  decidePageRequest(requestId: number, status: 'approved' | 'denied') {
+    return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
+  }
+  getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
+  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 }

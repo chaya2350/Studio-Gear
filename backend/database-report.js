@@ -57,11 +57,13 @@ function displayTrackName(value) {
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
+    'הוראה': 'הוראה מתקנת',
     'הוראהמתקנת': 'הוראה מתקנת',
     'חמ': 'חינוך מיוחד',
     'חינוך': 'חינוך מיוחד',
     'חינוךמיוחד': 'חינוך מיוחד',
     'ללאמיסים': 'ייעוץ מס',
+    'יעוץמס': 'ייעוץ מס',
     'ייעוץמס': 'ייעוץ מס',
     'יעוץמסללאמיסים': 'ייעוץ מס',
     'הנדסתחשמל': 'הנדסת אנרגיה',
@@ -79,6 +81,7 @@ function displayExamName(value) {
   const normalized = normalizeTrackKey(raw);
   const map = {
     'רוח': 'ראיית חשבון',
+    'רו"ח': 'ראיית חשבון',
     'ראייתחשבון': 'ראיית חשבון',
     'רוחח': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
@@ -90,6 +93,8 @@ function displayExamName(value) {
     'חינוךמיוחד': 'חינוך מיוחד',
     'ללאמיסים': 'ייעוץ מס',
     'ייעוץמס': 'ייעוץ מס',
+    'יעוץמס': 'ייעוץ מס',
+    'יעוץ מס': 'ייעוץ מס',
     'יעוץמסללאמיסים': 'ייעוץ מס',
     'הנדסתחשמל': 'הנדסת אנרגיה',
     'הנדסתאנרגיה': 'הנדסת אנרגיה',
@@ -115,6 +120,18 @@ function splitTrackValues(value) {
     });
 }
 
+function studentHasTrack(trackValues, trackName) {
+  const canonicalTrackName = displayTrackName(trackName);
+  return splitTrackValues(trackValues).includes(canonicalTrackName);
+}
+
+function resolveStudentTrackIds(trackValue, tracks) {
+  const matchingTracks = tracks.filter((track) => studentHasTrack(trackValue, track.name));
+  const trackById = new Map(tracks.map((track) => [track.id, track]));
+  return [...new Set(matchingTracks.map((track) => track.merged_into || track.id)
+    .filter((id) => trackById.has(id)))];
+}
+
 function buildTrackReport(students, examsOrTrackName, maybeTrackName, maybeYear, gradesByExam = {}) {
   const exams = Array.isArray(examsOrTrackName) ? examsOrTrackName : [];
   const trackName = Array.isArray(examsOrTrackName) ? String(maybeTrackName || '') : String(examsOrTrackName || '');
@@ -122,9 +139,8 @@ function buildTrackReport(students, examsOrTrackName, maybeTrackName, maybeYear,
 
   const canonicalTrackName = displayTrackName(trackName);
   const filtered = (students || []).filter((student) => {
-    const studentTracks = splitTrackValues(student?.track);
     const studentYear = normalizeYear(student?.year);
-    return studentYear === normalizeYear(year) && studentTracks.some((track) => track === canonicalTrackName);
+    return studentYear === normalizeYear(year) && studentHasTrack(student?.track, canonicalTrackName);
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   const validExams = exams.filter((exam) => {
@@ -231,4 +247,4 @@ function buildClassReport(students, exams, gradesByExam, className) {
   return { class_name: normalizedClass, year, parallel, columns, rows: studentsWithGrades, exams: filteredExams, students: studentsWithGrades };
 }
 
-module.exports = { buildTrackReport, buildClassReport, splitTrackValues, displayTrackName, normalizeTrackKey };
+module.exports = { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey };

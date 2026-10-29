@@ -10,7 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
-const { buildTrackReport, buildClassReport, splitTrackValues } = require('./database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -204,7 +204,222 @@ db.exec(`
     UNIQUE (event_date, title, category, source_sheet)
   );
   CREATE INDEX IF NOT EXISTS calendar_events_date_idx ON calendar_events(event_date);
+  CREATE TABLE IF NOT EXISTS page_topics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS personal_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id INTEGER NOT NULL REFERENCES page_topics(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private','public')),
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS personal_pages_topic_idx ON personal_pages(topic_id);
+  CREATE TABLE IF NOT EXISTS page_access_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id INTEGER NOT NULL REFERENCES personal_pages(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT,
+    seen_at TEXT,
+    granted_seen_at TEXT,
+    UNIQUE (page_id, user_id)
+  );
 `);
+
+// הוספת seen_at לטבלאות קיימות (CREATE IF NOT EXISTS לא מוסיף עמודות)
+const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().map((c) => c.name);
+if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
+if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
+
+// ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
+function pageRow(row, userId) {
+  if (!row) return row;
+  return { ...row, is_owner: row.created_by === userId };
+}
+
+// מגדיר את הבקשות שהיוצר/ת כבר ראה/תה (לא חדשות יותר)
+function markRequestsSeen(userId, topicId) {
+  if (topicId) {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ? AND topic_id = ?)
+    `).run(userId, topicId);
+  } else {
+    db.prepare(`
+      UPDATE page_access_requests SET seen_at = datetime('now')
+      WHERE status = 'pending' AND seen_at IS NULL
+        AND page_id IN (SELECT id FROM personal_pages WHERE created_by = ?)
+    `).run(userId);
+  }
+}
+
+app.get('/api/pages/topics', (req, res) => {
+  const topics = db.prepare(`
+    SELECT t.id, t.name, t.created_by,
+      (SELECT COUNT(*) FROM personal_pages p WHERE p.topic_id = t.id AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'))) AS page_count,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND p.created_by = ? AND r.status = 'pending' AND r.seen_at IS NULL) AS pending_requests,
+      (SELECT COUNT(*) FROM page_access_requests r JOIN personal_pages p ON p.id = r.page_id
+        WHERE p.topic_id = t.id AND r.user_id = ? AND r.status = 'approved' AND r.granted_seen_at IS NULL) AS granted_requests
+    FROM page_topics t ORDER BY t.name
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id);
+  res.json(topics);
+});
+
+app.post('/api/pages/topics', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'נא להזין שם נושא' });
+  const existing = db.prepare('SELECT id FROM page_topics WHERE name = ?').get(name);
+  if (existing) return res.json(existing);
+  const result = db.prepare('INSERT INTO page_topics (name, created_by) VALUES (?, ?)').run(name, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid, name });
+});
+
+app.delete('/api/pages/topics/:id', (req, res) => {
+  const topic = db.prepare('SELECT id, created_by FROM page_topics WHERE id = ?').get(Number(req.params.id));
+  if (!topic) return res.status(404).json({ error: 'נושא לא נמצא' });
+  if (topic.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה למחוק את הנושא' });
+  const count = db.prepare('SELECT COUNT(*) AS c FROM personal_pages WHERE topic_id = ?').get(topic.id).c;
+  if (count > 0 && !req.query.force) {
+    return res.status(409).json({ error: `קיימים ${count} דפים בנושא. הוסיפי ?force=1 למחיקה מלאה.` });
+  }
+  db.prepare('DELETE FROM page_topics WHERE id = ?').run(topic.id);
+  res.json({ success: true, deleted_pages: count });
+});
+
+app.get('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  markRequestsSeen(req.user.id, topicId);
+  // מסמן שהמבקש/ת ראה/תה את האישורים בנושא הזה
+  db.prepare(`
+    UPDATE page_access_requests SET granted_seen_at = datetime('now')
+    WHERE user_id = ? AND status = 'approved' AND granted_seen_at IS NULL
+      AND page_id IN (SELECT id FROM personal_pages WHERE topic_id = ?)
+  `).run(req.user.id, topicId);
+  const rows = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view,
+      (SELECT COUNT(*) FROM page_access_requests r WHERE r.page_id = p.id AND r.status = 'pending') AS pending_requests,
+      (SELECT r.status FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ?) AS my_request_status
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.topic_id = ?
+    ORDER BY p.created_at DESC
+  `).all(req.user.id, req.user.id, req.user.id, req.user.id, topicId);
+  res.json(rows);
+});
+
+app.post('/api/pages/topics/:id/pages', (req, res) => {
+  const topicId = Number(req.params.id);
+  const topic = db.prepare('SELECT id FROM page_topics WHERE id = ?').get(topicId);
+  if (!topic) return res.status(404).json({ error: 'נושא לא נמצא' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  const result = db.prepare(`
+    INSERT INTO personal_pages (topic_id, title, body, visibility, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(topicId, title, body, visibility, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.get('/api/pages/:id', (req, res) => {
+  const page = db.prepare(`
+    SELECT p.*, u.name AS creator_name,
+      (CASE WHEN p.created_by = ? THEN 1 ELSE 0 END) AS can_edit,
+      (CASE WHEN p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved')
+        THEN 1 ELSE 0 END) AS can_view
+    FROM personal_pages p JOIN users u ON u.id = p.created_by
+    WHERE p.id = ?
+  `).get(req.user.id, req.user.id, req.user.id, Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (!page.can_view) return res.status(403).json({ error: 'אין לך הרשאת גישה לדף זה' });
+  res.json(pageRow(page, req.user.id));
+});
+
+app.put('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לערוך את הדף' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '');
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || !body.trim()) return res.status(400).json({ error: 'נא למלא כותרת ותוכן' });
+  db.prepare(`
+    UPDATE personal_pages SET title = ?, body = ?, visibility = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(title, body, visibility, page.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/pages/:id', (req, res) => {
+  const page = db.prepare('SELECT * FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה למחוק את הדף' });
+  db.prepare('DELETE FROM personal_pages WHERE id = ?').run(page.id);
+  res.json({ success: true });
+});
+
+// הרשאות גישה לדפים פרטיים
+app.post('/api/pages/:id/request-access', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by === req.user.id) return res.status(400).json({ error: 'זה הדף שלך' });
+  const existing = db.prepare('SELECT id, status FROM page_access_requests WHERE page_id = ? AND user_id = ?').get(page.id, req.user.id);
+  if (existing) return res.json({ status: existing.status });
+  db.prepare('INSERT INTO page_access_requests (page_id, user_id) VALUES (?, ?)').run(page.id, req.user.id);
+  res.status(201).json({ status: 'pending' });
+});
+
+app.get('/api/pages/:id/requests', (req, res) => {
+  const page = db.prepare('SELECT id, created_by FROM personal_pages WHERE id = ?').get(Number(req.params.id));
+  if (!page) return res.status(404).json({ error: 'דף לא נמצא' });
+  if (page.created_by !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לצפות בבקשות' });
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, u.id AS user_id, u.name AS user_name
+    FROM page_access_requests r JOIN users u ON u.id = r.user_id
+    WHERE r.page_id = ? ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.created_at DESC
+  `).all(page.id);
+  res.json(rows);
+});
+
+app.put('/api/pages/requests/:id', (req, res) => {
+  const request = db.prepare(`
+    SELECT r.*, p.created_by AS page_owner FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id WHERE r.id = ?
+  `).get(Number(req.params.id));
+  if (!request) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  if (request.page_owner !== req.user.id) return res.status(403).json({ error: 'רק היוצר/ת יכול/ה לאשר בקשות' });
+  const status = req.body?.status === 'approved' ? 'approved' : req.body?.status === 'denied' ? 'denied' : null;
+  if (!status) return res.status(400).json({ error: 'ערך לא תקין' });
+  db.prepare('UPDATE page_access_requests SET status = ?, decided_at = datetime(\'now\') WHERE id = ?').run(status, request.id);
+  res.json({ success: true, status });
+});
+
+app.get('/api/pages/requests/incoming', (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.id, r.status, r.created_at, p.id AS page_id, p.title AS page_title, u.name AS user_name
+    FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id
+    JOIN users u ON u.id = r.user_id
+    WHERE p.created_by = ? AND r.status = 'pending'
+    ORDER BY r.created_at DESC
+  `).all(req.user.id);
+  res.json(rows);
+});
 
 const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
 
@@ -640,7 +855,11 @@ function parseExtraData(rawValue) {
 
 function mapStudentRow(row) {
   if (!row) return row;
-  return { ...row, extra_data: parseExtraData(row.extra_data) };
+  return {
+    ...row,
+    track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
+    extra_data: parseExtraData(row.extra_data)
+  };
 }
 
 app.get('/api/students', (req, res) => {
@@ -651,6 +870,21 @@ app.get('/api/students', (req, res) => {
     return res.json(rows.map(mapStudentRow));
   }
   res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
+});
+
+// חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
+app.get('/api/search', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], pages: [] });
+  const like = `%${q}%`;
+  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
+  const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
+  const examCodes = db.prepare(`
+    SELECT c.code, e.name AS exam_name, s.name AS student_name
+    FROM exam_codes c JOIN exams e ON e.id = c.exam_id JOIN students s ON s.id_number = c.id_number
+    WHERE c.code LIKE ? LIMIT 5
+  `).all(like);
+  res.json({ students, equipment, examCodes });
 });
 
 app.get('/api/students/:id_number', (req, res) => {
@@ -830,11 +1064,10 @@ function requirementAppliesTo(requirement, student) {
   return requirement.years.split(',').includes(normalizeTrackName(student.year));
 }
 
-// A student's track may be merged into a main track, whose requirements then apply
-function findStudentTrack(student) {
-  const track = db.prepare('SELECT * FROM tracks WHERE name = ?').get(normalizeTrackName(student.track));
-  if (track?.merged_into) return db.prepare('SELECT * FROM tracks WHERE id = ?').get(track.merged_into) || track;
-  return track;
+function findStudentTrackIds(student) {
+  if (!student?.track) return [];
+  const tracks = db.prepare('SELECT id, name, merged_into FROM tracks').all();
+  return resolveStudentTrackIds(student.track, tracks);
 }
 
 function validTrackName(value) {
@@ -1006,26 +1239,27 @@ app.delete('/api/track-requirements/:id', (req, res) => {
 app.get('/api/students/:id_number/requirements', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
-  const trackName = normalizeTrackName(student.track);
-  const track = trackName ? findStudentTrack(student) : null;
-  if (!track) return res.json({ track: trackName || null, defined: false, requirements: [] });
+  const trackNames = splitTrackValues(student.track);
+  const trackIds = findStudentTrackIds(student);
+  if (!trackIds.length) return res.json({ track: trackNames.join(' / ') || null, defined: false, requirements: [] });
+  const placeholders = trackIds.map(() => '?').join(', ');
   const requirements = db.prepare(`
     SELECT r.id, r.title, r.required, r.requires_file, r.years, sr.completed_at, sr.completed_by, sr.file_name
     FROM track_requirements r
     LEFT JOIN student_requirements sr ON sr.requirement_id = r.id AND sr.id_number = ?
-    WHERE r.track_id = ?
+    WHERE r.track_id IN (${placeholders})
     ORDER BY r.sort_order, r.id
-  `).all(student.id_number, track.id).filter((r) => requirementAppliesTo(r, student));
-  res.json({ track: track.name, defined: true, requirements });
+  `).all(student.id_number, ...trackIds).filter((r) => requirementAppliesTo(r, student));
+  res.json({ track: trackNames.join(' / '), defined: true, requirements });
 });
 
 app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
   if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'ערך לא תקין' });
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצאה תלמידה עם מספר זהות זה' });
-  const track = findStudentTrack(student);
-  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
-    .get(req.params.requirement_id, track.id);
+  const trackIds = findStudentTrackIds(student);
+  const requirement = trackIds.length && db.prepare(`SELECT * FROM track_requirements WHERE id = ? AND track_id IN (${trackIds.map(() => '?').join(', ')})`)
+    .get(req.params.requirement_id, ...trackIds);
   if (!requirement || !requirementAppliesTo(requirement, student)) {
     return res.status(404).json({ error: 'הדרישה אינה שייכת למסלול של התלמידה' });
   }
@@ -1044,9 +1278,9 @@ app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
 
 function findStudentFileRequirement(idNumber, requirementId) {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(idNumber);
-  const track = student && findStudentTrack(student);
-  const requirement = track && db.prepare('SELECT * FROM track_requirements WHERE id = ? AND track_id = ?')
-    .get(requirementId, track.id);
+  const trackIds = student ? findStudentTrackIds(student) : [];
+  const requirement = trackIds.length && db.prepare(`SELECT * FROM track_requirements WHERE id = ? AND track_id IN (${trackIds.map(() => '?').join(', ')})`)
+    .get(requirementId, ...trackIds);
   return student && requirement && requirementAppliesTo(requirement, student) ? { student, requirement } : null;
 }
 
@@ -1144,7 +1378,7 @@ app.get('/api/tracks/:id/stats', (req, res) => {
   if (!track) return res.status(404).json({ error: 'המסלול לא נמצא' });
   const names = new Set([track.name, ...db.prepare('SELECT name FROM tracks WHERE merged_into = ?').all(track.id).map((t) => t.name)]);
   const students = db.prepare('SELECT id_number, name, track, year FROM students').all()
-    .filter((s) => names.has(normalizeTrackName(s.track)));
+    .filter((s) => [...names].some((name) => studentHasTrack(s.track, name)));
   const requirements = db.prepare('SELECT id, title, required, requires_file, years FROM track_requirements WHERE track_id = ? ORDER BY sort_order, id').all(track.id);
   const done = new Set(
     db.prepare('SELECT id_number, requirement_id FROM student_requirements WHERE requirement_id IN (SELECT id FROM track_requirements WHERE track_id = ?)')
@@ -1313,7 +1547,8 @@ app.delete('/api/categories/:id', (req, res) => {
 
 // ── Equipment ──────────────────────────────────────────────
 // Helper: build equipment status for a given date
-function equipmentQuery(whereClause = '') {
+function equipmentQuery(whereClause = '', date = null) {
+  const d = date || "date('now')";
   return `
     SELECT e.*,
       CASE WHEN e.category = 'מצלמות אישיות' THEN 'ציוד צילום' ELSE e.category END as category,
@@ -1322,15 +1557,17 @@ function equipmentQuery(whereClause = '') {
       active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
     FROM equipment e
-    LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL AND active.loan_date <= date('now')
-    LEFT JOIN (SELECT equipment_id, COUNT(*) as cnt FROM loans WHERE actual_return IS NULL AND loan_date > date('now') GROUP BY equipment_id) future
+    LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL
+      AND active.loan_date <= ${d} AND active.expected_return >= ${d}
+    LEFT JOIN (SELECT equipment_id, COUNT(*) as cnt FROM loans WHERE actual_return IS NULL AND loan_date > ${d} GROUP BY equipment_id) future
       ON future.equipment_id = e.id
     ${whereClause}
   `;
 }
 
 app.get('/api/equipment', (req, res) => {
-  res.json(db.prepare(equipmentQuery()).all());
+  const date = req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date)) ? `'${req.query.date}'` : null;
+  res.json(db.prepare(equipmentQuery('', date)).all());
 });
 
 // Generate a new unique barcode number
@@ -1780,10 +2017,10 @@ app.post('/api/exams/:id/codes', (req, res) => {
   } else {
     const conds = [];
     const params = [];
-    if (track) { conds.push('track = ?'); params.push(track); }
     if (year) { conds.push('year = ?'); params.push(String(year)); }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
+    if (track) students = students.filter((student) => studentHasTrack(student.track, track));
   }
   if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
   const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
@@ -1791,7 +2028,7 @@ app.post('/api/exams/:id/codes', (req, res) => {
     for (const s of students) insert.run(encodeExamCode(exam.id, s.id_number), exam.id, s.id_number);
   });
   tx();
-  res.json({ created: students.length, students });
+  res.json({ created: students.length, students: students.map(mapStudentRow) });
 });
 
 // תמונת ברקוד לקוד מבחן
@@ -1856,7 +2093,10 @@ app.get('/api/exams-stats/summary', (req, res) => {
     LEFT JOIN exam_grades g ON g.code = c.code
     GROUP BY s.id_number
     ORDER BY s.name
-  `).all();
+  `).all().map((student) => ({
+    ...student,
+    track: splitTrackValues(student.track).join(' / '),
+  }));
   const byExam = db.prepare(`
     SELECT e.id, e.name,
       (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS codes_count,
@@ -1878,6 +2118,154 @@ app.get('/api/students/:id_number/exams', (req, res) => {
     ORDER BY e.created_at DESC
   `).all(req.params.id_number);
   res.json(rows);
+});
+
+// ── Notifications ─────────────────────────────────────────────
+// Returns a combined list of smart alerts across all modules
+app.get('/api/notifications', (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  const notifications = [];
+
+  // 1. ציוד שחזרתו עברה (overdueLoans)
+  const overdueLoans = db.prepare(`
+    SELECT l.id, l.borrower_name, l.expected_return, e.name AS equipment_name
+    FROM loans l
+    JOIN equipment e ON e.id = l.equipment_id
+    WHERE l.actual_return IS NULL
+      AND l.loan_date <= ?
+      AND l.expected_return < ?
+      AND NOT (
+        e.category = 'מצלמות אישיות' OR
+        (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות')
+      )
+    ORDER BY l.expected_return ASC
+    LIMIT 10
+  `).all(today, today);
+  for (const l of overdueLoans) {
+    const days = Math.round((new Date(today) - new Date(l.expected_return)) / 86400000);
+    notifications.push({
+      id: `loan-overdue-${l.id}`,
+      type: 'overdue',
+      severity: days >= 3 ? 'danger' : 'warning',
+      icon: '⚠️',
+      title: 'ציוד לא הוחזר',
+      body: `${l.equipment_name} — ${l.borrower_name} (${days} ימי איחור)`,
+      link: '/loans',
+      created_at: l.expected_return,
+    });
+  }
+
+  // 2. מבחנים שיש להם ברקודים שלא הודפסו (קוד הופק אבל ציון לא נרשם כלל)
+  const examsWithUngraded = db.prepare(`
+    SELECT e.id, e.name, e.exam_date,
+      (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) AS total_codes,
+      (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) AS graded_count
+    FROM exams e
+    WHERE (SELECT COUNT(*) FROM exam_codes c WHERE c.exam_id = e.id) > 0
+      AND (SELECT COUNT(*) FROM exam_codes c JOIN exam_grades g ON g.code = c.code WHERE c.exam_id = e.id) = 0
+    ORDER BY e.exam_date DESC
+    LIMIT 5
+  `).all();
+  for (const ex of examsWithUngraded) {
+    notifications.push({
+      id: `exam-ungraded-${ex.id}`,
+      type: 'exam',
+      severity: 'info',
+      icon: '📋',
+      title: 'ברקודים ממתינים לציון',
+      body: `${ex.name} — ${ex.total_codes} ברקודים עדיין ללא ציון`,
+      link: '/exams',
+      created_at: ex.exam_date || today,
+    });
+  }
+
+  // 3. בקשות גישה לדפים שלי שממתינות לאישור
+  const pendingPageRequests = db.prepare(`
+    SELECT COUNT(*) AS c
+    FROM page_access_requests r
+    JOIN personal_pages p ON p.id = r.page_id
+    WHERE p.created_by = ? AND r.status = 'pending' AND r.seen_at IS NULL
+  `).get(req.user.id);
+  if (pendingPageRequests.c > 0) {
+    notifications.push({
+      id: 'page-requests-pending',
+      type: 'pages',
+      severity: 'info',
+      icon: '📄',
+      title: 'בקשות גישה ממתינות',
+      body: `${pendingPageRequests.c} בקשות גישה לדפים שלך ממתינות לאישור`,
+      link: '/pages',
+      created_at: today,
+    });
+  }
+
+  // 4. הודעות שלא נקראו
+  const unread = db.prepare(`
+    SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL
+  `).get(req.user.id);
+  if (unread.c > 0) {
+    notifications.push({
+      id: 'messages-unread',
+      type: 'messages',
+      severity: 'info',
+      icon: '💬',
+      title: 'הודעות שלא נקראו',
+      body: `${unread.c} הודעות חדשות ממתינות לך`,
+      link: '/messages',
+      created_at: today,
+    });
+  }
+
+  // 5. משימות שתאריך היעד שלהן עבר
+  const overdueTasks = db.prepare(`
+    SELECT COUNT(*) AS c FROM personal_tasks
+    WHERE user_id = ? AND completed_at IS NULL AND due_date < ?
+  `).get(req.user.id, today);
+  if (overdueTasks.c > 0) {
+    notifications.push({
+      id: 'tasks-overdue',
+      type: 'tasks',
+      severity: 'warning',
+      icon: '⏰',
+      title: 'משימות שפג מועדן',
+      body: `${overdueTasks.c} משימות שלא הושלמו עברו את תאריך היעד`,
+      link: '/messages',
+      created_at: today,
+    });
+  }
+
+  // 6. תלמידות שיש להן דרישות חובה שלא הושלמו (admin/secretary only)
+  if (req.user.role === 'admin' || req.user.role === 'secretary') {
+    const incompleteMandatory = db.prepare(`
+      SELECT COUNT(DISTINCT s.id_number) AS c
+      FROM students s
+      JOIN tracks t ON (
+        s.track LIKE '%' || t.name || '%'
+      )
+      JOIN track_requirements tr ON tr.track_id = t.id AND tr.required = 1
+      LEFT JOIN student_requirements sr ON sr.id_number = s.id_number AND sr.requirement_id = tr.id
+      WHERE sr.id_number IS NULL
+        AND (tr.years IS NULL OR tr.years LIKE '%' || s.year || '%')
+    `).get();
+    if (incompleteMandatory.c > 0) {
+      notifications.push({
+        id: 'requirements-incomplete',
+        type: 'requirements',
+        severity: 'warning',
+        icon: '📁',
+        title: 'דרישות חובה חסרות',
+        body: `${incompleteMandatory.c} תלמידות עם דרישות חובה שלא הושלמו`,
+        link: '/students',
+        created_at: today,
+      });
+    }
+  }
+
+  // Sort by severity: danger first, then warning, then info
+  const order = { danger: 0, warning: 1, info: 2 };
+  notifications.sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
+
+  res.json(notifications);
 });
 
 const port = process.env.PORT || 3000;

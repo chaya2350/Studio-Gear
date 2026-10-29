@@ -99,6 +99,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/exams/exam-scan').then((m) => m.ExamScanComponent),
       },
       {
+        path: 'pages',
+        loadComponent: () => import('./pages/pages/pages').then((m) => m.PagesComponent),
+      },
+      {
         path: 'students',
         loadComponent: () =>
           import('./pages/student-search/student-search').then((m) => m.StudentSearchComponent),
@@ -106,6 +110,10 @@ export const routes: Routes = [
       {
         path: 'students/:id',
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
+      },
+      {
+        path: 'kiosk',
+        loadComponent: () => import('./pages/kiosk/kiosk').then((m) => m.KioskComponent),
       },
       { path: '**', redirectTo: '' },
     ],

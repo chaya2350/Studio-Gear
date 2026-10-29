@@ -31,12 +31,12 @@ function canonicalTrackValue(value) {
     'רווח': 'רוח',
     'רוחח': 'רוח',
     'רוחה': 'רוח',
+    'רוח': 'ראיית חשבון',
     'ראייתחשבון': 'ראיית חשבון',
     'ראיית חשבון': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
-    'הוראה': 'הוראה מתקנת',
     'הוראהמתקנת': 'הוראה מתקנת',
     'הרמתקנת': 'הוראה מתקנת',
     'חמ': 'חינוך מיוחד',
@@ -45,7 +45,10 @@ function canonicalTrackValue(value) {
     'חינוךממיוחד': 'חינוך מיוחד',
     'ללאמיסים': 'ייעוץ מס',
     'ייעוץמס': 'ייעוץ מס',
+    'יעוץמס': 'ייעוץ מס',
+    'יעוץ מס': 'ייעוץ מס',
     'הנדסתחשמל': 'הנדסת אנרגיה',
+    'הנדסת חשמל': 'הנדסת אנרגיה',
     'הנדסתאנרגיה': 'הנדסת אנרגיה',
     'אנרגיה': 'הנדסת אנרגיה',
     'רו"ח': 'ראיית חשבון',
@@ -224,6 +227,7 @@ function parseStudentWorkbook(buffer) {
       const name = [firstName, lastName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
       const phone = String(getValue(...knownHeaders.phone)).trim();
       const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
+      const birth_date = String(getValue(...knownHeaders.birthDate)).trim();
       const trackValue = String(getValue(...knownHeaders.track)).trim() || String(row.__sheetName || '').trim();
       const track = canonicalTrackValue(trackValue);
       const year = canonicalYearValue(String(getValue(...knownHeaders.year)).trim(), String(row.__sheetName || ''));
@@ -249,6 +253,7 @@ function parseStudentWorkbook(buffer) {
         name,
         phone,
         phone_code,
+        birth_date,
         track,
         year,
         address,

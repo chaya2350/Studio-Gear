@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const XLSX = require('xlsx');
-const { parseStudentWorkbook } = require('../student-import');
+const { parseStudentWorkbook, canonicalTrackValue } = require('../student-import');
 
 function setCell(sheet, address, value) {
   sheet[address] = { t: typeof value === 'number' ? 'n' : 's', v: value };
@@ -71,6 +71,10 @@ test('normalizes Hebrew aliases for track and phone-code fields', () => {
   assert.equal(rows[0].phone_code, '02');
   assert.equal(rows[0].track, 'רוח');
   assert.equal(rows[0].year, 'יב');
+});
+
+test('normalizes electrical engineering track alias to energy engineering', () => {
+  assert.equal(canonicalTrackValue('הנדסת חשמל'), 'הנדסת אנרגיה');
 });
 
 test('converts specialization year values to the real workbook year names: שנה א תשפז and שנה ב תשפז', () => {

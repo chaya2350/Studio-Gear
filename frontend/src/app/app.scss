@@ -5,13 +5,22 @@
 
 .app-footer {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 6px 12px 10px;
+  gap: 6px;
+  padding: 10px 12px 14px;
   font-size: 0.72rem;
   color: var(--text-muted, #64748b);
   background: transparent;
   letter-spacing: 0.02em;
+}
+
+.footer-logo {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  opacity: 0.85;
 }
 
 @media (max-width: 640px) {
