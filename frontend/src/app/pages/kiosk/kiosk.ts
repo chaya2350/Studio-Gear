@@ -168,7 +168,7 @@ interface KioskEquipment {
       @if (!isIdle() && step() === 'confirm') {
         <div class="step-container">
           <div class="step-card step-card--wide">
-            <span class="step-icon">📋</span>
+            <span class="step-icon"></span>
             <h2 class="step-title">אישור השאלה</h2>
             <p class="step-sub">{{ student()?.name }} · {{ todayStr }}</p>
 

@@ -47,7 +47,7 @@ interface TrackStats {
 
       @if (gradedCount === 0) {
         <div class="no-data">
-          <span>📋</span>
+          <span></span>
           <p>אין ציונים עדיין לניתוח</p>
         </div>
       } @else {

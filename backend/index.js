@@ -3348,7 +3348,7 @@ app.get('/api/notifications', (req, res) => {
       id: `exam-ungraded-${ex.id}`,
       type: 'exam',
       severity: 'info',
-      icon: '📋',
+      icon: '',
       title: 'ברקודים ממתינים לציון',
       body: `${ex.name} — ${ex.total_codes} ברקודים עדיין ללא ציון`,
       link: '/exams',

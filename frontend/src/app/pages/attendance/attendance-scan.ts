@@ -13,7 +13,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
   template: `
 <div class="page-header">
   <div>
-    <h1>📋 רישום נוכחות</h1>
+    <h1> רישום נוכחות</h1>
     <p class="subtitle">סרקי ברקוד שיעור מהדף השבועי</p>
   </div>
 </div>
@@ -183,7 +183,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
           </div>
         </div>
         <button class="btn btn-primary" style="width:100%;margin-top:20px" (click)="startNew()">
-          📋 רישום שיעור נוסף
+           רישום שיעור נוסף
         </button>
       </div>
     </ng-container>

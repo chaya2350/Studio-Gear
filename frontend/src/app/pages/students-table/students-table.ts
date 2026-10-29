@@ -41,7 +41,7 @@ interface TableStudent {
 
 <div class="page-header">
   <div>
-    <h1>📋 טבלת תלמידות</h1>
+    <h1> טבלת תלמידות</h1>
     <p class="subtitle">תצוגת Excel — כל הפרטים במקום אחד</p>
   </div>
   <div class="header-actions">
