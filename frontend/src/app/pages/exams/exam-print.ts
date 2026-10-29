@@ -24,7 +24,15 @@ import { collectTrackNames } from '../../utils/track-names';
   <!-- בחירת כיתה -->
   <div class="card" style="margin-bottom:16px;">
     <div class="section-title"> בחרי כיתה להדפסה</div>
-    <div class="form-row">
+
+    <!-- toggle מסלול/כיתה -->
+    <div class="filter-mode-toggle">
+      <button [class.active]="filterMode==='track'" (click)="filterMode='track'; selectedParallel=null">לפי מסלול ושנה</button>
+      <button [class.active]="filterMode==='class'" (click)="filterMode='class'; selectedTrack=null; selectedYear=null">לפי כיתה (מקבילה)</button>
+    </div>
+
+    <!-- מסלול + שנה -->
+    <div *ngIf="filterMode==='track'" class="form-row" style="margin-top:10px;">
       <div class="form-group">
         <label>מסלול</label>
         <select [(ngModel)]="selectedTrack">
@@ -41,11 +49,22 @@ import { collectTrackNames } from '../../utils/track-names';
       </div>
     </div>
 
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn btn-primary" [disabled]="printing()" (click)="printExams()">
+    <!-- בחירת כיתה -->
+    <div *ngIf="filterMode==='class'" class="form-group" style="margin-top:10px;">
+      <label>בחרי כיתה</label>
+      <select [(ngModel)]="selectedParallel">
+        <option [ngValue]="null">— בחרי כיתה —</option>
+        <option *ngFor="let c of classes()" [ngValue]="c.parallel">
+          {{ c.label }} ({{ c.count }} תלמידות)
+        </option>
+      </select>
+    </div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+      <button class="btn btn-primary" [disabled]="printing() || (filterMode==='class' && !selectedParallel)" (click)="printExams()">
         🖨 הדפס מבחנים לכיתה (שאלון + ברקוד)
       </button>
-      <button class="btn btn-secondary" [disabled]="printing()" (click)="printBarcodesOnly()">
+      <button class="btn btn-secondary" [disabled]="printing() || (filterMode==='class' && !selectedParallel)" (click)="printBarcodesOnly()">
         🔗 הדפס דף ברקודים בלבד
       </button>
     </div>
@@ -54,10 +73,10 @@ import { collectTrackNames } from '../../utils/track-names';
     <p *ngIf="errorMsg()" class="hint" style="color:var(--danger); font-weight:600; margin-top:8px;">{{ errorMsg() }}</p>
   </div>
 
-  <!-- הדפסה לתלמידה בודדת (שלא עשתה) -->
+  <!-- הדפסה לתלמידה בודדת -->
   <div class="card">
     <div class="section-title"> הדפסה לתלמידה שלא עשתה מבחן</div>
-    <p class="hint">חפשי את התלמידה לפי ת.ז — אם אין לה ברקוד למבחן הזה, יופק אחד אוטומטית</p>
+    <p class="hint">חפשי לפי שם או ת.ז — אם אין לה ברקוד למבחן הזה, יופק אוטומטית</p>
     <div class="search-row">
       <input [(ngModel)]="studentQuery" (input)="searchStudents()" placeholder="שם או ת.ז...">
       <button class="btn btn-secondary" (click)="searchStudents()">חפש</button>
@@ -66,7 +85,7 @@ import { collectTrackNames } from '../../utils/track-names';
       <div *ngFor="let s of studentResults()" class="student-result-row">
         <div>
           <strong>{{ s.name }}</strong>
-          <span>{{ s.id_number }}{{ s.track ? ' · ' + s.track : '' }}{{ s.year ? ' ' + toStudyYear(s.year) : '' }}</span>
+          <span>{{ s.id_number }}{{ s.track ? ' · ' + s.track : '' }}{{ s.year ? ' ' + toStudyYear(s.year) : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name + (s.parallel || '') : '' }}</span>
         </div>
         <button class="btn btn-primary" style="font-size:0.8rem; padding:6px 14px;" (click)="printForStudent(s)">
           🖨 הדפס לה
@@ -80,6 +99,9 @@ import { collectTrackNames } from '../../utils/track-names';
   styles: [`
     .loading-center { text-align:center; padding:60px; color:var(--text-muted); }
     .back-link { font-size:0.85rem; color:var(--primary); margin-bottom:4px; display:block; }
+    .filter-mode-toggle { display:flex; gap:6px;
+      button { flex:1; padding:8px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font:inherit; font-size:0.83rem; font-weight:700; cursor:pointer;
+        &.active { border-color:var(--primary); color:var(--primary); background:var(--primary-light); } } }
     .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
     .form-group { display:flex; flex-direction:column; gap:4px;
       label { font-size:0.78rem; font-weight:700; color:var(--text-muted); }
@@ -103,11 +125,14 @@ export class ExamPrintComponent implements OnInit {
   exam = signal<any | null>(null);
   template = signal<any | null>(null);
   allStudents = signal<any[]>([]);
+  classes = signal<{ parallel: string; label: string; count: number }[]>([]);
   studentResults = signal<any[]>([]);
   studentQuery = '';
 
+  filterMode: 'track' | 'class' = 'track';
   selectedTrack: string | null = null;
   selectedYear: string | null = null;
+  selectedParallel: string | null = null;
 
   toStudyYear = toStudyYear;
 
@@ -120,6 +145,7 @@ export class ExamPrintComponent implements OnInit {
   ngOnInit() {
     const id = Number(this.route.snapshot.paramMap.get('id'));
     this.api.getStudents().subscribe(s => this.allStudents.set(s));
+    this.api.getStudentClasses().subscribe(c => this.classes.set(c));
     this.api.getExam(id).subscribe({
       next: (exam) => {
         this.exam.set(exam);
@@ -163,10 +189,8 @@ export class ExamPrintComponent implements OnInit {
     this.statusMsg.set('');
     this.printing.set(true);
     const exam = this.exam()!;
-    this.api.generateExamCodes(exam.id, {
-      track: this.selectedTrack || undefined,
-      year: this.selectedYear || undefined
-    }).subscribe({
+    const payload = this.buildPayload();
+    this.api.generateExamCodes(exam.id, payload).subscribe({
       next: (r) => {
         this.statusMsg.set(`הופקו/עודכנו ברקודים ל-${r.created} תלמידות. פותח חלון הדפסה...`);
         this.api.getExam(exam.id).subscribe(fullExam => {
@@ -183,10 +207,8 @@ export class ExamPrintComponent implements OnInit {
     this.statusMsg.set('');
     this.printing.set(true);
     const exam = this.exam()!;
-    this.api.generateExamCodes(exam.id, {
-      track: this.selectedTrack || undefined,
-      year: this.selectedYear || undefined
-    }).subscribe({
+    const payload = this.buildPayload();
+    this.api.generateExamCodes(exam.id, payload).subscribe({
       next: () => {
         this.api.getExam(exam.id).subscribe(fullExam => {
           this.printing.set(false);
@@ -195,6 +217,16 @@ export class ExamPrintComponent implements OnInit {
       },
       error: (e) => { this.printing.set(false); this.errorMsg.set(e.error?.error || 'הפקה נכשלה'); }
     });
+  }
+
+  private buildPayload(): any {
+    if (this.filterMode === 'class') {
+      return { parallel: this.selectedParallel || undefined };
+    }
+    return {
+      track: this.selectedTrack || undefined,
+      year: this.selectedYear || undefined
+    };
   }
 
   printForStudent(s: any) {
