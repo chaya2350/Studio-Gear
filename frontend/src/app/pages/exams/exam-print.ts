@@ -213,7 +213,7 @@ export class ExamPrintComponent implements OnInit {
 
   private openPrintWindow(students: any[], template: any | null, exam: any, barcodesOnly: boolean) {
     const base = window.location.origin;
-    const logoUrl = `${base}/assets/logo.png`;
+    const logoUrl = `${base}/logo.png`;
 
     const renderQuestion = (q: any, i: number, type: string): string => {
       if (type === 'multiple_choice') {
