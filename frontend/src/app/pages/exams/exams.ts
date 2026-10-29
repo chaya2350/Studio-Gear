@@ -90,8 +90,16 @@ template: `
 
 <!-- הפקה לכיתה -->
 <div *ngIf="printMode()==='class'">
-<p class="mode-desc">הפקת ברקוד אישי לכל תלמידה במסלול/שנה שתבחרי, עבור המבחן הזה.</p>
-<div class="form-row">
+<p class="mode-desc">הפקת ברקוד אישי לכל תלמידה במסלול/שנה/כיתה שתבחרי, עבור המבחן הזה.</p>
+
+<!-- מצב סינון: מסלול או כיתה -->
+<div class="filter-mode-toggle" style="margin-bottom:10px;">
+  <button [class.active]="classForm.filterMode==='track'" (click)="classForm.filterMode='track'; classForm.parallel=null">לפי מסלול ושנה</button>
+  <button [class.active]="classForm.filterMode==='class'" (click)="classForm.filterMode='class'; classForm.track=null; classForm.year=null">לפי כיתה (מקבילה)</button>
+</div>
+
+<!-- סינון לפי מסלול ושנה -->
+<div *ngIf="classForm.filterMode==='track'" class="form-row">
 <div class="form-group">
 <label>מסלול</label>
 <select [(ngModel)]="classForm.track">
@@ -107,7 +115,19 @@ template: `
 </select>
 </div>
 </div>
-<button class="btn btn-primary" style="width:100%;" (click)="generateClass()"> הפקה והדפסה לכיתה</button>
+
+<!-- סינון לפי כיתה (מקבילה/class_name) -->
+<div *ngIf="classForm.filterMode==='class'" class="form-group">
+<label>בחרי כיתה</label>
+<select [(ngModel)]="classForm.parallel">
+  <option [ngValue]="null">— בחרי כיתה —</option>
+  <option *ngFor="let c of classOptions()" [ngValue]="c.parallel">
+    {{ c.label }} ({{ c.count }} תלמידות)
+  </option>
+</select>
+</div>
+
+<button class="btn btn-primary" style="width:100%;" [disabled]="classForm.filterMode==='class' && !classForm.parallel" (click)="generateClass()"> הפקה והדפסה לכיתה</button>
 </div>
 
 <!-- הפקה אישית -->
@@ -197,6 +217,10 @@ cursor: pointer; transition: all var(--transition);
 .del-btn { border: none; background: transparent; cursor: pointer; opacity: 0.5; &:hover { opacity: 1; } }
 .icon-btn { border: none; background: transparent; cursor: pointer; font-size: 1rem; opacity: 0.7; &:hover { opacity: 1; } }
 
+.filter-mode-toggle { display:flex; gap:6px;
+  button { flex:1; padding:7px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font:inherit; font-size:0.82rem; font-weight:700; cursor:pointer;
+    &.active { border-color:var(--primary); color:var(--primary); background:var(--primary-light); } } }
+
 .new-exam { border-radius: var(--radius-sm); padding: 14px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;
@@ -240,10 +264,11 @@ message = signal('');
 error = signal('');
 
 newExam = { name: '', track: '', year: '', exam_date: '' };
-classForm: { track: string | null; year: string | null } = { track: null, year: null };
+classForm: { track: string | null; year: string | null; parallel: string | null; filterMode: 'track' | 'class' } = { track: null, year: null, parallel: null, filterMode: 'track' };
 studentQuery = '';
 studentResults = signal<any[]>([]);
 private allStudents = signal<any[]>([]);
+private allClasses = signal<{ parallel: string; label: string; count: number }[]>([]);
 
 toStudyYear = toStudyYear;
 
@@ -254,6 +279,7 @@ this.api.getStudents().subscribe(s => {
 this.allStudents.set(s);
 this.handleDeepLink();
 });
+this.api.getStudentClasses().subscribe((c: { parallel: string; label: string; count: number }[]) => this.allClasses.set(c));
 this.loadExams();
 }
 
@@ -267,7 +293,7 @@ const exam = exams.find(e => e.id === examId);
 if (!exam) return;
 this.exams.set(exams);
 this.selectedExam.set(exam);
-this.classForm = { track: exam.track || null, year: exam.year || null };
+this.classForm = { track: exam.track || null, year: exam.year || null, parallel: null, filterMode: 'track' };
 if (print) {
 this.generateClass();
 this.router.navigate([], { queryParams: { exam: null, print: null }, queryParamsHandling: 'merge' });
@@ -305,6 +331,11 @@ const label = toStudyYear(y);
 if (!seen.has(label)) seen.set(label, y);
 }
 return [...seen.values()];
+}
+
+// כיתות (מקבילות) ייחודיות — מהשרת
+classOptions(): { parallel: string; label: string; count: number }[] {
+  return this.allClasses();
 }
 
 openNewExam() {
@@ -387,10 +418,14 @@ this.api.getStudents(q).subscribe(list => this.studentResults.set(list.slice(0, 
 generateClass() {
 this.error.set('');
 this.message.set('');
-this.api.generateExamCodes(this.selectedExam()!.id, {
-track: this.classForm.track || undefined,
-year: this.classForm.year || undefined
-}).subscribe({
+const payload: any = {};
+if (this.classForm.filterMode === 'class') {
+  payload.parallel = this.classForm.parallel || undefined;
+} else {
+  payload.track = this.classForm.track || undefined;
+  payload.year = this.classForm.year || undefined;
+}
+this.api.generateExamCodes(this.selectedExam()!.id, payload).subscribe({
 next: (r) => {
 this.message.set(`הופקו ברקודים ל-${r.created} תלמידות. פותח חלון הדפסה...`);
 this.printClassCodes(this.selectedExam()!.name);

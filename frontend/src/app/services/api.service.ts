@@ -137,6 +137,7 @@ export class ApiService {
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
   updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
