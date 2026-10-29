@@ -50,7 +50,11 @@ template: `
 <label>שם המבחן *</label>
 <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'">
 </div>
-<div class="form-row">
+<div class="filter-mode-toggle" style="margin:8px 0 10px;">
+<button [class.active]="newExam.filterMode==='track'" (click)="newExam.filterMode='track'; newExam.parallel='' ">לפי מסלול ושנה</button>
+<button [class.active]="newExam.filterMode==='class'" (click)="newExam.filterMode='class'; newExam.track=''; newExam.year=''">לפי כיתה (מקבילה)</button>
+</div>
+<div *ngIf="newExam.filterMode==='track'" class="form-row">
 <div class="form-group">
 <label>מסלול (אופציונלי)</label>
 <select [(ngModel)]="newExam.track">
@@ -66,6 +70,14 @@ template: `
 </select>
 </div>
 </div>
+<div *ngIf="newExam.filterMode==='class'" class="form-group">
+<label>בחרי כיתה (אופציונלי)</label>
+<select [(ngModel)]="newExam.parallel">
+<option value="">כל הכיתות</option>
+<option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }} תלמידות)</option>
+</select>
+</div>
+<p class="hint">בחירת המסלול והשנה או הכיתה תגדיר לאילו תלמידות יופק ברקוד למבחן הזה.</p>
 <div class="form-group">
 <label>תאריך (אופציונלי)</label>
 <input type="date" [(ngModel)]="newExam.exam_date">
@@ -77,74 +89,12 @@ template: `
 </div>
 </div>
 
-<!-- הפקת ברקודים למבחן שנבחר -->
+<!-- פרטים למבחן שנבחר -->
 <div class="card" *ngIf="selectedExam()">
-<div class="section-title"> הפקת ברקודים — {{ selectedExam()?.name }}
+<div class="section-title">{{ selectedExam()?.name }}
 <button class="btn btn-ghost" (click)="exportGradesCsv()" style="margin-right:auto; font-size:0.78rem; padding:4px 12px;">ייצוא ציונים</button>
 </div>
-
-<div class="mode-toggle" style="margin-bottom:14px;">
-<button [class.active]="printMode()==='class'" (click)="printMode.set('class')"> לכיתה / מסלול</button>
-<button [class.active]="printMode()==='personal'" (click)="printMode.set('personal')">‍ ברקוד אישי לתלמידה</button>
-</div>
-
-<!-- הפקה לכיתה -->
-<div *ngIf="printMode()==='class'">
-<p class="mode-desc">הפקת ברקוד אישי לכל תלמידה במסלול/שנה/כיתה שתבחרי, עבור המבחן הזה.</p>
-
-<!-- מצב סינון: מסלול או כיתה -->
-<div class="filter-mode-toggle" style="margin-bottom:10px;">
-  <button [class.active]="classForm.filterMode==='track'" (click)="classForm.filterMode='track'; classForm.parallel=null">לפי מסלול ושנה</button>
-  <button [class.active]="classForm.filterMode==='class'" (click)="classForm.filterMode='class'; classForm.track=null; classForm.year=null">לפי כיתה (מקבילה)</button>
-</div>
-
-<!-- סינון לפי מסלול ושנה -->
-<div *ngIf="classForm.filterMode==='track'" class="form-row">
-<div class="form-group">
-<label>מסלול</label>
-<select [(ngModel)]="classForm.track">
-<option [ngValue]="null">כל המסלולים</option>
-<option *ngFor="let t of trackOptions()" [ngValue]="t">{{ t }}</option>
-</select>
-</div>
-<div class="form-group">
-<label>שנה</label>
-<select [(ngModel)]="classForm.year">
-<option [ngValue]="null">כל השנים</option>
-<option *ngFor="let y of yearOptions()" [ngValue]="y">{{ toStudyYear(y) }}</option>
-</select>
-</div>
-</div>
-
-<!-- סינון לפי כיתה (מקבילה/class_name) -->
-<div *ngIf="classForm.filterMode==='class'" class="form-group">
-<label>בחרי כיתה</label>
-<select [(ngModel)]="classForm.parallel">
-  <option [ngValue]="null">— בחרי כיתה —</option>
-  <option *ngFor="let c of classOptions()" [ngValue]="c.parallel">
-    {{ c.label }} ({{ c.count }} תלמידות)
-  </option>
-</select>
-</div>
-
-<button class="btn btn-primary" style="width:100%;" [disabled]="classForm.filterMode==='class' && !classForm.parallel" (click)="generateClass()"> הפקה והדפסה לכיתה</button>
-</div>
-
-<!-- הפקה אישית -->
-<div *ngIf="printMode()==='personal'">
-<p class="mode-desc">התלמידה מקבלת בתחילת התקופה דף ובו ברקוד לכל אחד מהמבחנים, ומדביקה ברקוד על כל מבחן.</p>
-<div class="form-group">
-<label>חיפוש תלמידה</label>
-<input [(ngModel)]="studentQuery" (input)="searchStudents()" placeholder="שם או ת.ז...">
-</div>
-<div class="student-results" *ngIf="studentResults().length">
-<div *ngFor="let s of studentResults()" class="student-result-row" (click)="generatePersonal(s)">
-<strong>{{ s.name }}</strong>
-<span>{{ s.id_number }} · {{ s.track }}{{ s.year ? ' ' + toStudyYear(s.year) : '' }}</span>
-</div>
-</div>
-<p class="hint">לחצי על תלמידה כדי להפיק לה דף ברקודים לכל המבחנים הפעילים.</p>
-</div>
+<p class="mode-desc">ברקודים נוצרו מראש לפי המסלול והשנה או הכיתה שנבחרו בעת יצירת המבחן. אין צורך להפיק אותם שוב.</p>
 
 <p *ngIf="message()" class="hint" style="color:var(--primary); font-weight:600;">{{ message() }}</p>
 <p *ngIf="error()" class="hint" style="color:var(--danger); font-weight:600;">{{ error() }}</p>
@@ -263,7 +213,7 @@ printMode = signal<'class' | 'personal'>('class');
 message = signal('');
 error = signal('');
 
-newExam = { name: '', track: '', year: '', exam_date: '' };
+newExam: { name: string; track: string; year: string; exam_date: string; filterMode: 'track' | 'class'; parallel: string } = { name: '', track: '', year: '', exam_date: '', filterMode: 'track', parallel: '' };
 classForm: { track: string | null; year: string | null; parallel: string | null; filterMode: 'track' | 'class' } = { track: null, year: null, parallel: null, filterMode: 'track' };
 studentQuery = '';
 studentResults = signal<any[]>([]);
@@ -339,19 +289,36 @@ classOptions(): { parallel: string; label: string; count: number }[] {
 }
 
 openNewExam() {
-this.newExam = { name: '', track: '', year: '', exam_date: '' };
+this.newExam = { name: '', track: '', year: '', exam_date: '', filterMode: 'track', parallel: '' };
+this.error.set('');
 this.creating.set(true);
 }
 
 saveExam() {
 if (!this.newExam.name.trim()) return;
-this.api.createExam({
+this.error.set('');
+const examData: any = {
 name: this.newExam.name.trim(),
-track: this.newExam.track.trim() || undefined,
-year: this.newExam.year.trim() || undefined,
 exam_date: this.newExam.exam_date || undefined
-}).subscribe({
-next: () => { this.creating.set(false); this.loadExams(); },
+};
+if (this.newExam.filterMode === 'class') {
+examData.parallel = this.newExam.parallel || undefined;
+} else {
+examData.track = this.newExam.track.trim() || undefined;
+examData.year = this.newExam.year.trim() || undefined;
+}
+this.api.createExam(examData).subscribe({
+next: (result) => {
+this.creating.set(false);
+this.loadExams();
+this.api.generateExamCodes(result.id, examData.parallel ? { parallel: examData.parallel } as any : { track: examData.track, year: examData.year }).subscribe({
+next: (r) => {
+this.message.set(`המבחן נשמר ונוצרו ברקודים ל-${r.created} תלמידות.`);
+this.loadExams();
+},
+error: (e) => this.error.set(e.error?.error || 'המבחן נשמר, אבל יצירת הברקודים נכשלה')
+});
+},
 error: (e) => this.error.set(e.error?.error || 'שמירה נכשלה')
 });
 }
