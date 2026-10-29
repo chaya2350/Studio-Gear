@@ -51,7 +51,7 @@ import { filter, takeUntil } from 'rxjs/operators';
       </div>
       <!-- חיפוש גלובלי -->
       <div class="global-search" (click)="$event.stopPropagation()">
-        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש תלמידה, מורה, ציוד, קוד או ברקוד...">
+        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש חופשי"/>
         <div class="search-results" *ngIf="searchResults">
           <div *ngIf="searchResults.students.length" class="search-group">
             <div class="search-group-title">תלמידות</div>
@@ -379,7 +379,14 @@ export class App implements OnInit {
 
     if (q.length < 2) { this.searchResults = null; return; }
     this.searchTimer = setTimeout(() => {
-      this.api.globalSearch(q).subscribe(r => this.searchResults = r);
+      this.api.globalSearch(q).subscribe((r) => {
+        this.searchResults = {
+          students: r?.students ?? [],
+          equipment: r?.equipment ?? [],
+          examCodes: r?.examCodes ?? [],
+          teachers: r?.teachers ?? [],
+        };
+      });
     }, 250);
   }
 

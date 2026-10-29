@@ -89,7 +89,7 @@ template: `
 <div *ngFor="let p of pages()" class="page-row" (click)="openPage(p)">
 <div class="page-row-info">
 <strong>{{ p.title }}</strong>
-<span>נוצר ע"י {{ p.creator_name }} · {{ p.created_at?.slice(0, 10) }}</span>
+<span>נוצר ע"י {{ p.creator_name }} · {{ p.created_at.slice(0, 10) }}</span>
 </div>
 <div class="page-row-badges">
 <span class="badge" [class.public-badge]="p.visibility === 'public'" [class.private-badge]="p.visibility === 'private'">

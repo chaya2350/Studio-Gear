@@ -129,9 +129,10 @@ export class TeacherSearchComponent {
     this.selected.set(null);
     if (value.length < 2) { this.suggestions.set([]); return; }
     this.api.getTeachers(value).subscribe((teachers) => {
-      this.suggestions.set(teachers.slice(0, 8));
-      if (teachers.length) {
-        this.selected.set(teachers[0]);
+      const list = Array.isArray(teachers) ? teachers : [];
+      this.suggestions.set(list.slice(0, 8));
+      if (list.length) {
+        this.selected.set(list[0]);
       }
     });
   }
