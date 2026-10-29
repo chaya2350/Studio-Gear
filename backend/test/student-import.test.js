@@ -3,6 +3,11 @@ const assert = require('node:assert/strict');
 const XLSX = require('xlsx');
 const { parseStudentWorkbook, canonicalTrackValue } = require('../student-import');
 
+test('keeps הוראה distinct from הוראה מתקנת when normalizing imported track values', () => {
+  assert.equal(canonicalTrackValue('הוראה'), 'הוראה');
+  assert.equal(canonicalTrackValue('הוראה מתקנת'), 'הוראה מתקנת');
+});
+
 function setCell(sheet, address, value) {
   sheet[address] = { t: typeof value === 'number' ? 'n' : 's', v: value };
 }

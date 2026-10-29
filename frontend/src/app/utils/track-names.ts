@@ -8,7 +8,6 @@ export function splitTrackNames(value: string | null | undefined): string[] {
     .map((part) => {
       const normalized = part.replace(/\s+/g, '').toLocaleLowerCase();
       if (normalized === 'יעוץמס' || normalized === 'ללאמיסים') return 'ייעוץ מס';
-      if (normalized === 'הוראה') return 'הוראה מתקנת';
       if (normalized === 'הנדסתחשמל' || normalized === 'אנרגיה') return 'הנדסת אנרגיה';
       return part;
     })
