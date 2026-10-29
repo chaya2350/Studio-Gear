@@ -2111,7 +2111,10 @@ app.get('/api/exams/:id/template', (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
   if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
   const tmpl = db.prepare('SELECT * FROM exam_templates WHERE exam_id=?').get(req.params.id);
-  res.json(tmpl || { exam_id: Number(req.params.id), template_type: 'open', questions: [] });
+  if (!tmpl) return res.json({ exam_id: Number(req.params.id), template_type: 'open', questions: [] });
+  let questions = [];
+  try { questions = JSON.parse(tmpl.questions || '[]'); } catch { questions = []; }
+  res.json({ ...tmpl, questions });
 });
 
 app.put('/api/exams/:id/template', (req, res) => {

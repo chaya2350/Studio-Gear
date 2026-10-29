@@ -151,7 +151,9 @@ export class ExamEditorComponent implements OnInit {
           next: (tmpl) => {
             const type = tmpl.template_type || 'open';
             this.templateType.set(type);
-            const qs = Array.isArray(tmpl.questions) ? tmpl.questions : [];
+            let rawQs = tmpl.questions;
+            if (typeof rawQs === 'string') { try { rawQs = JSON.parse(rawQs); } catch { rawQs = []; } }
+            const qs = Array.isArray(rawQs) ? rawQs : [];
             if (type === 'multiple_choice') {
               this.mcQuestions.set(qs.map((q: any) => ({
                 text: q.text || '',

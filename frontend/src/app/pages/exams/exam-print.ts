@@ -235,8 +235,11 @@ export class ExamPrintComponent implements OnInit {
     };
 
     const renderQuestionsHtml = (tmpl: any | null): string => {
-      if (!tmpl || !Array.isArray(tmpl.questions) || tmpl.questions.length === 0) return '';
-      return tmpl.questions.map((q: any, i: number) => renderQuestion(q, i, tmpl.template_type)).join('');
+      if (!tmpl) return '';
+      let qs = tmpl.questions;
+      if (typeof qs === 'string') { try { qs = JSON.parse(qs); } catch { qs = []; } }
+      if (!Array.isArray(qs) || qs.length === 0) return '';
+      return qs.map((q: any, i: number) => renderQuestion(q, i, tmpl.template_type)).join('');
     };
 
     const questionsHtml = barcodesOnly ? '' : renderQuestionsHtml(template);
