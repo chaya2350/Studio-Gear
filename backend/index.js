@@ -2259,13 +2259,43 @@ function encodeExamCode(examId, idNumber) {
   return `EX${examId}-${idNumber}`;
 }
 
+// רשימת כיתות (מקבילות) ייחודיות לסינון בהפקת מבחנים
+app.get('/api/students/classes', (req, res) => {
+  const rows = db.prepare('SELECT extra_data, track, year FROM students WHERE extra_data IS NOT NULL').all();
+  const result = new Map(); // key: "track|year|class" → count
+  for (const row of rows) {
+    let extra = {};
+    try { extra = JSON.parse(row.extra_data || '{}'); } catch {}
+    const kita = String(extra['מקבילה'] || '').trim();
+    if (!kita || kita === '0') continue;
+    const key = `${row.track || ''}|${row.year || ''}|${kita}`;
+    result.set(key, (result.get(key) || 0) + 1);
+  }
+  const list = [...result.entries()].map(([k, count]) => {
+    const [track, year, class_num] = k.split('|');
+    return { track, year, class_num, count };
+  }).sort((a, b) => a.year.localeCompare(b.year) || a.class_num.localeCompare(b.class_num));
+  res.json(list);
+});
+
 app.post('/api/exams/:id/codes', (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
   if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
-  const { track, year, id_number } = req.body || {};
+  const { track, year, id_number, class_num } = req.body || {};
   let students;
   if (id_number) {
     students = db.prepare('SELECT * FROM students WHERE id_number = ?').all(String(id_number));
+  } else if (class_num) {
+    // סינון לפי כיתה (מקבילה) מתוך extra_data
+    let all = db.prepare('SELECT * FROM students ORDER BY name').all();
+    if (year) all = all.filter(s => s.year === String(year));
+    if (track) all = all.filter(s => studentHasTrack(s.track, track));
+    students = all.filter(s => {
+      try {
+        const extra = JSON.parse(s.extra_data || '{}');
+        return String(extra['מקבילה'] || '').trim() === String(class_num);
+      } catch { return false; }
+    });
   } else {
     const conds = [];
     const params = [];
@@ -2273,6 +2303,7 @@ app.post('/api/exams/:id/codes', (req, res) => {
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
     if (track) students = students.filter((student) => studentHasTrack(student.track, track));
+  }
   }
   if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
   const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
