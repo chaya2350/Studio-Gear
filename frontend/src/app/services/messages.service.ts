@@ -30,12 +30,14 @@ export interface DirectMessage {
 export interface PersonalTask {
   id: number;
   user_id: number;
-  source_message_id: number;
+  source_message_id: number | null;
   title: string;
   due_date: string;
   completed: boolean;
   completed_at: string | null;
   created_at: string;
+  visibility: 'private' | 'public';
+  creator_name?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -75,5 +77,17 @@ export class MessagesService {
 
   setTaskCompleted(taskId: number, completed: boolean): Observable<{ success: boolean }> {
     return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/completion`, { completed });
+  }
+
+  createTask(title: string, due_date: string, visibility: 'private' | 'public'): Observable<PersonalTask> {
+    return this.http.post<PersonalTask>('/api/tasks', { title, due_date, visibility });
+  }
+
+  rescheduleTask(taskId: number, due_date: string): Observable<{ success: boolean }> {
+    return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/due-date`, { due_date });
+  }
+
+  deleteTask(taskId: number): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(`/api/tasks/${taskId}`);
   }
 }
