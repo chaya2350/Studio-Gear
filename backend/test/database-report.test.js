@@ -42,6 +42,14 @@ test('buildClassReport normalizes year A/B into H/V for class matching and displ
   assert.equal(report.year, 'ה');
   assert.equal(report.rows.length, 1);
   assert.equal(report.rows[0].id_number, '111');
+  assert.equal(report.rows[0].class_name, 'ה2');
+});
+
+test('buildClassName normalizes imported year and parallel into the displayed class name', () => {
+  const { buildClassName } = require('../database-report');
+  assert.equal(buildClassName('ב', '1'), 'ו1');
+  assert.equal(buildClassName('ו', 'מקבילה 1'), 'ו1');
+  assert.equal(buildClassName('ו', '1׳'), 'ו1');
 });
 
 test('buildTrackReport filters students by track and year and hides phone fields', () => {
@@ -81,6 +89,7 @@ test('buildClassReport includes only the selected class plus its parallel and re
   const report = buildClassReport(students, exams, grades, 'יב2');
 
   assert.equal(report.class_name, 'יב2');
+  assert.equal(report.rows[0].class_name, 'יב2');
   assert.equal(report.exams.length, 1);
   assert.equal(report.exams[0].name, 'מבחן עברית');
   assert.equal(report.students.length, 1);
