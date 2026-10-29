@@ -1,26 +1,22 @@
 @echo off
 setlocal
-title Studio Gear - Shared Server
+set "ROOT=%~dp0"
 
-cd /d "%~dp0frontend"
+cd /d "%ROOT%frontend"
 if errorlevel 1 goto directory_error
 
 echo Building the frontend...
 call npm run build
 if errorlevel 1 goto build_error
 
-cd /d "%~dp0backend"
-if errorlevel 1 goto directory_error
+echo.
+echo Starting Studio Gear backend in a separate window...
+start "" "%ComSpec%" /k "cd /d ""%ROOT%backend"" && set NODE_ENV=development && node index.js"
 
-set "NODE_ENV=development"
+echo Backend started in a new terminal window.
+echo Keep that window open while the system is in use.
 echo.
-echo Starting Studio Gear server on port 3000...
-echo Keep this window open while others use the system.
-node index.js
-echo.
-echo The server has stopped.
-pause
-exit /b
+exit /b 0
 
 :build_error
 echo.

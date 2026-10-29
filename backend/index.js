@@ -11,6 +11,8 @@ const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-u
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
+const { getWeekStart, addDays, collectTeacherUpcomingLessons } = require('./teacher-profile');
+const { buildGlobalSearchResult } = require('./search-utils');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -270,8 +272,11 @@ const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) =
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
 
 // Migration: student photo
-const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
-if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
+const studentsTableExists = !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='students'").get();
+if (studentsTableExists) {
+  const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+  if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
+}
 // Migration: source_message_id — הפיכה ל-nullable (לאפשר משימות ישירות ללא הודעה)
 // SQLite לא תומך ב-ALTER COLUMN, לכן נבצע recreate אם source_message_id עדיין NOT NULL
 const srcCol = db.prepare('PRAGMA table_info(personal_tasks)').all().find(c => c.name === 'source_message_id');
@@ -1095,19 +1100,28 @@ app.get('/api/students', (req, res) => {
   res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
 });
 
-// חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
+// חיפוש גלובלי: תלמידות, מורות, ציוד וקודי מבחן בקריאה אחת
 app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], pages: [] });
   const like = `%${q}%`;
-  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
-  const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
-  const examCodes = db.prepare(`
-    SELECT c.code, e.name AS exam_name, s.name AS student_name
-    FROM exam_codes c JOIN exams e ON e.id = c.exam_id JOIN students s ON s.id_number = c.id_number
-    WHERE c.code LIKE ? LIMIT 5
-  `).all(like);
-  res.json({ students, equipment, examCodes });
+  const students = q.length >= 2
+    ? db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow)
+    : [];
+  const equipment = q.length >= 2
+    ? db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like)
+    : [];
+  const examCodes = q.length >= 2
+    ? db.prepare(`
+        SELECT c.code, e.name AS exam_name, s.name AS student_name
+        FROM exam_codes c JOIN exams e ON e.id = c.exam_id JOIN students s ON s.id_number = c.id_number
+        WHERE c.code LIKE ? LIMIT 5
+      `).all(like)
+    : [];
+  const teachers = q.length >= 2
+    ? db.prepare('SELECT id, name, subject, email, phone FROM teachers WHERE name LIKE ? OR subject LIKE ? OR email LIKE ? LIMIT 5').all(like, like, like)
+    : [];
+
+  res.json(buildGlobalSearchResult({ q, students, equipment, examCodes, teachers }));
 });
 
 // סיכום דרישות לכל התלמידות בקריאה אחת — לטבלת Excel
@@ -2588,14 +2602,6 @@ function encodeAttendanceCode(teacherId, classYear, classParallel, date) {
   return `ATT-T${teacherId}-${classYear}${classParallel}-${date}`;
 }
 
-// Helper: get monday (ראשון) of a week containing a date (Israel week starts Sunday)
-function getWeekStart(dateStr) {
-  const d = new Date(dateStr);
-  const day = d.getDay(); // 0=Sun
-  d.setDate(d.getDate() - day);
-  return d.toISOString().split('T')[0];
-}
-
 function getLastNameFromName(name = '') {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : '';
@@ -2611,8 +2617,55 @@ function compareByLastName(a, b) {
 
 // ── Teachers CRUD ──────────────────────────────────────────────
 app.get('/api/teachers', (req, res) => {
-  const teachers = db.prepare('SELECT * FROM teachers ORDER BY name').all();
+  const q = String(req.query.q || '').trim();
+  const sql = q
+    ? 'SELECT * FROM teachers WHERE name LIKE ? OR subject LIKE ? OR email LIKE ? ORDER BY name LIMIT 20'
+    : 'SELECT * FROM teachers ORDER BY name';
+  const params = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
+  const teachers = db.prepare(sql).all(...params);
   res.json(teachers);
+});
+
+app.get('/api/teachers/me', (req, res) => {
+  const candidates = [
+    db.prepare('SELECT * FROM teachers WHERE lower(name) = lower(?)').get(req.user.name),
+    db.prepare('SELECT * FROM teachers WHERE lower(email) = lower(?)').get(String(req.user.email || '').trim()),
+    db.prepare('SELECT * FROM teachers WHERE lower(name) = lower(?)').get(String(req.user.name || '').split(' ').slice(-2).join(' '))
+  ].filter(Boolean);
+
+  const teacher = candidates[0] || db.prepare('SELECT * FROM teachers WHERE lower(name) LIKE ? ORDER BY name LIMIT 1').get(`%${String(req.user.name || '').trim()}%`);
+  if (!teacher) return res.status(404).json({ error: 'לא נמצאה מורה מתאימה לחשבון הזה' });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = getWeekStart(today);
+  const slots = db.prepare(`
+    SELECT s.*, t.subject AS teacher_subject
+    FROM schedule_slots s
+    JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.teacher_id = ? AND s.week_start BETWEEN ? AND ?
+    ORDER BY s.week_start, s.day_of_week, s.start_time
+  `).all(teacher.id, weekStart, addDays(weekStart, 7));
+
+  const lessons = collectTeacherUpcomingLessons(slots, today);
+  res.json({ teacher, lessons, week_start: weekStart });
+});
+
+app.get('/api/teachers/:id', (req, res) => {
+  const teacher = db.prepare('SELECT * FROM teachers WHERE id = ?').get(req.params.id);
+  if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = getWeekStart(today);
+  const slots = db.prepare(`
+    SELECT s.*, t.subject AS teacher_subject
+    FROM schedule_slots s
+    JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.teacher_id = ? AND s.week_start BETWEEN ? AND ?
+    ORDER BY s.week_start, s.day_of_week, s.start_time
+  `).all(teacher.id, weekStart, addDays(weekStart, 7));
+
+  const lessons = collectTeacherUpcomingLessons(slots, today);
+  res.json({ teacher, lessons, week_start: weekStart });
 });
 
 app.post('/api/teachers', (req, res) => {
@@ -3115,8 +3168,8 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
         })] || wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-    const insert = db.prepare('INSERT OR IGNORE INTO teachers (name, subject, phone, email, active) VALUES (?, ?, ?, ?, 1)');
-    const update = db.prepare('UPDATE teachers SET subject=?, phone=?, email=? WHERE name=?');
+    const insert = db.prepare('INSERT OR IGNORE INTO teachers (name, subject, phone, email, specialization, active) VALUES (?, ?, ?, ?, ?, 1)');
+    const update = db.prepare('UPDATE teachers SET subject=?, phone=?, email=?, specialization=? WHERE name=?');
 
     const normalizeHeaderKey = (key) => String(key ?? '')
       .trim()
@@ -3158,13 +3211,14 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
         const subject = String(getValue(row, ['תפקיד', 'מקצוע', 'subject', 'role', 'תפקיד מורה'])).trim().replace(/\s+/g, ' ') || null;
         const phone = String(getValue(row, ['טלפון', 'phone', 'מספר טלפון'])).trim() || null;
         const email = String(getValue(row, ['מייל', 'email', 'אימייל', 'mail'])).trim() || null;
+        const specialization = String(getValue(row, ['התמחות', 'specialization', 'מגמה', 'תחום', 'התמחות 1', 'התמחות 2'])).trim().replace(/\s+/g, ' ') || null;
 
         const existing = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
         if (existing) {
-          if (subject || phone || email) update.run(subject, phone, email, name);
+          if (subject || phone || email || specialization) update.run(subject, phone, email, specialization, name);
           skipped++;
         } else {
-          insert.run(name, subject, phone, email);
+          insert.run(name, subject, phone, email, specialization);
           imported++;
         }
       }
@@ -3414,5 +3468,13 @@ if (useHttps) {
     .on('error', (e) => console.log(`HTTP redirect disabled: ${e.message}`))
     .listen(redirectPort);
 } else {
-  app.listen(port, () => console.log(`Backend running on port ${port} (HTTP, not encrypted)`));
+  app.listen(port, () => console.log(`Backend running on port ${port} (HTTP, not encrypted)`))
+    .on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        console.error(`שגיאה: פורט ${port} כבר תפוס. ייתכן שהשרת כבר רץ.\nסגרי את התהליך הקודם ונסי שוב.`);
+      } else {
+        console.error('שגיאה בהפעלת השרת:', e.message);
+      }
+      process.exit(1);
+    });
 }

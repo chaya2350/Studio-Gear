@@ -2,6 +2,7 @@ import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AuthService, UserRole } from '../../services/auth.service';
 import { TracksComponent } from '../tracks/tracks';
@@ -18,7 +19,7 @@ created_at: string;
 
 @Component({
 selector: 'app-admin',
-imports: [CommonModule, FormsModule, TracksComponent],
+imports: [CommonModule, FormsModule, TracksComponent, RouterLink],
 template: `
 <div class="page-header">
 <div>
@@ -344,7 +345,7 @@ class="section-tab"
         <ng-container *ngIf="editingTeacherId() !== t.id">
           <div class="teacher-color-dot" [style.background]="teacherColor(t.id)"></div>
           <div class="teacher-list-info">
-            <strong>{{ t.name }}</strong>
+            <a [routerLink]="['/teachers', t.id]" class="teacher-link"><strong>{{ t.name }}</strong></a>
             <span *ngIf="t.subject" class="teacher-meta">{{ t.subject }}</span>
             <span *ngIf="t.email" class="teacher-meta">{{ t.email }}</span>
             <span *ngIf="t.phone" class="teacher-meta">{{ t.phone }}</span>

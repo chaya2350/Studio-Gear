@@ -50,12 +50,18 @@ import { filter, takeUntil } from 'rxjs/operators';
       </div>
       <!-- חיפוש גלובלי -->
       <div class="global-search" (click)="$event.stopPropagation()">
-        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש תלמידה, ציוד, קוד או ברקוד...">
+        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש תלמידה, מורה, ציוד, קוד או ברקוד...">
         <div class="search-results" *ngIf="searchResults">
           <div *ngIf="searchResults.students.length" class="search-group">
             <div class="search-group-title">תלמידות</div>
             <a *ngFor="let s of searchResults.students" [routerLink]="['/students', s.id_number]" (click)="clearSearch()">
               {{ s.name }} — {{ s.id_number }}
+            </a>
+          </div>
+          <div *ngIf="searchResults.teachers.length" class="search-group">
+            <div class="search-group-title">מורות</div>
+            <a *ngFor="let t of searchResults.teachers" [routerLink]="['/teachers', t.id]" (click)="clearSearch()">
+              {{ t.name }} — {{ t.subject || 'מורה' }}
             </a>
           </div>
           <div *ngIf="searchResults.equipment.length" class="search-group">
@@ -70,7 +76,7 @@ import { filter, takeUntil } from 'rxjs/operators';
               {{ searchResults.examCodes[0].code }} — {{ searchResults.examCodes[0].student_name }}
             </a>
           </div>
-          <p *ngIf="!searchResults.students.length && !searchResults.equipment.length && !searchResults.examCodes.length" class="search-empty">לא נמצאו תוצאות</p>
+          <p *ngIf="!searchResults.students.length && !searchResults.teachers.length && !searchResults.equipment.length && !searchResults.examCodes.length" class="search-empty">לא נמצאו תוצאות</p>
         </div>
       </div>
       <div class="account-actions" *ngIf="auth.user() as user">
@@ -348,7 +354,7 @@ export class App implements OnInit {
   grantedCount = 0;
   private destroy$ = new Subject<void>();
   searchQuery = '';
-  searchResults: { students: any[]; equipment: any[]; examCodes: any[] } | null = null;
+  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[] } | null = null;
   private searchTimer: any;
 
   toggleNotifications() {

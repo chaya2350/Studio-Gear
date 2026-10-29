@@ -827,8 +827,10 @@ export class HomeComponent implements OnInit {
   readonly modules = [
     { link: '/equipment',          title: 'השאלת ציוד',    desc: 'ניהול ציוד והשאלות',       badge: 0, group: '' },
     { link: '/students',           title: 'תלמידות',       desc: 'פרטים אישיים והיסטוריה',    badge: 0, group: '' },
+    { link: '/teachers/search',    title: 'חיפוש מורה',    desc: 'מורה לפי שם עם השלמה אוטומטית', badge: 0, group: '' },
     { link: '/approvals',          title: 'אישורים',       desc: 'הפקת אישורי נוכחות',        badge: 0, group: '' },
     { link: '/exams',              title: 'מבחנים',        desc: 'ברקודים ורישום ציונים',      badge: 0, group: '' },
+    { link: '/teacher/me',         title: 'איזור אישי',    desc: 'פרטי המורה והשיעורים השבועיים', badge: 0, group: '' },
     { link: '/schedule',           title: 'מערכת שעות', desc: 'ניהול שיעורים שבועיים',      badge: 0, group: 'attendance' },
     { link: '/attendance/print',   title: 'דפי נוכחות', desc: 'הדפסת דפים שבועיים',         badge: 0, group: 'attendance' },
     { link: '/attendance/scan',    title: 'רישום נוכחות',desc: 'סריקת ברקוד שיעור',          badge: 0, group: 'attendance' },

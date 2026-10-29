@@ -124,6 +124,18 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },
       {
+        path: 'teacher/me',
+        loadComponent: () => import('./pages/teacher-profile/teacher-profile').then((m) => m.TeacherProfileComponent),
+      },
+      {
+        path: 'teachers/search',
+        loadComponent: () => import('./pages/teacher-search/teacher-search').then((m) => m.TeacherSearchComponent),
+      },
+      {
+        path: 'teachers/:id',
+        loadComponent: () => import('./pages/teacher-profile/teacher-profile').then((m) => m.TeacherProfileComponent),
+      },
+      {
         path: 'schedule',
         loadComponent: () => import('./pages/schedule/schedule').then((m) => m.ScheduleComponent),
       },
