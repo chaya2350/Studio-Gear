@@ -91,12 +91,20 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/exams/exams').then((m) => m.ExamsComponent),
       },
       {
-        path: 'database',
-        loadComponent: () => import('./pages/database/database').then((m) => m.DatabaseComponent),
-      },
-      {
         path: 'exams/scan',
         loadComponent: () => import('./pages/exams/exam-scan').then((m) => m.ExamScanComponent),
+      },
+      {
+        path: 'exams/:id/edit',
+        loadComponent: () => import('./pages/exams/exam-editor').then((m) => m.ExamEditorComponent),
+      },
+      {
+        path: 'exams/:id/print',
+        loadComponent: () => import('./pages/exams/exam-print').then((m) => m.ExamPrintComponent),
+      },
+      {
+        path: 'database',
+        loadComponent: () => import('./pages/database/database').then((m) => m.DatabaseComponent),
       },
       {
         path: 'pages',

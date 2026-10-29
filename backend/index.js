@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -193,6 +193,32 @@ db.exec(`
     UNIQUE (user_id, source_message_id)
   );
   CREATE INDEX IF NOT EXISTS personal_tasks_user_due_idx ON personal_tasks(user_id, due_date);
+  CREATE TABLE IF NOT EXISTS user_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_type TEXT NOT NULL CHECK (item_type IN ('student', 'equipment')),
+    item_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, item_type, item_id)
+  );
+  CREATE TABLE IF NOT EXISTS staff_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_type TEXT NOT NULL CHECK (item_type IN ('student', 'equipment')),
+    item_id TEXT NOT NULL,
+    body TEXT NOT NULL CHECK (length(body) <= 2000),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS staff_notes_item_idx ON staff_notes(item_type, item_id, created_at DESC);
+  CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS activity_log_created_idx ON activity_log(created_at DESC);
   CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -482,6 +508,88 @@ app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, r
   });
 });
 
+function logActivity(userId, action, itemType, itemId, details = '') {
+  db.prepare('INSERT INTO activity_log (user_id, action, item_type, item_id, details) VALUES (?, ?, ?)')
+    .run(userId || null, action, itemType, String(itemId), String(details).slice(0, 500));
+}
+
+app.get('/api/activity', (req, res) => {
+  const rows = db.prepare(`
+    SELECT a.id, a.action, a.item_type, a.item_id, a.details, a.created_at, u.name AS user_name
+    FROM activity_log a LEFT JOIN users u ON u.id = a.user_id
+    ORDER BY a.created_at DESC, a.id DESC LIMIT 50
+  `).all();
+  res.json(rows);
+});
+
+app.get('/api/favorites', (req, res) => {
+  res.json(db.prepare('SELECT item_type, item_id, created_at FROM user_favorites WHERE user_id = ? ORDER BY created_at DESC')
+    .all(req.user.id));
+});
+
+app.post('/api/favorites', (req, res) => {
+  const itemType = req.body?.item_type;
+  const itemId = String(req.body?.item_id ?? '').trim();
+  if (!['student', 'equipment'].includes(itemType) || !itemId || itemId.length > 100) {
+    return res.status(400).json({ error: 'פרטי המועדף אינם תקינים' });
+  }
+  const exists = itemType === 'student'
+    ? db.prepare('SELECT 1 FROM students WHERE id_number = ?').get(itemId)
+    : db.prepare('SELECT 1 FROM equipment WHERE id = ?').get(Number(itemId));
+  if (!exists) return res.status(404).json({ error: 'הפריט לא נמצא' });
+  db.prepare('INSERT OR IGNORE INTO user_favorites (user_id, item_type, item_id) VALUES (?, ?, ?)')
+    .run(req.user.id, itemType, itemId);
+  res.status(201).json({ success: true });
+});
+
+app.delete('/api/favorites/:item_type/:item_id', (req, res) => {
+  db.prepare('DELETE FROM user_favorites WHERE user_id = ? AND item_type = ? AND item_id = ?')
+    .run(req.user.id, req.params.item_type, req.params.item_id);
+  res.json({ success: true });
+});
+
+app.get('/api/notes', (req, res) => {
+  const itemType = String(req.query.item_type || '');
+  const itemId = String(req.query.item_id || '').trim();
+  if (!['student', 'equipment'].includes(itemType) || !itemId) return res.status(400).json({ error: 'יש לבחור פריט' });
+  res.json(db.prepare(`
+    SELECT n.id, n.item_type, n.item_id, n.body, n.created_at, u.name AS author_name
+    FROM staff_notes n JOIN users u ON u.id = n.user_id
+    WHERE n.item_type = ? AND n.item_id = ? ORDER BY n.created_at DESC, n.id DESC LIMIT 100
+  `).all(itemType, itemId));
+});
+
+app.post('/api/notes', (req, res) => {
+  const itemType = req.body?.item_type;
+  const itemId = String(req.body?.item_id ?? '').trim();
+  const body = String(req.body?.body ?? '').trim();
+  if (!['student', 'equipment'].includes(itemType) || !itemId || itemId.length > 100 || !body || body.length > 2000) {
+    return res.status(400).json({ error: 'הערה חייבת לכלול תוכן עד 2000 תווים ולהיות משויכת לפריט' });
+  }
+  const exists = itemType === 'student'
+    ? db.prepare('SELECT 1 FROM students WHERE id_number = ?').get(itemId)
+    : db.prepare('SELECT 1 FROM equipment WHERE id = ?').get(Number(itemId));
+  if (!exists) return res.status(404).json({ error: 'הפריט לא נמצא' });
+  const result = db.prepare('INSERT INTO staff_notes (user_id, item_type, item_id, body) VALUES (?, ?, ?)')
+    .run(req.user.id, itemType, itemId, body);
+  logActivity(req.user.id, 'הוסיפה הערת צוות', itemType, itemId, body.slice(0, 120));
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.get('/api/reports/loans.csv', (req, res) => {
+  const rows = db.prepare(`
+    SELECT l.id, e.name AS equipment, e.barcode, l.borrower_name, l.borrower_id_number,
+      l.borrower_phone, l.loan_date, l.expected_return, l.actual_return, l.loan_type, l.payment_status
+    FROM loans l JOIN equipment e ON e.id = l.equipment_id ORDER BY l.loan_date DESC
+  `).all();
+  const fields = ['id', 'equipment', 'barcode', 'borrower_name', 'borrower_id_number', 'borrower_phone', 'loan_date', 'expected_return', 'actual_return', 'loan_type', 'payment_status'];
+  const csvCell = value => `"${String(value ?? '').replace(/"/g, '"')}"`;
+  const csv = '\uFEFF' + [fields, ...rows.map(row => fields.map(key => row[key]))].map(row => row.map(csvCell).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="loans-report.csv"');
+  res.send(csv);
+});
+
 app.get('/api/messages/users', (req, res) => {
   res.json(db.prepare(`
     SELECT id, name, role FROM users
@@ -534,6 +642,9 @@ app.post('/api/messages', (req, res) => {
     INSERT INTO messages (sender_id, recipient_id, body, created_at)
     VALUES (?, ?, ?, ?)
   `).run(req.user.id, recipientId, body, new Date().toISOString());
+  if (/[❤️💖💕💐👏🎉🙏😊🥰]/u.test(body)) {
+    logActivity(req.user.id, 'שלחה הודעת פרגון', 'message', result.lastInsertRowid, body.slice(0, 120));
+  }
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
@@ -686,8 +797,8 @@ app.put('/api/users/:id', (req, res) => {
 app.post('/api/users/:id/password', (req, res) => {
   const id = Number(req.params.id);
   const password = req.body?.password;
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'מזהה משתמשת לא תקין' });
   if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(id)) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
-  if (id === req.user.id) return res.status(400).json({ error: 'לא ניתן לשנות כאן את הסיסמה של החשבון המחובר' });
   if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
     return res.status(400).json({ error: 'הסיסמה חייבת להכיל 12 עד 128 תווים' });
   }
@@ -1606,7 +1717,7 @@ function ensureUniqueEquipmentName(name, excludeId = null) {
   const trimmed = normalizeEquipmentName(name);
   if (!trimmed) return null;
   const existing = db.prepare(
-    'SELECT id FROM equipment WHERE lower(name) = lower(?) AND (? IS NULL OR id != ?)' 
+    'SELECT id FROM equipment WHERE lower(name) = lower(?) AND (? IS NULL OR id != ?)'
   ).get(trimmed, excludeId, excludeId);
   return existing ? 'שם הציוד כבר קיים במערכת' : null;
 }
@@ -1793,6 +1904,7 @@ app.post('/api/loans', (req, res) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(equipment_id, borrower_name, borrower_phone, borrower_id_number || null, loan_date, expected_return, notes,
         loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, 'pending', track || null, location || null);
+  logActivity(req.user.id, 'יצרה השאלת ציוד', 'equipment', equipment_id, borrower_name);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -1822,6 +1934,7 @@ app.put('/api/loans/:id/return', (req, res) => {
 
   const paymentStatus = chargeAmount > 0 ? 'charged' : 'none';
   db.prepare('UPDATE loans SET actual_return=?, payment_status=? WHERE id=?').run(today, paymentStatus, req.params.id);
+  logActivity(req.user.id, 'החזירה ציוד', 'equipment', loan.equipment_id, loan.borrower_name);
   res.json({ success: true, chargeAmount, isOverdue });
 });
 
@@ -1957,6 +2070,12 @@ db.exec(`
     exam_date TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS exam_templates (
+    exam_id INTEGER PRIMARY KEY REFERENCES exams(id) ON DELETE CASCADE,
+    template_type TEXT NOT NULL DEFAULT 'open',
+    questions TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS exam_codes (
     code TEXT PRIMARY KEY,
     exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
@@ -1993,6 +2112,32 @@ app.post('/api/exams', (req, res) => {
 
 app.delete('/api/exams/:id', (req, res) => {
   db.prepare('DELETE FROM exams WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// תבנית מבחן (שאלות)
+app.get('/api/exams/:id/template', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const tmpl = db.prepare('SELECT * FROM exam_templates WHERE exam_id=?').get(req.params.id);
+  if (!tmpl) return res.json({ exam_id: Number(req.params.id), template_type: 'open', questions: [] });
+  let questions = [];
+  try { questions = JSON.parse(tmpl.questions || '[]'); } catch { questions = []; }
+  res.json({ ...tmpl, questions });
+});
+
+app.put('/api/exams/:id/template', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const { template_type, questions } = req.body || {};
+  const type = ['multiple_choice', 'open'].includes(template_type) ? template_type : 'open';
+  let qs = [];
+  try { qs = Array.isArray(questions) ? questions : JSON.parse(questions || '[]'); } catch { qs = []; }
+  db.prepare(`
+    INSERT INTO exam_templates (exam_id, template_type, questions, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(exam_id) DO UPDATE SET template_type=excluded.template_type, questions=excluded.questions, updated_at=excluded.updated_at
+  `).run(Number(req.params.id), type, JSON.stringify(qs));
   res.json({ success: true });
 });
 

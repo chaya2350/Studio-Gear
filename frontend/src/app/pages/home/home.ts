@@ -275,6 +275,7 @@ interface DashboardStats {
       width: 188px;
       height: 188px;
       border-radius: 50%;
+      aspect-ratio: 1 / 1;
       overflow: hidden;
       border: 3px solid rgba(255,255,255,0.7);
       box-shadow: 0 8px 28px rgba(0,0,0,0.28);
@@ -764,7 +765,7 @@ interface DashboardStats {
         padding: 32px 24px 28px;
         gap: 24px;
       }
-      .hero-video-wrap { align-self: flex-start; order: -1; width: 156px; height: 156px; }
+      .hero-video-wrap { align-self: flex-start; order: -1; width: 156px; height: 156px; border-radius: 50%; aspect-ratio: 1 / 1; }
       .hero-video { width: 100%; height: 100%; }
       .hero-metrics { justify-content: flex-start; width: 100%; }
       .metric { max-width: none; padding: 12px 16px 16px; }
@@ -774,7 +775,7 @@ interface DashboardStats {
     }
 
     @media (max-width: 480px) {
-      .hero-video-wrap { width: 132px; height: 132px; }
+      .hero-video-wrap { width: 132px; height: 132px; border-radius: 50%; aspect-ratio: 1 / 1; }
       .hero-video { width: 100%; height: 100%; }
       .hero-heading { font-size: 1.65rem; }
       .hero-metrics { gap: 0; }
