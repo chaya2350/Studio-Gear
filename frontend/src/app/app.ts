@@ -14,8 +14,7 @@ import { filter, takeUntil } from 'rxjs/operators';
   selector: 'app-root',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, CommonModule, FormsModule, NotificationDrawerComponent],
   template: `
-    <nav *ngIf="currentPath !== '/login' && currentPath !== '/kiosk'" class="navbar" (click)="searchResults = null">
-      <a routerLink="/" class="brand">
+    <nav *ngIf="currentPath !== '/login' && currentPath !== '/kiosk'" class="navbar" (click)="searchResults = null">      <a routerLink="/" class="brand">
         <img src="/logo.png" class="brand-logo" alt="לוגו סמינר גור" />
         <span>סמינר גור</span>
       </a>
@@ -124,7 +123,7 @@ import { filter, takeUntil } from 'rxjs/operators';
     <main class="container" [class.login-container]="currentPath === '/login'">
       <router-outlet />
     </main>
-    <footer *ngIf="currentPath !== '/login'" class="app-footer">
+    <footer *ngIf="currentPath !== '/login' && currentPath !== '/attendance/print'" class="app-footer">
       <img src="/MCP.png" alt="MCP" class="footer-logo" />
       <span>כל הזכויות שמורות</span>
     </footer>

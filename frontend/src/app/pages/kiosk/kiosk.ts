@@ -28,7 +28,7 @@ interface KioskEquipment {
           <img src="/logo.png" alt="לוגו" class="kiosk-logo">
           <span>קיוסק השאלה עצמאית</span>
         </div>
-        <button class="exit-btn" (click)="exitKiosk()" title="יציאה">✕ יציאה</button>
+        <button class="exit-btn" (click)="exitKiosk()" title="יציאה">יציאה</button>
       </header>
 
       <!-- Idle overlay -->
@@ -36,7 +36,7 @@ interface KioskEquipment {
         <div class="idle-overlay" (click)="resetIdleTimer()">
           <div class="idle-content">
             <div class="idle-pulse"></div>
-            <p class="idle-title">👋 לחצי להתחלה</p>
+            <p class="idle-title">לחצי להתחלה</p>
             <p class="idle-sub">קיוסק השאלת ציוד עצמאית</p>
           </div>
         </div>
@@ -46,7 +46,7 @@ interface KioskEquipment {
       @if (!isIdle() && step() === 'id') {
         <div class="step-container">
           <div class="step-card">
-            <span class="step-icon">🪪</span>
+            <span class="step-icon"></span>
             <h2 class="step-title">הכניסי את תעודת הזהות שלך</h2>
             <p class="step-sub">הקלידי את מספר תז שלך ולחצי על "המשך"</p>
             <input
@@ -73,14 +73,14 @@ interface KioskEquipment {
       @if (!isIdle() && step() === 'student') {
         <div class="step-container">
           <div class="step-card step-card--wide">
-            <span class="step-icon">👩‍🎓</span>
+            <span class="step-icon"></span>
             <h2 class="step-title">שלום, {{ student()?.name }}</h2>
             <p class="step-sub">
               {{ student()?.track }}{{ student()?.year ? ' · ' + student()?.year : '' }}
             </p>
             @if ((student()?.loans || []).filter(l => !l.actual_return).length > 0) {
               <div class="active-loans-banner">
-                <span>📦</span>
+                <span></span>
                 <span>יש לך {{ (student()?.loans || []).filter(l => !l.actual_return).length }} פריטי ציוד בחוץ</span>
               </div>
             }
@@ -104,7 +104,7 @@ interface KioskEquipment {
 
           <!-- Availability date picker -->
           <div class="date-picker-row">
-            <label class="date-picker-label">📅 בדיקת זמינות לתאריך:</label>
+            <label class="date-picker-label">בדיקת זמינות לתאריך:</label>
             <input
               type="date"
               class="kiosk-input kiosk-input--sm"

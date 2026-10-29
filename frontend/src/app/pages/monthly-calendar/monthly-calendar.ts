@@ -176,7 +176,7 @@ interface CtxMenu {
 <!-- ── Main layout ── -->
 <div class="page-header">
   <div>
-    <h1>📅 לוח שנה</h1>
+    <h1>לוח שנה</h1>
     <p class="subtitle">תצוגה חודשית לפי הלוח העברי</p>
   </div>
 </div>
@@ -229,7 +229,7 @@ interface CtxMenu {
 <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
   <label class="upload-button" [class.uploading]="uploading">
     <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
-    {{ uploading ? 'מעלה ומייבאת...' : '📤 העלאת לוח שנה מאקסל' }}
+    {{ uploading ? 'מעלה ומייבאת...' : 'העלאת לוח שנה מאקסל' }}
   </label>
   <span class="upload-help">קובץ Excel ‎.xlsx — אירועים מהגיליונות יישמרו בלוח האירועים</span>
   <p *ngIf="uploadMessage" class="upload-success" role="status">{{ uploadMessage }}</p>
@@ -278,7 +278,7 @@ interface CtxMenu {
               class="schedule-event-labels" aria-hidden="true">
           <span *ngFor="let item of visibleItems(cd).slice(0,2)" class="schedule-event-label"
                 [style.border-inline-start-color]="item.kind==='exam' ? '#e11d48' : schoolEventColor(item.event!)">
-            {{ item.kind==='exam' ? '📝 '+item.exam!.name : item.event?.title }}
+            {{ item.kind==='exam' ? item.exam!.name : item.event?.title }}
           </span>
           <span *ngIf="visibleItems(cd).length > 2" class="more-events">+{{ visibleItems(cd).length-2 }}</span>
         </span>
@@ -297,10 +297,10 @@ interface CtxMenu {
         <!-- Tooltip -->
         <span *ngIf="visibleItems(cd).length" class="day-tooltip" role="tooltip">
           <span *ngFor="let item of visibleItems(cd)">
-            <ng-container *ngIf="item.kind==='loan'">🎥 {{ item.loan?.equipment_name }} · {{ item.loan?.borrower_name }}</ng-container>
-            <ng-container *ngIf="item.kind==='task'">{{ item.completed ? '✅' : (item.task?.visibility==='public' ? '🌐' : '📌') }} {{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span></ng-container>
-            <ng-container *ngIf="item.kind==='event'">📅 {{ item.event?.title }}</ng-container>
-            <ng-container *ngIf="item.kind==='exam'">📝 {{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
+            <ng-container *ngIf="item.kind==='loan'">{{ item.loan?.equipment_name }} · {{ item.loan?.borrower_name }}</ng-container>
+            <ng-container *ngIf="item.kind==='task'">{{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span></ng-container>
+            <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
+            <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
           </span>
         </span>
       </button>
@@ -325,7 +325,7 @@ interface CtxMenu {
 
   <!-- Equipment -->
   <ng-container *ngIf="has('equipment') && selectedDayLoans().length">
-    <h3 class="layer-title">📦 השאלת ציוד</h3>
+    <h3 class="layer-title">השאלת ציוד</h3>
     <div *ngFor="let loan of selectedDayLoans()" class="detail-row">
       <span class="detail-dot" [style.background]="loanColor(loan)"></span>
       <div class="detail-main">
@@ -338,7 +338,7 @@ interface CtxMenu {
 
   <!-- Personal tasks -->
   <ng-container *ngIf="has('personal') && selectedDayTasks().length">
-    <h3 class="layer-title">📌 הלוח האישי</h3>
+    <h3 class="layer-title">הלוח האישי</h3>
     <div *ngFor="let task of selectedDayTasks()" class="detail-row" [class.completed]="task.completed">
       <button type="button" class="task-check"
               [attr.aria-pressed]="task.completed"
@@ -354,7 +354,7 @@ interface CtxMenu {
 
   <!-- Schedule events -->
   <ng-container *ngIf="has('schedule') && selectedDayEvents().length">
-    <h3 class="layer-title">📅 לוח אירועים</h3>
+    <h3 class="layer-title">לוח אירועים</h3>
     <div *ngFor="let event of selectedDayEvents()" class="detail-row">
       <span class="detail-dot" [style.background]="schoolEventColor(event)"></span>
       <div class="detail-main">
@@ -366,7 +366,7 @@ interface CtxMenu {
 
   <!-- Exams -->
   <ng-container *ngIf="has('exams') && selectedDayExams().length">
-    <h3 class="layer-title">📝 מבחנים</h3>
+    <h3 class="layer-title">מבחנים</h3>
     <div *ngFor="let exam of selectedDayExams()" class="detail-row">
       <span class="detail-dot exam-dot"></span>
       <div class="detail-main">
@@ -375,8 +375,8 @@ interface CtxMenu {
               · {{ exam.codes_count || 0 }} ברקודים · ממוצע {{ exam.avg_grade ?? '—' }}</span>
       </div>
       <div class="exam-row-btns">
-        <a [routerLink]="['/exams', exam.id, 'edit']" class="btn-quick">✏️ עריכה</a>
-        <a [routerLink]="['/exams', exam.id, 'print']" class="btn-quick">🖨 הדפסה</a>
+        <a [routerLink]="['/exams', exam.id, 'edit']" class="btn-quick">עריכה</a>
+        <a [routerLink]="['/exams', exam.id, 'print']" class="btn-quick">הדפסה</a>
       </div>
     </div>
   </ng-container>

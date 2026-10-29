@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap');
+/* Google Fonts loaded via index.html <link> to avoid build-time network fetch */
 
 :root {
   --primary:        #0d9488;
@@ -579,4 +579,15 @@ table {
   gap: 7px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
+}
+
+/* ── Global print: hide navigation ── */
+@media print {
+  .navbar,
+  .subnav,
+  .app-footer,
+  .cart-fab,
+  nav {
+    display: none !important;
+  }
 }

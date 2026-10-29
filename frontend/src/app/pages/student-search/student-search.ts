@@ -40,7 +40,11 @@ autofocus
 </div>
 <div>
   <div class="sug-name">{{ s.name }}</div>
-  <div class="sug-meta">{{ s.id_number }}<span *ngIf="s.track"> · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span></div>
+  <div class="sug-meta">
+    {{ s.id_number }}
+    <span *ngIf="s.class_name || (s.year && s.parallel)"> · כיתה {{ s.class_name || (s.year! + s.parallel!) }}</span>
+    <span *ngIf="s.track"> · {{ s.track }}</span>
+  </div>
 </div>
 </div>
 </div>
@@ -70,6 +74,7 @@ autofocus
 <div class="result-name">{{ selected()!.name }}</div>
 <div class="result-meta">
 <span> {{ selected()!.id_number }}</span>
+<span *ngIf="selected()!.class_name || (selected()!.year && selected()!.parallel)"> כיתה {{ selected()!.class_name || (selected()!.year! + selected()!.parallel!) }}</span>
 <span *ngIf="selected()!.track"> {{ selected()!.track }}{{ selected()!.year ? ' ' + selected()!.year : '' }}</span>
 <span *ngIf="selected()!.phone"> {{ selected()!.phone }}</span>
 </div>

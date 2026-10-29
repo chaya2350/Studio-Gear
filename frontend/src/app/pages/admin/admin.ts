@@ -58,6 +58,15 @@ class="section-tab"
 <p *ngIf="resetDbMessage()" class="danger-result">{{ resetDbMessage() }}</p>
 </div>
 
+<div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
+<div class="danger-title"> מחיקת כל המורות</div>
+<p>
+הפעולה תמחק את כל המורות מהמערכת, כולל השיעורים והנוכחות שלהן.
+השימוש נועד רק כאשר רוצים להתחיל מחדש את ניהול המורות.
+</p>
+<button class="btn btn-danger" (click)="deleteAllTeachers()">מחיקת כל המורות</button>
+</div>
+
 <div class="user-form">
 <input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
 <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
@@ -228,13 +237,16 @@ class="section-tab"
 
   <!-- הוספה ידנית -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
-    <div class="section-title">👩‍🏫 הוספת מורה ידנית</div>
+    <div class="section-title">הוספת מורה ידנית</div>
     <div class="teacher-add-form">
       <label class="field-label">שם מלא
         <input [(ngModel)]="newTeacherName" placeholder="שם המורה" class="admin-input">
       </label>
       <label class="field-label">מקצוע
         <input [(ngModel)]="newTeacherSubject" placeholder="מקצוע הוראה (אופציונלי)" class="admin-input">
+      </label>
+      <label class="field-label">מייל
+        <input [(ngModel)]="newTeacherEmail" placeholder="מייל (אופציונלי)" class="admin-input">
       </label>
       <label class="field-label">טלפון
         <input [(ngModel)]="newTeacherPhone" placeholder="טלפון (אופציונלי)" class="admin-input">
@@ -250,9 +262,9 @@ class="section-tab"
 
   <!-- ייבוא מאקסל -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
-    <div class="section-title">📥 ייבוא מורות מקובץ Excel</div>
+    <div class="section-title">ייבוא מורות מקובץ Excel</div>
     <p class="import-hint">
-      הקובץ צריך לכלול עמודות: <strong>שם</strong> (חובה), <strong>מקצוע</strong>, <strong>טלפון</strong><br>
+      הקובץ צריך לכלול עמודות: <strong>שם</strong> (חובה), <strong>מקצוע</strong>, <strong>טלפון</strong>, <strong>מייל</strong><br>
       מורות קיימות לא יימחקו — הנתונים ישוחזרו במידה ושונו.
     </p>
     <div class="upload-area"
@@ -261,7 +273,7 @@ class="section-tab"
       (dragleave)="draggingTeachers.set(false)"
       (drop)="onDropTeachers($event)"
       (click)="teacherFileInput.click()">
-      <div class="upload-icon">👩‍🏫</div>
+      <div class="upload-icon"></div>
       <div class="upload-text">גרור קובץ Excel לכאן או לחץ לבחירה</div>
       <div class="upload-hint">.xlsx / .xls</div>
       <input #teacherFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="onTeacherFileChange($event)">
@@ -277,7 +289,7 @@ class="section-tab"
 
   <!-- ייבוא מערכת שעות מאקסל -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
-    <div class="section-title">📅 ייבוא מערכת שעות מקובץ Excel</div>
+    <div class="section-title">ייבוא מערכת שעות מקובץ Excel</div>
     <p class="import-hint">
       הקובץ צריך לכלול עמודות: <strong>מורה</strong>, <strong>שנה</strong>, <strong>מקבילה</strong>, <strong>יום</strong>, <strong>שעה התחלה</strong><br>
       עמודות אופציונליות: שעה סיום, מקצוע<br>
@@ -296,7 +308,7 @@ class="section-tab"
       (dragleave)="draggingSchedule.set(false)"
       (drop)="onDropSchedule($event)"
       (click)="scheduleImportWeek && scheduleFileInput.click()">
-      <div class="upload-icon">📅</div>
+      <div class="upload-icon"></div>
       <div class="upload-text" *ngIf="scheduleImportWeek">גרור קובץ Excel לכאן או לחץ לבחירה</div>
       <div class="upload-text" *ngIf="!scheduleImportWeek" style="color:var(--text-muted)">בחרי תחילה שבוע ↑</div>
       <div class="upload-hint">.xlsx / .xls</div>
@@ -310,7 +322,7 @@ class="section-tab"
         ✓ יובאו {{ scheduleImportResult()!.imported }} שיעורים לשבוע {{ scheduleImportWeek }}
         <span *ngIf="scheduleImportResult()!.skipped">({{ scheduleImportResult()!.skipped }} דולגו)</span>
         <span *ngIf="scheduleImportResult()!.errors?.length" class="import-warnings">
-          ⚠️ {{ scheduleImportResult()!.errors?.length }} אזהרות
+          {{ scheduleImportResult()!.errors?.length }} אזהרות
         </span>
       </ng-container>
       <span *ngIf="scheduleImportResult()!.error">{{ scheduleImportResult()!.error }}</span>
@@ -324,7 +336,7 @@ class="section-tab"
   <div class="card" style="max-width:640px;">
     <div class="section-title-row">
       <div class="section-title" style="margin-bottom:0">רשימת מורות ({{ teachers().length }})</div>
-      <button class="btn btn-secondary" style="font-size:0.8rem;padding:5px 12px" (click)="loadTeachers()">🔄 רענן</button>
+      <button class="btn btn-secondary" style="font-size:0.8rem;padding:5px 12px" (click)="loadTeachers()">רענן</button>
     </div>
     <div *ngIf="!teachers().length" class="empty-hint">אין מורות במערכת עדיין</div>
     <div class="teacher-list-table">
@@ -334,19 +346,21 @@ class="section-tab"
           <div class="teacher-list-info">
             <strong>{{ t.name }}</strong>
             <span *ngIf="t.subject" class="teacher-meta">{{ t.subject }}</span>
-            <span *ngIf="t.phone" class="teacher-meta">📞 {{ t.phone }}</span>
+            <span *ngIf="t.email" class="teacher-meta">{{ t.email }}</span>
+            <span *ngIf="t.phone" class="teacher-meta">{{ t.phone }}</span>
           </div>
           <div class="teacher-list-actions">
-            <button class="btn btn-secondary btn-xs" (click)="startEditTeacher(t)">✏️</button>
-            <button class="btn btn-danger btn-xs" (click)="deleteTeacher(t.id)">🗑️</button>
+            <button class="btn btn-secondary btn-xs" (click)="startEditTeacher(t)" title="עריכה">✎</button>
+            <button class="btn btn-danger btn-xs" (click)="deleteTeacher(t.id)" title="מחיקה">⌫</button>
           </div>
         </ng-container>
         <ng-container *ngIf="editingTeacherId() === t.id">
           <input [(ngModel)]="editTeacherDraft.name" class="inline-input" placeholder="שם">
           <input [(ngModel)]="editTeacherDraft.subject" class="inline-input" placeholder="מקצוע">
+          <input [(ngModel)]="editTeacherDraft.email" class="inline-input" placeholder="מייל">
           <input [(ngModel)]="editTeacherDraft.phone" class="inline-input" placeholder="טלפון">
           <button class="btn btn-primary btn-xs" (click)="saveTeacher(t.id)">שמור</button>
-          <button class="btn btn-secondary btn-xs" (click)="editingTeacherId.set(0)">✕</button>
+          <button class="btn btn-secondary btn-xs" (click)="editingTeacherId.set(0)">ביטול</button>
         </ng-container>
       </div>
     </div>
@@ -555,7 +569,7 @@ const all: { id: AdminSection; icon: string; label: string; roles: UserRole[] }[
 { id: 'tracks', icon: '', label: 'מסלולים', roles: ['admin', 'laborant'] },
 { id: 'students', icon: '', label: 'תלמידות', roles: ['admin', 'laborant', 'secretary'] },
 { id: 'approvals', icon: '', label: 'סוגי אישורים', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'teachers', icon: '👩‍🏫', label: 'מורות ומערכת', roles: ['admin', 'secretary'] },
+{ id: 'teachers', icon: '', label: 'מורות ומערכת', roles: ['admin', 'secretary'] },
 { id: 'users', icon: '', label: 'משתמשות והרשאות', roles: ['admin'] },
 ];
 return all.filter(s => role && s.roles.includes(role));
@@ -670,11 +684,12 @@ this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.le
 teachers = signal<any[]>([]);
 newTeacherName = '';
 newTeacherSubject = '';
+newTeacherEmail = '';
 newTeacherPhone = '';
 savingTeacher = signal(false);
 teacherMsg = signal<string | null>(null);
 editingTeacherId = signal(0);
-editTeacherDraft = { name: '', subject: '', phone: '' };
+editTeacherDraft = { name: '', subject: '', email: '', phone: '' };
 draggingTeachers = signal(false);
 importingTeachers = signal(false);
 teacherImportResult = signal<{ imported: number; skipped: number } | null>(null);
@@ -693,11 +708,16 @@ loadTeachers() {
 createTeacher() {
   if (!this.newTeacherName.trim()) { this.teacherMsg.set('שגיאה: שם המורה הוא שדה חובה'); return; }
   this.savingTeacher.set(true); this.teacherMsg.set(null);
-  this.api.createTeacher({ name: this.newTeacherName.trim(), subject: this.newTeacherSubject.trim() || undefined }).subscribe({
+  this.api.createTeacher({
+    name: this.newTeacherName.trim(),
+    subject: this.newTeacherSubject.trim() || undefined,
+    email: this.newTeacherEmail.trim() || undefined,
+    phone: this.newTeacherPhone.trim() || undefined,
+  }).subscribe({
     next: () => {
       this.savingTeacher.set(false);
       this.teacherMsg.set(`✓ המורה "${this.newTeacherName}" נוספה`);
-      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherPhone = '';
+      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherEmail = ''; this.newTeacherPhone = '';
       this.loadTeachers();
     },
     error: e => { this.savingTeacher.set(false); this.teacherMsg.set('שגיאה: ' + (e.error?.error || 'לא ניתן להוסיף')); }
@@ -706,7 +726,7 @@ createTeacher() {
 
 startEditTeacher(t: any) {
   this.editingTeacherId.set(t.id);
-  this.editTeacherDraft = { name: t.name, subject: t.subject || '', phone: t.phone || '' };
+  this.editTeacherDraft = { name: t.name, subject: t.subject || '', email: t.email || '', phone: t.phone || '' };
 }
 
 saveTeacher(id: number) {
@@ -719,6 +739,14 @@ saveTeacher(id: number) {
 deleteTeacher(id: number) {
   if (!confirm('למחוק מורה זו? כל השיעורים שלה ייהחקו גם כן.')) return;
   this.api.deleteTeacher(id).subscribe({ next: () => this.loadTeachers() });
+}
+
+deleteAllTeachers() {
+  if (!confirm('למחוק את כל המורות מהמערכת? כל מערכת השעות והנוכחות שלהם תימחק גם כן.')) return;
+  this.api.deleteAllTeachers().subscribe({
+    next: () => this.loadTeachers(),
+    error: e => alert(e.error?.error || 'שגיאה במחיקת המורות')
+  });
 }
 
 onTeacherFileChange(e: Event) {

@@ -31,11 +31,11 @@ function formatHebDate(dateStr: string): string {
   template: `
 <div class="page-header">
   <div>
-    <h1>📅 מערכת שעות</h1>
+    <h1>מערכת שעות</h1>
     <p class="subtitle">ניהול שיעורים שבועיים לפי מורה וכיתה</p>
   </div>
   <div class="header-actions">
-    <a routerLink="/schedule/print" class="btn btn-secondary">🖨️ הדפסת דפי נוכחות</a>
+    <a routerLink="/schedule/print" class="btn btn-secondary">הדפסת דפי נוכחות</a>
   </div>
 </div>
 
@@ -54,9 +54,9 @@ function formatHebDate(dateStr: string): string {
 
 <!-- Tabs -->
 <div class="tab-bar">
-  <button [class.active]="activeTab() === 'grid'" (click)="activeTab.set('grid')">📊 תצוגת לוח</button>
-  <button [class.active]="activeTab() === 'teachers'" (click)="activeTab.set('teachers')">👩‍🏫 מורות</button>
-  <button [class.active]="activeTab() === 'manage'" (click)="activeTab.set('manage')">⚙️ ניהול</button>
+  <button [class.active]="activeTab() === 'grid'" (click)="activeTab.set('grid')">תצוגת לוח</button>
+  <button [class.active]="activeTab() === 'teachers'" (click)="activeTab.set('teachers')">מורות</button>
+  <button [class.active]="activeTab() === 'manage'" (click)="activeTab.set('manage')">ניהול</button>
 </div>
 
 <!-- GRID VIEW -->
@@ -123,12 +123,13 @@ function formatHebDate(dateStr: string): string {
     <div class="form-row">
       <label>שם מלא <input [(ngModel)]="newTeacher.name" placeholder="שם המורה"></label>
       <label>מקצוע <input [(ngModel)]="newTeacher.subject" placeholder="מקצוע הוראה"></label>
+      <label>התמחות <input [(ngModel)]="newTeacher.specialization" placeholder="לדוגמה: קודש"></label>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" [disabled]="savingTeacher()" (click)="createTeacher()">
         {{ savingTeacher() ? 'שומר...' : 'שמור' }}
       </button>
-      <button class="btn btn-secondary" (click)="showAddTeacher=false; newTeacher={name:'',subject:''}">ביטול</button>
+      <button class="btn btn-secondary" (click)="showAddTeacher=false; newTeacher={name:'',subject:'',specialization:''}">ביטול</button>
     </div>
     <p *ngIf="teacherError()" class="error-msg">{{ teacherError() }}</p>
   </div>
@@ -140,18 +141,20 @@ function formatHebDate(dateStr: string): string {
         <div>
           <strong>{{ t.name }}</strong>
           <span *ngIf="t.subject" class="teacher-subject">{{ t.subject }}</span>
+          <span *ngIf="t.specialization" class="teacher-specialization">{{ t.specialization }}</span>
         </div>
         <div class="teacher-count">
           {{ slotCountForTeacher(t.id) }} שיעורים השבוע
         </div>
         <div class="teacher-actions">
-          <button class="btn btn-secondary" (click)="startEditTeacher(t)">✏️</button>
-          <button class="btn btn-danger" (click)="deleteTeacher(t.id)">🗑️</button>
+          <button class="btn btn-secondary" (click)="startEditTeacher(t)" title="עריכה">✎</button>
+          <button class="btn btn-danger" (click)="deleteTeacher(t.id)" title="מחיקה">⌫</button>
         </div>
       </div>
       <div class="teacher-edit" *ngIf="editingTeacherId() === t.id">
         <input [(ngModel)]="editTeacherDraft.name" placeholder="שם">
         <input [(ngModel)]="editTeacherDraft.subject" placeholder="מקצוע">
+        <input [(ngModel)]="editTeacherDraft.specialization" placeholder="התמחות">
         <button class="btn btn-primary" (click)="saveTeacher(t.id)">שמור</button>
         <button class="btn btn-secondary" (click)="editingTeacherId.set(0)">ביטול</button>
       </div>
@@ -165,13 +168,24 @@ function formatHebDate(dateStr: string): string {
     <h3>הוספת שיעור לשבוע {{ weekStart() }}</h3>
   </div>
 
+  <!-- Lesson type toggle -->
+  <div class="lesson-type-bar">
+    <button class="lesson-type-btn" [class.active]="lessonType() === 'class'" (click)="lessonType.set('class')">
+      שיעור לכיתה
+    </button>
+    <button class="lesson-type-btn" [class.active]="lessonType() === 'specialization'" (click)="lessonType.set('specialization')">
+      שיעור להתמחות
+    </button>
+  </div>
+
   <div class="add-slot-form card">
-    <div class="form-grid">
+    <!-- Class lesson form -->
+    <div *ngIf="lessonType() === 'class'" class="form-grid">
       <label class="field">
         <span>מורה</span>
         <select [(ngModel)]="newSlot.teacher_id">
           <option value="">בחר מורה</option>
-          <option *ngFor="let t of teachers()" [value]="t.id">{{ t.name }}</option>
+          <option *ngFor="let t of kodeshTeachers()" [value]="t.id">{{ t.name }}{{ t.subject ? ' (' + t.subject + ')' : '' }}</option>
         </select>
       </label>
       <label class="field">
@@ -208,7 +222,13 @@ function formatHebDate(dateStr: string): string {
         <input [(ngModel)]="newSlot.subject" placeholder="אם שונה מהמורה">
       </label>
     </div>
-    <div class="form-actions">
+
+    <!-- Specialization lesson form (placeholder) -->
+    <div *ngIf="lessonType() === 'specialization'" class="specialization-placeholder">
+      <p>טופס שיעור להתמחות – יוגדר בהמשך</p>
+    </div>
+
+    <div class="form-actions" *ngIf="lessonType() === 'class'">
       <button class="btn btn-primary" [disabled]="savingSlot()" (click)="createSlot()">
         {{ savingSlot() ? 'שומר...' : '+ הוסף שיעור' }}
       </button>
@@ -218,8 +238,8 @@ function formatHebDate(dateStr: string): string {
   </div>
 
   <div class="week-actions">
-    <button class="btn btn-secondary" (click)="showCopyWeek=!showCopyWeek">📋 העתק משבוע קודם</button>
-    <button class="btn btn-danger" *ngIf="slots().length" (click)="deleteWeek()">🗑️ מחק את כל שיעורי השבוע</button>
+    <button class="btn btn-secondary" (click)="showCopyWeek=!showCopyWeek">העתק משבוע קודם</button>
+    <button class="btn btn-danger" *ngIf="slots().length" (click)="deleteWeek()">מחק את כל שיעורי השבוע</button>
   </div>
 
   <div *ngIf="showCopyWeek" class="copy-week-card card">
@@ -267,7 +287,7 @@ function formatHebDate(dateStr: string): string {
     <label>מורה:
       <select [(ngModel)]="quickAddSlot.teacher_id">
         <option value="">בחר מורה</option>
-        <option *ngFor="let t of teachers()" [value]="t.id">{{ t.name }}</option>
+        <option *ngFor="let t of kodeshTeachers()" [value]="t.id">{{ t.name }}</option>
       </select>
     </label>
     <label>שעת התחלה: <input type="time" [(ngModel)]="quickAddSlot.start_time"></label>
@@ -338,10 +358,21 @@ function formatHebDate(dateStr: string): string {
 .teacher-info { display: flex; align-items: center; gap: 12px; }
 .teacher-color { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
 .teacher-subject { color: var(--text-muted); font-size: 0.82rem; margin-right: 8px; }
+.teacher-specialization { background: var(--primary-light); color: var(--primary); border-radius: 10px; padding: 1px 8px; font-size: 0.75rem; font-weight: 600; margin-right: 8px; }
 .teacher-count { margin-inline-start: auto; font-size: 0.8rem; color: var(--text-muted); }
 .teacher-actions { display: flex; gap: 6px; }
 .teacher-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   input { border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 0.88rem; } }
+
+/* Lesson type toggle */
+.lesson-type-bar { display: flex; gap: 4px; margin-bottom: 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; }
+.lesson-type-btn { flex: 1; padding: 10px 16px; border: none; border-radius: var(--radius-sm);
+  background: transparent; font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  color: var(--text-muted); transition: all var(--transition);
+  &.active { background: var(--surface); color: var(--primary); font-weight: 700;
+    box-shadow: var(--shadow-xs); } }
+.specialization-placeholder { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 0.95rem; }
 
 /* Forms */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
@@ -407,11 +438,14 @@ export class ScheduleComponent implements OnInit {
 
   // Teacher CRUD
   showAddTeacher = false;
-  newTeacher = { name: '', subject: '' };
+  newTeacher = { name: '', subject: '', specialization: '' };
   savingTeacher = signal(false);
   teacherError = signal('');
   editingTeacherId = signal(0);
-  editTeacherDraft = { name: '', subject: '' };
+  editTeacherDraft = { name: '', subject: '', specialization: '' };
+
+  // Lesson type toggle: 'class' = שיעור לכיתה, 'specialization' = שיעור להתמחות
+  lessonType = signal<'class' | 'specialization'>('class');
 
   // Slot CRUD
   newSlot: any = { teacher_id: '', class_year: '', class_parallel: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
@@ -443,6 +477,9 @@ export class ScheduleComponent implements OnInit {
   loadTeachers() {
     this.api.getTeachers().subscribe({ next: t => this.teachers.set(t), error: () => {} });
   }
+
+  // Teachers with specialization = 'קודש' (for שיעור לכיתה)
+  kodeshTeachers = computed(() => this.teachers().filter(t => t.specialization === 'קודש'));
 
   loadSchedule() {
     this.loading.set(true);
@@ -548,14 +585,14 @@ export class ScheduleComponent implements OnInit {
     if (!this.newTeacher.name.trim()) { this.teacherError.set('שם חובה'); return; }
     this.savingTeacher.set(true); this.teacherError.set('');
     this.api.createTeacher(this.newTeacher).subscribe({
-      next: () => { this.savingTeacher.set(false); this.showAddTeacher = false; this.newTeacher = { name: '', subject: '' }; this.loadTeachers(); },
+      next: () => { this.savingTeacher.set(false); this.showAddTeacher = false; this.newTeacher = { name: '', subject: '', specialization: '' }; this.loadTeachers(); },
       error: e => { this.savingTeacher.set(false); this.teacherError.set(e.error?.error || 'שגיאה'); }
     });
   }
 
   startEditTeacher(t: any) {
     this.editingTeacherId.set(t.id);
-    this.editTeacherDraft = { name: t.name, subject: t.subject || '' };
+    this.editTeacherDraft = { name: t.name, subject: t.subject || '', specialization: t.specialization || '' };
   }
 
   saveTeacher(id: number) {

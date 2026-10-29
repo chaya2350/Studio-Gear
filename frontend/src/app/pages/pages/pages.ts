@@ -45,7 +45,7 @@ template: `
 
 <!-- חיפוש נושאים -->
 <div class="search-bar" style="margin-bottom:16px;">
-<span class="search-icon">🔍</span>
+<span class="search-icon"></span>
 <input [(ngModel)]="topicQuery" placeholder="חיפוש נושא..." >
 </div>
 
@@ -113,7 +113,7 @@ template: `
 <div class="modal card" (click)="$event.stopPropagation()">
 <div class="modal-header">
 <h3>{{ page.title }}</h3>
-<button class="close-btn" (click)="closePage()">✕</button>
+<button class="close-btn" (click)="closePage()">סגור</button>
 </div>
 <div class="page-meta">
 <span>נוצר ע"י {{ page.creator_name }}</span>
@@ -124,7 +124,7 @@ template: `
 <div class="page-body">{{ page.body }}</div>
 <div class="modal-actions" *ngIf="page.can_edit">
 <button class="btn btn-secondary" (click)="editPage(page)">עריכה</button>
-<button class="btn btn-danger" (click)="removePage(page)">🗑 מחיקה</button>
+<button class="btn btn-danger" (click)="removePage(page)">מחיקה</button>
 </div>
 <div class="modal-actions" *ngIf="page.can_edit">
 <button class="btn btn-ghost" (click)="showRequests(page)">בקשות גישה</button>
@@ -137,7 +137,7 @@ template: `
 <div class="modal card" (click)="$event.stopPropagation()">
 <div class="modal-header">
 <h3>{{ editingPage() ? 'עריכת דף' : 'דף חדש' }}</h3>
-<button class="close-btn" (click)="editorOpen.set(false)">✕</button>
+<button class="close-btn" (click)="editorOpen.set(false)">סגור</button>
 </div>
 <div class="form-group">
 <label>כותרת *</label>
@@ -166,7 +166,7 @@ template: `
 <div class="modal card" (click)="$event.stopPropagation()">
 <div class="modal-header">
 <h3>נושא חדש</h3>
-<button class="close-btn" (click)="newTopicOpen.set(false)">✕</button>
+<button class="close-btn" (click)="newTopicOpen.set(false)">סגור</button>
 </div>
 <div class="form-group">
 <label>שם הנושא *</label>
@@ -184,7 +184,7 @@ template: `
 <div class="modal card" (click)="$event.stopPropagation()">
 <div class="modal-header">
 <h3>בקשות גישה — {{ requestsPage()?.title }}</h3>
-<button class="close-btn" (click)="requestsPage.set(null)">✕</button>
+<button class="close-btn" (click)="requestsPage.set(null)">סגור</button>
 </div>
 <div *ngFor="let r of pageRequests()" class="request-row">
 <span><strong>{{ r.user_name }}</strong> — {{ statusLabel(r.status) }}</span>

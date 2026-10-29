@@ -26,6 +26,22 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
     <button [class.active]="mode()==='manual'" (click)="setMode('manual')">⌨ הקלדה</button>
   </div>
 
+  <!-- SHARED CAMERA BLOCK — always in DOM when camera mode, shown only on active scan phases -->
+  <div class="scan-card card" *ngIf="mode()==='camera' && phase() !== 'done'">
+    <div class="camera-section">
+      <div class="video-wrap">
+        <video #videoEl autoplay playsinline muted></video>
+        <div class="scan-overlay"><div class="scan-frame"></div></div>
+      </div>
+      <p class="scan-hint">
+        <ng-container *ngIf="phase()==='session'">כוון לברקוד שיעור</ng-container>
+        <ng-container *ngIf="phase()==='absent'">כוון לברקוד תלמידה נעדרת</ng-container>
+        <ng-container *ngIf="phase()==='late'">כוון לברקוד תלמידה שאיחרה</ng-container>
+      </p>
+      <div *ngIf="cameraError()" class="alert alert-error">{{ cameraError() }}</div>
+    </div>
+  </div>
+
   <!-- PHASE: session scan -->
   <ng-container *ngIf="phase() === 'session'">
     <div class="phase-label card">
@@ -34,18 +50,10 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
       <p class="phase-hint">סרקי את הברקוד מהדף השבועי (ברקוד היום-כיתה)</p>
     </div>
 
-    <div class="scan-card card">
-      <div *ngIf="mode()==='camera'" class="camera-section">
-        <div class="video-wrap">
-          <video #videoEl autoplay playsinline></video>
-          <div class="scan-overlay"><div class="scan-frame"></div></div>
-        </div>
-        <p class="scan-hint">כוון לברקוד שיעור</p>
-        <div *ngIf="cameraError()" class="alert alert-error">{{ cameraError() }}</div>
-      </div>
-      <div *ngIf="mode()==='manual'" class="manual-section">
+    <div class="scan-card card" *ngIf="mode()==='manual'">
+      <div class="manual-section">
         <input [(ngModel)]="manualCode" placeholder="הקלד/סרוק קוד שיעור (ATT-...)"
-               (keyup.enter)="processSessionBarcode(manualCode)" class="code-input">
+               (keyup.enter)="processSessionBarcode(manualCode)" class="code-input" #manualInput autofocus>
         <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                 (click)="processSessionBarcode(manualCode)">חפש שיעור</button>
       </div>
@@ -80,14 +88,8 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
         <p class="phase-hint">סרקי את ברקוד כל תלמידה שנעדרה. לחצי "סיימתי" כשאת מוכנה</p>
       </div>
 
-      <div class="scan-card card">
-        <div *ngIf="mode()==='camera'" class="camera-section">
-          <div class="video-wrap">
-            <video #videoEl autoplay playsinline></video>
-            <div class="scan-overlay"><div class="scan-frame"></div></div>
-          </div>
-        </div>
-        <div *ngIf="mode()==='manual'" class="manual-section">
+      <div class="scan-card card" *ngIf="mode()==='manual'">
+        <div class="manual-section">
           <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
                  (keyup.enter)="processStudentBarcode(manualCode, 'absent')" class="code-input">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
@@ -95,7 +97,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
         </div>
       </div>
 
-      <div *ngIf="lastScanned()" class="last-scanned" [class.absent]="true">
+      <div *ngIf="lastScanned()" class="last-scanned">
         ✓ {{ lastScanned() }} — נרשמה כנעדרת
       </div>
       <div *ngIf="scanError()" class="alert alert-error">{{ scanError() }}</div>
@@ -109,7 +111,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
         </div>
       </div>
 
-      <button class="btn btn-primary btn-large" style="width:100%;margin-top:16px" (click)="phase.set('late')">
+      <button class="btn btn-primary btn-large" style="width:100%;margin-top:16px" (click)="goToLate()">
         סיימתי נעדרות → עבר לאיחורים
       </button>
       <button class="btn btn-secondary" style="width:100%;margin-top:8px" (click)="skipToFinish()">
@@ -125,14 +127,8 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
         <p class="phase-hint">סרקי את ברקוד כל תלמידה שאיחרה. לחצי "סיים" כשאת מוכנה</p>
       </div>
 
-      <div class="scan-card card">
-        <div *ngIf="mode()==='camera'" class="camera-section">
-          <div class="video-wrap">
-            <video #videoEl autoplay playsinline></video>
-            <div class="scan-overlay"><div class="scan-frame"></div></div>
-          </div>
-        </div>
-        <div *ngIf="mode()==='manual'" class="manual-section">
+      <div class="scan-card card" *ngIf="mode()==='manual'">
+        <div class="manual-section">
           <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
                  (keyup.enter)="processStudentBarcode(manualCode, 'late')" class="code-input">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
@@ -310,26 +306,51 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
 
   setMode(m: 'camera' | 'manual') {
     this.mode.set(m);
-    if (m === 'camera') setTimeout(() => this.startCamera(), 100);
-    else this.stopCamera();
+    if (m === 'camera') {
+      // Wait for Angular to render the video element
+      setTimeout(() => this.startCamera(), 150);
+    } else {
+      this.stopCamera();
+    }
+  }
+
+  // Called when moving from absent → late phase (camera needs to keep running)
+  goToLate() {
+    this.scanError.set('');
+    this.lastScanned.set('');
+    this.phase.set('late');
+    // Camera element stays in DOM — no restart needed
   }
 
   private async startCamera() {
-    if (!this.videoEl) return;
+    // Video element may not be in DOM yet — retry once if missing
+    if (!this.videoEl?.nativeElement) {
+      setTimeout(() => this.startCamera(), 200);
+      return;
+    }
+    this.stopCamera();
     this.cameraError.set('');
     try {
       this.reader = new BrowserMultiFormatReader();
       const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-      const deviceId = devices[devices.length - 1]?.deviceId;
-      await this.reader.decodeFromVideoDevice(deviceId, this.videoEl.nativeElement, (result) => {
+      if (!devices.length) {
+        this.cameraError.set('לא נמצאה מצלמה. השתמשי בהקלדה ידנית.');
+        return;
+      }
+      // Prefer back camera on mobile; otherwise last device
+      const backCam = devices.find(d => /back|rear|environment/i.test(d.label));
+      const deviceId = (backCam || devices[devices.length - 1]).deviceId;
+      await this.reader.decodeFromVideoDevice(deviceId, this.videoEl!.nativeElement, (result, err) => {
         if (result && !this.scanCooldown) {
           this.scanCooldown = true;
           const code = result.getText();
           this.handleScan(code);
           setTimeout(() => { this.scanCooldown = false; }, 2000);
         }
+        // Suppress not-found errors (continuous scan produces these constantly)
+        void err;
       });
-    } catch {
+    } catch (e: any) {
       this.cameraError.set('לא ניתן לפתוח מצלמה. השתמשי בהקלדה ידנית.');
     }
   }
@@ -338,6 +359,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     try {
       if (this.reader) {
         (this.reader as any).stopContinuousDecode?.();
+        (this.reader as any).reset?.();
       }
     } catch {}
     this.reader = null;
@@ -359,11 +381,12 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
         this.lateList.set([]);
         // Restore existing records if session already had some
         for (const r of (session.records || [])) {
-          if (r.status === 'absent') this.absentList.update(l => [...l, { id_number: r.id_number, name: r.id_number }]);
-          if (r.status === 'late') this.lateList.update(l => [...l, { id_number: r.id_number, name: r.id_number }]);
+          if (r.status === 'absent') this.absentList.update(l => [...l, { id_number: r.id_number, name: r.name || r.id_number }]);
+          if (r.status === 'late') this.lateList.update(l => [...l, { id_number: r.id_number, name: r.name || r.id_number }]);
         }
         this.phase.set('absent');
         this.manualCode = '';
+        // Camera is already running (same video element) — no restart needed
       },
       error: e => this.sessionError.set(e.error?.error || 'ברקוד לא מוכר')
     });
@@ -373,7 +396,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     if (!code.trim()) return;
     this.scanError.set('');
 
-    // Student barcode: STU-{id_number}
+    // Accept both STU-{id} format and plain id_number (from USB scanner)
     const match = code.trim().match(/^STU-(.+)$/);
     const idNumber = match ? match[1] : code.trim();
 
@@ -400,7 +423,6 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
   undoRecord(id_number: string, type: 'absent' | 'late') {
     const sessionId = this.currentSession()?.session?.id;
     if (!sessionId) return;
-    // Mark back as present
     this.api.submitSessionRecords(sessionId, [{ id_number, status: 'present' }]).subscribe({
       next: () => {
         if (type === 'absent') this.absentList.update(l => l.filter(s => s.id_number !== id_number));
@@ -424,7 +446,11 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     ];
 
     this.api.submitSessionRecords(sessionId, records).subscribe({
-      next: () => { this.finalizing.set(false); this.phase.set('done'); },
+      next: () => {
+        this.finalizing.set(false);
+        this.stopCamera();
+        this.phase.set('done');
+      },
       error: e => { this.finalizing.set(false); this.scanError.set(e.error?.error || 'שגיאה בשמירה'); }
     });
   }
@@ -438,5 +464,8 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     this.sessionError.set('');
     this.manualCode = '';
     this.phase.set('session');
+    if (this.mode() === 'camera') {
+      setTimeout(() => this.startCamera(), 150);
+    }
   }
 }
