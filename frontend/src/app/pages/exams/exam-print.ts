@@ -229,6 +229,13 @@ export class ExamPrintComponent implements OnInit {
     };
   }
 
+  // מחזיר תווית לכיתה הנבחרת כמו "כיתה ה3"
+  private selectedClassLabel(): string | null {
+    if (this.filterMode !== 'class' || !this.selectedParallel) return null;
+    const found = this.classes().find(c => c.parallel === this.selectedParallel);
+    return found ? found.label : null;
+  }
+
   printForStudent(s: any) {
     const exam = this.exam()!;
     this.api.generateExamCodes(exam.id, { id_number: s.id_number }).subscribe({
@@ -246,6 +253,7 @@ export class ExamPrintComponent implements OnInit {
   private openPrintWindow(students: any[], template: any | null, exam: any, barcodesOnly: boolean) {
     const base = window.location.origin;
     const logoUrl = `${base}/logo.png`;
+    const classLabel = this.selectedClassLabel(); // "כיתה ה3" או null
 
     const renderQuestion = (q: any, i: number, type: string): string => {
       if (type === 'multiple_choice') {
@@ -299,7 +307,7 @@ export class ExamPrintComponent implements OnInit {
             <div class="exam-info">
               <span>שם: <strong>${esc(s.name)}</strong></span>
               ${exam.exam_date ? `<span>תאריך: ${esc(exam.exam_date)}</span>` : ''}
-              ${s.track ? `<span>מסלול: ${esc(s.track)}</span>` : ''}
+              ${classLabel ? `<span>כיתה: ${esc(classLabel)}</span>` : s.track ? `<span>מסלול: ${esc(s.track)}</span>` : ''}
             </div>
           </div>
           <div class="barcode-wrap">
