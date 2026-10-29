@@ -51,7 +51,7 @@ import { filter, takeUntil } from 'rxjs/operators';
       </div>
       <!-- חיפוש גלובלי -->
       <div class="global-search" (click)="$event.stopPropagation()">
-        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש תלמידה, ציוד, קוד...">
+        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש תלמידה, ציוד, קוד או ברקוד...">
         <div class="search-results" *ngIf="searchResults">
           <div *ngIf="searchResults.students.length" class="search-group">
             <div class="search-group-title">תלמידות</div>
@@ -357,9 +357,20 @@ export class App implements OnInit {
     if (this.notifOpen) this.notifs.markAllRead();
   }
 
+  private isAttendanceSessionBarcode(q: string) {
+    return /^ATT-T\d+-[^-]+-\d{4}-\d{2}-\d{2}$/.test(q.trim());
+  }
+
   onGlobalSearch() {
     clearTimeout(this.searchTimer);
     const q = this.searchQuery.trim();
+
+    if (this.isAttendanceSessionBarcode(q)) {
+      this.searchResults = null;
+      this.router.navigate(['/attendance/scan'], { queryParams: { barcode: q } });
+      return;
+    }
+
     if (q.length < 2) { this.searchResults = null; return; }
     this.searchTimer = setTimeout(() => {
       this.api.globalSearch(q).subscribe(r => this.searchResults = r);

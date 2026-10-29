@@ -63,8 +63,83 @@ export interface Student {
   phone_code?: string;
   track?: string;
   year?: string;
+  parallel?: string;
   birth_date?: string;
   address?: string;
   extra_data?: Record<string, string>;
   loans?: Loan[];
+}
+
+export interface Teacher {
+  id: number;
+  name: string;
+  subject?: string;
+  active: number;
+  created_at?: string;
+}
+
+export interface ScheduleSlot {
+  id: number;
+  teacher_id: number;
+  teacher_name?: string;
+  teacher_subject?: string;
+  class_year: string;
+  class_parallel: string;
+  day_of_week: number;
+  start_time: string;
+  end_time?: string;
+  subject?: string;
+  week_start: string;
+}
+
+export interface AttendanceSession {
+  id: number;
+  slot_id?: number;
+  teacher_id: number;
+  teacher_name?: string;
+  class_year: string;
+  class_parallel: string;
+  lesson_date: string;
+  subject?: string;
+  start_time?: string;
+  locked: number;
+}
+
+export interface AttendanceRecord {
+  id_number: string;
+  name?: string;
+  status: 'present' | 'absent' | 'late';
+  recorded_at?: string;
+}
+
+export interface WeeklySheet {
+  teacher_id: number;
+  teacher_name: string;
+  class_year: string;
+  class_parallel: string;
+  class_name: string;
+  week_start: string;
+  days: {
+    slot_id: number;
+    day_of_week: number;
+    day_name: string;
+    lesson_date: string;
+    start_time: string;
+    end_time?: string;
+    subject?: string;
+    barcode: string;
+  }[];
+  students: {
+    id_number: string;
+    name: string;
+    barcode: string;
+  }[];
+}
+
+export interface AttendanceStat {
+  subject: string;
+  teacher_name: string;
+  total: number;
+  absent: number;
+  late: number;
 }

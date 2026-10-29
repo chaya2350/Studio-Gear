@@ -5,8 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
 import { AuthService, UserRole } from '../../services/auth.service';
 import { TracksComponent } from '../tracks/tracks';
-
-type AdminSection = 'tracks' | 'students' | 'approvals' | 'users';
+type AdminSection = 'tracks' | 'students' | 'approvals' | 'users' | 'teachers';
 
 interface UserAccount {
 id: number;
@@ -202,6 +201,136 @@ class="section-tab"
 
 <button *ngIf="!editingApproval()" class="btn btn-secondary" style="margin-top:16px;" (click)="newApproval()"> הוסף סוג אישור</button>
 </div>
+
+<!-- ── טאב מורות ── -->
+<div *ngIf="activeSection() === 'teachers'" class="teachers-admin">
+
+  <!-- הוספה ידנית -->
+  <div class="card" style="max-width:640px; margin-bottom:16px;">
+    <div class="section-title">👩‍🏫 הוספת מורה ידנית</div>
+    <div class="teacher-add-form">
+      <label class="field-label">שם מלא
+        <input [(ngModel)]="newTeacherName" placeholder="שם המורה" class="admin-input">
+      </label>
+      <label class="field-label">מקצוע
+        <input [(ngModel)]="newTeacherSubject" placeholder="מקצוע הוראה (אופציונלי)" class="admin-input">
+      </label>
+      <label class="field-label">טלפון
+        <input [(ngModel)]="newTeacherPhone" placeholder="טלפון (אופציונלי)" class="admin-input">
+      </label>
+      <button class="btn btn-primary" [disabled]="savingTeacher()" (click)="createTeacher()">
+        {{ savingTeacher() ? 'שומר...' : '+ הוסף מורה' }}
+      </button>
+    </div>
+    <div *ngIf="teacherMsg()" class="import-status" [class.success]="!teacherMsg()!.startsWith('שגיאה')" [class.error]="teacherMsg()!.startsWith('שגיאה')">
+      {{ teacherMsg() }}
+    </div>
+  </div>
+
+  <!-- ייבוא מאקסל -->
+  <div class="card" style="max-width:640px; margin-bottom:16px;">
+    <div class="section-title">📥 ייבוא מורות מקובץ Excel</div>
+    <p class="import-hint">
+      הקובץ צריך לכלול עמודות: <strong>שם</strong> (חובה), <strong>מקצוע</strong>, <strong>טלפון</strong><br>
+      מורות קיימות לא יימחקו — הנתונים ישוחזרו במידה ושונו.
+    </p>
+    <div class="upload-area"
+      [class.dragover]="draggingTeachers()"
+      (dragover)="$event.preventDefault(); draggingTeachers.set(true)"
+      (dragleave)="draggingTeachers.set(false)"
+      (drop)="onDropTeachers($event)"
+      (click)="teacherFileInput.click()">
+      <div class="upload-icon">👩‍🏫</div>
+      <div class="upload-text">גרור קובץ Excel לכאן או לחץ לבחירה</div>
+      <div class="upload-hint">.xlsx / .xls</div>
+      <input #teacherFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="onTeacherFileChange($event)">
+    </div>
+    <div *ngIf="importingTeachers()" class="import-status importing">
+      <div class="spinner-sm"></div> מייבא מורות...
+    </div>
+    <div *ngIf="teacherImportResult()" class="import-status success">
+      ✓ יובאו {{ teacherImportResult()!.imported }} מורות חדשות
+      <span *ngIf="teacherImportResult()!.skipped">({{ teacherImportResult()!.skipped }} קיימות / דולגו)</span>
+    </div>
+  </div>
+
+  <!-- ייבוא מערכת שעות מאקסל -->
+  <div class="card" style="max-width:640px; margin-bottom:16px;">
+    <div class="section-title">📅 ייבוא מערכת שעות מקובץ Excel</div>
+    <p class="import-hint">
+      הקובץ צריך לכלול עמודות: <strong>מורה</strong>, <strong>שנה</strong>, <strong>מקבילה</strong>, <strong>יום</strong>, <strong>שעה התחלה</strong><br>
+      עמודות אופציונליות: שעה סיום, מקצוע<br>
+      ערכי יום: ראשון / שני / שלישי / רביעי / חמישי<br>
+      <strong>אם קיים שיעור באותה מורה+כיתה+יום+שבוע — הוא יתעדכן (לא יימחק).</strong>
+    </p>
+    <div class="week-picker-row">
+      <label class="field-label">שבוע (ראשון בשבוע):
+        <input type="date" [(ngModel)]="scheduleImportWeek" class="admin-input" style="width:auto;">
+      </label>
+    </div>
+    <div class="upload-area"
+      [class.dragover]="draggingSchedule()"
+      [class.disabled]="!scheduleImportWeek"
+      (dragover)="$event.preventDefault(); scheduleImportWeek && draggingSchedule.set(true)"
+      (dragleave)="draggingSchedule.set(false)"
+      (drop)="onDropSchedule($event)"
+      (click)="scheduleImportWeek && scheduleFileInput.click()">
+      <div class="upload-icon">📅</div>
+      <div class="upload-text" *ngIf="scheduleImportWeek">גרור קובץ Excel לכאן או לחץ לבחירה</div>
+      <div class="upload-text" *ngIf="!scheduleImportWeek" style="color:var(--text-muted)">בחרי תחילה שבוע ↑</div>
+      <div class="upload-hint">.xlsx / .xls</div>
+      <input #scheduleFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="onScheduleFileChange($event)" [disabled]="!scheduleImportWeek">
+    </div>
+    <div *ngIf="importingSchedule()" class="import-status importing">
+      <div class="spinner-sm"></div> מייבא מערכת שעות...
+    </div>
+    <div *ngIf="scheduleImportResult()" class="import-status" [class.success]="!scheduleImportResult()!.error" [class.error]="scheduleImportResult()!.error">
+      <ng-container *ngIf="!scheduleImportResult()!.error">
+        ✓ יובאו {{ scheduleImportResult()!.imported }} שיעורים לשבוע {{ scheduleImportWeek }}
+        <span *ngIf="scheduleImportResult()!.skipped">({{ scheduleImportResult()!.skipped }} דולגו)</span>
+        <span *ngIf="scheduleImportResult()!.errors?.length" class="import-warnings">
+          ⚠️ {{ scheduleImportResult()!.errors?.length }} אזהרות
+        </span>
+      </ng-container>
+      <span *ngIf="scheduleImportResult()!.error">{{ scheduleImportResult()!.error }}</span>
+    </div>
+    <ul *ngIf="scheduleImportResult()?.errors?.length" class="import-error-list">
+      <li *ngFor="let e of scheduleImportResult()!.errors">{{ e }}</li>
+    </ul>
+  </div>
+
+  <!-- רשימת מורות -->
+  <div class="card" style="max-width:640px;">
+    <div class="section-title-row">
+      <div class="section-title" style="margin-bottom:0">רשימת מורות ({{ teachers().length }})</div>
+      <button class="btn btn-secondary" style="font-size:0.8rem;padding:5px 12px" (click)="loadTeachers()">🔄 רענן</button>
+    </div>
+    <div *ngIf="!teachers().length" class="empty-hint">אין מורות במערכת עדיין</div>
+    <div class="teacher-list-table">
+      <div *ngFor="let t of teachers()" class="teacher-list-row">
+        <ng-container *ngIf="editingTeacherId() !== t.id">
+          <div class="teacher-color-dot" [style.background]="teacherColor(t.id)"></div>
+          <div class="teacher-list-info">
+            <strong>{{ t.name }}</strong>
+            <span *ngIf="t.subject" class="teacher-meta">{{ t.subject }}</span>
+            <span *ngIf="t.phone" class="teacher-meta">📞 {{ t.phone }}</span>
+          </div>
+          <div class="teacher-list-actions">
+            <button class="btn btn-secondary btn-xs" (click)="startEditTeacher(t)">✏️</button>
+            <button class="btn btn-danger btn-xs" (click)="deleteTeacher(t.id)">🗑️</button>
+          </div>
+        </ng-container>
+        <ng-container *ngIf="editingTeacherId() === t.id">
+          <input [(ngModel)]="editTeacherDraft.name" class="inline-input" placeholder="שם">
+          <input [(ngModel)]="editTeacherDraft.subject" class="inline-input" placeholder="מקצוע">
+          <input [(ngModel)]="editTeacherDraft.phone" class="inline-input" placeholder="טלפון">
+          <button class="btn btn-primary btn-xs" (click)="saveTeacher(t.id)">שמור</button>
+          <button class="btn btn-secondary btn-xs" (click)="editingTeacherId.set(0)">✕</button>
+        </ng-container>
+      </div>
+    </div>
+  </div>
+</div>
 `,
 styles: [`
 .section-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
@@ -292,6 +421,35 @@ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .user-row { align-items: stretch; flex-direction: column; }
 .user-row select { max-width: none; }
 }
+
+/* Teachers tab */
+.teachers-admin { max-width: 640px; }
+.import-hint { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.7; }
+.teacher-add-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: flex-end; }
+@media (max-width: 700px) { .teacher-add-form { grid-template-columns: 1fr; } }
+.field-label { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); display: grid; gap: 5px; }
+.admin-input { border: 1.5px solid var(--border); border-radius: 8px; padding: 9px 12px;
+  font: inherit; font-size: 0.9rem; background: var(--surface-2);
+  &:focus { outline: none; border-color: var(--primary); } }
+.week-picker-row { margin-bottom: 12px; }
+.upload-area.disabled { opacity: 0.5; cursor: not-allowed; }
+.import-warnings { color: #d97706; font-weight: 700; margin-inline-start: 8px; }
+.import-error-list { font-size: 0.8rem; color: #b91c1c; margin: 6px 0 0 0; padding-inline-start: 18px;
+  li { margin-bottom: 2px; } }
+.section-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.empty-hint { color: var(--text-muted); font-size: 0.85rem; padding: 16px 0; text-align: center; }
+.teacher-list-table { display: flex; flex-direction: column; gap: 6px; }
+.teacher-list-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.teacher-color-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.teacher-list-info { flex: 1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  strong { font-size: 0.9rem; }
+  .teacher-meta { font-size: 0.78rem; color: var(--text-muted); } }
+.teacher-list-actions { display: flex; gap: 5px; }
+.btn-xs { padding: 4px 9px; font-size: 0.78rem; }
+.inline-input { border: 1.5px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  font: inherit; font-size: 0.85rem; flex: 1; min-width: 80px;
+  &:focus { outline: none; border-color: var(--primary); } }
 `]
 })
 export class AdminComponent {
@@ -328,6 +486,7 @@ constructor(private http: HttpClient, private api: ApiService, public auth: Auth
 this.loadTotal();
 this.loadApprovals();
 if (auth.user()?.role === 'admin') this.loadUsers();
+this.loadTeachers();
 }
 
 sections(): { id: AdminSection; icon: string; label: string }[] {
@@ -336,6 +495,7 @@ const all: { id: AdminSection; icon: string; label: string; roles: UserRole[] }[
 { id: 'tracks', icon: '', label: 'מסלולים', roles: ['admin', 'laborant'] },
 { id: 'students', icon: '', label: 'תלמידות', roles: ['admin', 'laborant', 'secretary'] },
 { id: 'approvals', icon: '', label: 'סוגי אישורים', roles: ['admin', 'laborant', 'secretary'] },
+{ id: 'teachers', icon: '👩‍🏫', label: 'מורות ומערכת', roles: ['admin', 'secretary'] },
 { id: 'users', icon: '', label: 'משתמשות והרשאות', roles: ['admin'] },
 ];
 return all.filter(s => role && s.roles.includes(role));
@@ -429,6 +589,97 @@ this.loadUsers();
 
 loadTotal() {
 this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.length));
+}
+
+// ── Teachers ──────────────────────────────────────────────
+teachers = signal<any[]>([]);
+newTeacherName = '';
+newTeacherSubject = '';
+newTeacherPhone = '';
+savingTeacher = signal(false);
+teacherMsg = signal<string | null>(null);
+editingTeacherId = signal(0);
+editTeacherDraft = { name: '', subject: '', phone: '' };
+draggingTeachers = signal(false);
+importingTeachers = signal(false);
+teacherImportResult = signal<{ imported: number; skipped: number } | null>(null);
+draggingSchedule = signal(false);
+importingSchedule = signal(false);
+scheduleImportResult = signal<any>(null);
+scheduleImportWeek = '';
+
+private readonly teacherColors = ['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#ede9fe','#ffedd5','#e0f2fe','#f0fdf4'];
+teacherColor(id: number) { return this.teacherColors[(id - 1) % this.teacherColors.length]; }
+
+loadTeachers() {
+  this.api.getTeachers().subscribe({ next: t => this.teachers.set(t), error: () => {} });
+}
+
+createTeacher() {
+  if (!this.newTeacherName.trim()) { this.teacherMsg.set('שגיאה: שם המורה הוא שדה חובה'); return; }
+  this.savingTeacher.set(true); this.teacherMsg.set(null);
+  this.api.createTeacher({ name: this.newTeacherName.trim(), subject: this.newTeacherSubject.trim() || undefined }).subscribe({
+    next: () => {
+      this.savingTeacher.set(false);
+      this.teacherMsg.set(`✓ המורה "${this.newTeacherName}" נוספה`);
+      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherPhone = '';
+      this.loadTeachers();
+    },
+    error: e => { this.savingTeacher.set(false); this.teacherMsg.set('שגיאה: ' + (e.error?.error || 'לא ניתן להוסיף')); }
+  });
+}
+
+startEditTeacher(t: any) {
+  this.editingTeacherId.set(t.id);
+  this.editTeacherDraft = { name: t.name, subject: t.subject || '', phone: t.phone || '' };
+}
+
+saveTeacher(id: number) {
+  this.api.updateTeacher(id, this.editTeacherDraft).subscribe({
+    next: () => { this.editingTeacherId.set(0); this.loadTeachers(); },
+    error: e => alert(e.error?.error || 'שגיאה')
+  });
+}
+
+deleteTeacher(id: number) {
+  if (!confirm('למחוק מורה זו? כל השיעורים שלה ייהחקו גם כן.')) return;
+  this.api.deleteTeacher(id).subscribe({ next: () => this.loadTeachers() });
+}
+
+onTeacherFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (file) this.importTeachers(file);
+}
+onDropTeachers(e: DragEvent) {
+  e.preventDefault(); this.draggingTeachers.set(false);
+  const file = e.dataTransfer?.files?.[0];
+  if (file) this.importTeachers(file);
+}
+importTeachers(file: File) {
+  this.importingTeachers.set(true); this.teacherImportResult.set(null);
+  this.api.importTeachersExcel(file).subscribe({
+    next: (r: { imported: number; skipped: number }) => { this.importingTeachers.set(false); this.teacherImportResult.set(r); this.loadTeachers(); },
+    error: (e: any) => { this.importingTeachers.set(false); alert(e.error?.error || 'שגיאה בייבוא'); }
+  });
+}
+
+onScheduleFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (file) this.importSchedule(file);
+}
+onDropSchedule(e: DragEvent) {
+  e.preventDefault(); this.draggingSchedule.set(false);
+  if (!this.scheduleImportWeek) return;
+  const file = e.dataTransfer?.files?.[0];
+  if (file) this.importSchedule(file);
+}
+importSchedule(file: File) {
+  if (!this.scheduleImportWeek) return;
+  this.importingSchedule.set(true); this.scheduleImportResult.set(null);
+  this.api.importScheduleExcel(file, this.scheduleImportWeek).subscribe({
+    next: (r: any) => { this.importingSchedule.set(false); this.scheduleImportResult.set(r); },
+    error: (e: any) => { this.importingSchedule.set(false); this.scheduleImportResult.set({ error: e.error?.error || 'שגיאה' }); }
+  });
 }
 
 loadApprovals() {

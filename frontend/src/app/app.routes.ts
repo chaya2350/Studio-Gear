@@ -112,6 +112,18 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },
       {
+        path: 'schedule',
+        loadComponent: () => import('./pages/schedule/schedule').then((m) => m.ScheduleComponent),
+      },
+      {
+        path: 'attendance/scan',
+        loadComponent: () => import('./pages/attendance/attendance-scan').then((m) => m.AttendanceScanComponent),
+      },
+      {
+        path: 'attendance/print',
+        loadComponent: () => import('./pages/attendance/attendance-print').then((m) => m.AttendancePrintComponent),
+      },
+      {
         path: 'kiosk',
         loadComponent: () => import('./pages/kiosk/kiosk').then((m) => m.KioskComponent),
       },
