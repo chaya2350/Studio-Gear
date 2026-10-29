@@ -116,6 +116,10 @@ export const routes: Routes = [
           import('./pages/student-search/student-search').then((m) => m.StudentSearchComponent),
       },
       {
+        path: 'students-table',
+        loadComponent: () => import('./pages/students-table/students-table').then((m) => m.StudentsTableComponent),
+      },
+      {
         path: 'students/:id',
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },

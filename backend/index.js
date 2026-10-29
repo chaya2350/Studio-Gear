@@ -1110,6 +1110,30 @@ app.get('/api/search', (req, res) => {
   res.json({ students, equipment, examCodes });
 });
 
+// סיכום דרישות לכל התלמידות בקריאה אחת — לטבלת Excel
+app.get('/api/students/requirements-summary', (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      s.id_number,
+      COUNT(tr.id) AS total_reqs,
+      COUNT(sr.requirement_id) AS completed_reqs,
+      SUM(CASE WHEN tr.required = 1 AND sr.requirement_id IS NULL
+               AND (tr.years IS NULL OR tr.years LIKE '%' || s.year || '%')
+               THEN 1 ELSE 0 END) AS missing_required
+    FROM students s
+    LEFT JOIN tracks t ON (s.track LIKE '%' || t.name || '%')
+    LEFT JOIN track_requirements tr ON tr.track_id = t.id
+      AND (tr.years IS NULL OR tr.years LIKE '%' || s.year || '%')
+    LEFT JOIN student_requirements sr ON sr.id_number = s.id_number AND sr.requirement_id = tr.id
+    GROUP BY s.id_number
+  `).all();
+  const map = {};
+  for (const r of rows) {
+    map[r.id_number] = { total: r.total_reqs, completed: r.completed_reqs, missing: r.missing_required };
+  }
+  res.json(map);
+});
+
 // רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
 app.get('/api/students/classes', (req, res) => {
   const rows = db.prepare(`

@@ -138,6 +138,7 @@ export class ApiService {
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
+  getStudentRequirementsSummary() { return this.http.get<Record<string, { total: number; completed: number; missing: number }>>(`${this.base}/students/requirements-summary`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
   uploadStudentPhoto(id_number: string, file: File) {
     const fd = new FormData();

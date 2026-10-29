@@ -48,10 +48,23 @@ autofocus
 
 <!-- תוצאה נבחרת -->
 <div *ngIf="selected()" class="result-card">
+
+<!-- Photo popup -->
+<div *ngIf="photoOpen" class="photo-popup-backdrop" (click)="photoOpen=false">
+  <div class="photo-popup" (click)="$event.stopPropagation()">
+    <img [src]="selected()!.photo_url!" [alt]="selected()!.name" class="photo-popup-img">
+    <div class="photo-popup-name">{{ selected()!.name }}</div>
+    <button class="photo-popup-close" (click)="photoOpen=false">✕</button>
+  </div>
+</div>
+
 <div class="result-header">
-  <div class="result-avatar" [style.background]="avatarColor()">
+  <div class="result-avatar" [style.background]="avatarColor()"
+       [class.clickable]="!!selected()!.photo_url"
+       (click)="selected()!.photo_url && (photoOpen=true)">
     <img *ngIf="selected()!.photo_url" [src]="selected()!.photo_url" class="result-avatar-img" [alt]="selected()!.name">
     <span *ngIf="!selected()!.photo_url">{{ selected()!.name.charAt(0) }}</span>
+    <span *ngIf="selected()!.photo_url" class="zoom-hint">🔍</span>
   </div>
 <div class="result-info">
 <div class="result-name">{{ selected()!.name }}</div>
@@ -139,15 +152,36 @@ overflow: hidden; animation: slideIn 0.2s ease;
 @keyframes slideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
 .result-header { display: flex; align-items: center; gap: 14px; padding: 16px; }
 .result-avatar {
-width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
 background: linear-gradient(135deg, #0d9488, #0891b2);
-color: white; font-size: 1.3rem; font-weight: 800;
+color: white; font-size: 1.5rem; font-weight: 800;
 display: flex; align-items: center; justify-content: center;
-overflow: hidden;
+overflow: hidden; position: relative; transition: transform 0.15s;
+&.clickable { cursor: pointer; &:hover { transform: scale(1.08); } &:hover .zoom-hint { opacity:1; } }
 }
-.result-avatar-img {
-width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+.result-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.zoom-hint {
+  position: absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background: rgba(0,0,0,0.35); font-size:1rem; opacity:0; transition:opacity .15s; border-radius:50%;
 }
+.photo-popup-backdrop {
+  position: fixed; inset:0; z-index:2000; background:rgba(0,0,0,.7);
+  display:flex; align-items:center; justify-content:center; animation:fadeIn .15s ease;
+}
+.photo-popup {
+  position:relative; background:var(--surface); border-radius:var(--radius);
+  padding:14px; box-shadow:0 24px 60px rgba(0,0,0,.4);
+  display:flex; flex-direction:column; align-items:center; gap:10px; max-width:90vw;
+}
+.photo-popup-img { width:min(320px,80vw); height:min(320px,80vw); object-fit:cover; border-radius:var(--radius-sm); display:block; }
+.photo-popup-name { font-size:1rem; font-weight:800; color:var(--text); }
+.photo-popup-close {
+  position:absolute; top:8px; left:8px; width:28px; height:28px;
+  border:none; background:var(--surface-2); border-radius:50%; cursor:pointer; font-size:.9rem;
+  display:flex; align-items:center; justify-content:center;
+  &:hover { background:#fee2e2; color:var(--danger); }
+}
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
 .result-info { flex: 1; min-width: 0; }
 .result-name { font-size: 1.05rem; font-weight: 800; color: var(--text); }
 .result-meta { display: flex; gap: 10px; font-size: 0.78rem; color: var(--text-muted); margin-top: 3px; flex-wrap: wrap; }
@@ -172,6 +206,7 @@ font-size: 0.875rem; text-decoration: none;
 export class StudentSearchComponent {
 query = '';
 focused = false;
+photoOpen = false;
 suggestions = signal<Student[]>([]);
 selected = signal<Student | null>(null);
 today = new Date().toISOString().split('T')[0];

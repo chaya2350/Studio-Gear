@@ -19,9 +19,10 @@ import { RouterLink } from '@angular/router';
 
       <!-- Avatar + identity -->
       <div class="identity">
-        <div class="avatar" [style.background]="avatarColor">
+        <div class="avatar" [style.background]="avatarColor" [class.avatar--clickable]="!!imageUrl" (click)="imageUrl && openPhoto()">
           @if (imageUrl) {
             <img [src]="imageUrl" [alt]="name" class="avatar-img">
+            <span class="avatar-zoom-hint">🔍</span>
           } @else {
             <span>{{ initials }}</span>
           }
@@ -29,6 +30,17 @@ import { RouterLink } from '@angular/router';
             <span class="avatar-crown" title="כל הדרישות הושלמו">✓</span>
           }
         </div>
+
+        <!-- Photo popup -->
+        @if (photoOpen) {
+          <div class="photo-popup-backdrop" (click)="photoOpen=false">
+            <div class="photo-popup" (click)="$event.stopPropagation()">
+              <img [src]="imageUrl" [alt]="name" class="photo-popup-img">
+              <div class="photo-popup-name">{{ name }}</div>
+              <button class="photo-popup-close" (click)="photoOpen=false">✕</button>
+            </div>
+          </div>
+        }
         <div class="identity-text">
           <h2 class="student-name">{{ name }}</h2>
           <p class="student-meta">{{ idNumber }}<span *ngIf="track"> · {{ track }}{{ year ? ' ' + year : '' }}</span></p>
@@ -155,19 +167,39 @@ import { RouterLink } from '@angular/router';
     }
 
     .avatar {
-      width: 56px;
-      height: 56px;
+      width: 72px;
+      height: 72px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.4rem;
+      font-size: 1.8rem;
       font-weight: 900;
       color: white;
       flex-shrink: 0;
       position: relative;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       overflow: hidden;
+      transition: transform 0.15s;
+
+      &--clickable {
+        cursor: pointer;
+        &:hover { transform: scale(1.06); }
+        &:hover .avatar-zoom-hint { opacity: 1; }
+      }
+    }
+
+    .avatar-zoom-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.35);
+      font-size: 1.1rem;
+      opacity: 0;
+      transition: opacity 0.15s;
+      border-radius: 50%;
     }
 
     .avatar-img {
@@ -176,6 +208,59 @@ import { RouterLink } from '@angular/router';
       object-fit: cover;
       border-radius: 50%;
     }
+
+    /* ── Photo popup ── */
+    .photo-popup-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.15s ease;
+    }
+    .photo-popup {
+      position: relative;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 12px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      max-width: 90vw;
+    }
+    .photo-popup-img {
+      width: min(340px, 80vw);
+      height: min(340px, 80vw);
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      display: block;
+    }
+    .photo-popup-name {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .photo-popup-close {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: var(--surface-2);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      &:hover { background: #fee2e2; color: var(--danger); }
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
     .avatar-crown {
       position: absolute;
@@ -420,6 +505,9 @@ export class StudentProfileCardComponent implements OnChanges {
   statusLevel: 'ok' | 'warn' | 'danger' = 'ok';
   statusLabel = '';
   statusIcon = '';
+  photoOpen = false;
+
+  openPhoto() { this.photoOpen = true; }
 
   private readonly PALETTE = [
     '#0d9488', '#0891b2', '#6366f1', '#8b5cf6',
