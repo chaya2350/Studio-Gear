@@ -116,24 +116,20 @@ export const routes: Routes = [
           import('./pages/student-search/student-search').then((m) => m.StudentSearchComponent),
       },
       {
-        path: 'students-table',
-        loadComponent: () => import('./pages/students-table/students-table').then((m) => m.StudentsTableComponent),
-      },
-      {
-        path: 'students/:id',
-        loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
-      },
-      {
-        path: 'teacher/me',
-        loadComponent: () => import('./pages/teacher-profile/teacher-profile').then((m) => m.TeacherProfileComponent),
-      },
-      {
         path: 'teachers/search',
         loadComponent: () => import('./pages/teacher-search/teacher-search').then((m) => m.TeacherSearchComponent),
       },
       {
         path: 'teachers/:id',
         loadComponent: () => import('./pages/teacher-profile/teacher-profile').then((m) => m.TeacherProfileComponent),
+      },
+      {
+        path: 'students-table',
+        loadComponent: () => import('./pages/students-table/students-table').then((m) => m.StudentsTableComponent),
+      },
+      {
+        path: 'students/:id',
+        loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },
       {
         path: 'schedule',

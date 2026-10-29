@@ -139,7 +139,7 @@ function formatHebDate(dateStr: string): string {
       <div class="teacher-info" *ngIf="editingTeacherId() !== t.id">
         <div class="teacher-color" [style.background]="teacherColor(t.id)"></div>
         <div>
-          <a [routerLink]="['/teachers', t.id]" class="teacher-link"><strong>{{ t.name }}</strong></a>
+          <strong>{{ t.name }}</strong>
           <span *ngIf="t.subject" class="teacher-subject">{{ t.subject }}</span>
           <span *ngIf="t.specialization" class="teacher-specialization">{{ t.specialization }}</span>
         </div>
@@ -188,16 +188,18 @@ function formatHebDate(dateStr: string): string {
           <option *ngFor="let t of kodeshTeachers()" [value]="t.id">{{ t.name }}{{ t.subject ? ' (' + t.subject + ')' : '' }}</option>
         </select>
       </label>
-      <p *ngIf="lessonType() === 'class' && !kodeshTeachers().length" class="hint-msg">
-        אין מורות עם התמחות "קודש". עברי לטאב "מורות" והגדירי למורה הרצויה התמחות = קודש.
-      </p>
       <label class="field">
-        <span>כיתה</span>
-        <select [(ngModel)]="selectedClassKey">
-          <option value="">בחר כיתה</option>
-          <option *ngFor="let c of studentClasses()" [value]="c.class_name + '|' + c.parallel_num">
-            {{ c.label }}
-          </option>
+        <span>שנה</span>
+        <select [(ngModel)]="newSlot.class_year">
+          <option value="">שנה</option>
+          <option *ngFor="let y of YEARS" [value]="y">{{ y }}</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>מקבילה</span>
+        <select [(ngModel)]="newSlot.class_parallel">
+          <option value="">מס׳</option>
+          <option *ngFor="let p of PARALLELS" [value]="p">{{ p }}</option>
         </select>
       </label>
       <label class="field">
@@ -371,7 +373,6 @@ function formatHebDate(dateStr: string): string {
   &.active { background: var(--surface); color: var(--primary); font-weight: 700;
     box-shadow: var(--shadow-xs); } }
 .specialization-placeholder { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 0.95rem; }
-.hint-msg { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.82rem; background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 12px; border: 1px solid var(--border); }
 
 /* Forms */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
@@ -446,10 +447,6 @@ export class ScheduleComponent implements OnInit {
   // Lesson type toggle: 'class' = שיעור לכיתה, 'specialization' = שיעור להתמחות
   lessonType = signal<'class' | 'specialization'>('class');
 
-  // Existing student classes for the class dropdown
-  studentClasses = signal<any[]>([]);
-  selectedClassKey = '';
-
   // Slot CRUD
   newSlot: any = { teacher_id: '', class_year: '', class_parallel: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
   savingSlot = signal(false);
@@ -475,22 +472,14 @@ export class ScheduleComponent implements OnInit {
   ngOnInit() {
     this.loadTeachers();
     this.loadSchedule();
-    this.loadStudentClasses();
   }
 
   loadTeachers() {
     this.api.getTeachers().subscribe({ next: t => this.teachers.set(t), error: () => {} });
   }
 
-  loadStudentClasses() {
-    this.api.getStudentClasses().subscribe({ next: c => this.studentClasses.set(c), error: () => {} });
-  }
-
-  // Teachers with a קודש-related specialization (for שיעור לכיתה)
-  kodeshTeachers = computed(() => {
-    const kodehSpecializations = ['קודש', 'רכזת קודש', 'רכזת חנוכית'];
-    return this.teachers().filter(t => kodehSpecializations.includes(t.specialization));
-  });
+  // Teachers with specialization = 'קודש' (for שיעור לכיתה)
+  kodeshTeachers = computed(() => this.teachers().filter(t => t.specialization === 'קודש'));
 
   loadSchedule() {
     this.loading.set(true);
@@ -556,17 +545,15 @@ export class ScheduleComponent implements OnInit {
 
   createSlot() {
     const s = this.newSlot;
-    if (!s.teacher_id || !this.selectedClassKey || s.day_of_week === '' || !s.start_time) {
+    if (!s.teacher_id || !s.class_year || !s.class_parallel || s.day_of_week === '' || !s.start_time) {
       this.slotError.set('יש למלא: מורה, כיתה, יום, שעת התחלה'); return;
     }
-    const [class_year, class_parallel] = this.selectedClassKey.split('|');
     this.savingSlot.set(true); this.slotError.set(''); this.slotSuccess.set('');
-    this.api.createScheduleSlot({ ...s, teacher_id: Number(s.teacher_id), class_year, class_parallel, day_of_week: Number(s.day_of_week), week_start: this._weekStart() }).subscribe({
+    this.api.createScheduleSlot({ ...s, teacher_id: Number(s.teacher_id), day_of_week: Number(s.day_of_week), week_start: this._weekStart() }).subscribe({
       next: () => {
         this.savingSlot.set(false);
         this.slotSuccess.set('שיעור נוסף בהצלחה');
         this.newSlot = { teacher_id: '', class_year: '', class_parallel: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
-        this.selectedClassKey = '';
         this.loadSchedule();
       },
       error: e => { this.savingSlot.set(false); this.slotError.set(e.error?.error || 'שגיאה'); }

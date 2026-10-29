@@ -284,7 +284,7 @@ export class TeacherProfileComponent implements OnInit {
         : this.api.getMyTeacherProfile();
 
       request$.subscribe({
-        next: (res) => {
+        next: (res: any) => {
           this.teacher.set(res.teacher);
           this.lessons.set(res.lessons || []);
           this.weekStart.set(res.week_start || '');

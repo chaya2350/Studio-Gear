@@ -242,9 +242,10 @@ export class ApiService {
   globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 
   // ── Teachers ──
+  getTeacher(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}`); }
+  getTeacherProfile(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}/profile`); }
+  getMyTeacherProfile() { return this.http.get<any>(`${this.base}/teachers/profile`); }
   getTeachers(q?: string) { return this.http.get<any[]>(`${this.base}/teachers${q ? '?q=' + encodeURIComponent(q) : ''}`); }
-  getTeacherProfile(id: number) { return this.http.get<{ teacher: any; lessons: any[]; week_start: string }>(`${this.base}/teachers/${id}`); }
-  getMyTeacherProfile() { return this.http.get<{ teacher: any; lessons: any[]; week_start: string }>(`${this.base}/teachers/me`); }
   createTeacher(data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string }) { return this.http.post<any>(`${this.base}/teachers`, data); }
   updateTeacher(id: number, data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string; active?: number }) { return this.http.put<{success:boolean}>(`${this.base}/teachers/${id}`, data); }
   deleteTeacher(id: number) { return this.http.delete(`${this.base}/teachers/${id}`); }
