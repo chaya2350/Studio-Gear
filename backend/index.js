@@ -10,7 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
-const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('./database-report');
+const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -1075,6 +1075,7 @@ function mapStudentRow(row) {
   if (!row) return row;
   return {
     ...row,
+    class_name: row.class_name || buildClassName(row.year, row.parallel),
     track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
     extra_data: parseExtraData(row.extra_data)
   };
@@ -1146,12 +1147,14 @@ app.put('/api/students/:id_number', (req, res) => {
   const track = optionalText(req.body?.track, existing.track);
   const year = optionalText(req.body?.year, existing.year);
   const phoneCode = optionalText(req.body?.phone_code, existing.phone_code);
+  const parallel = optionalText(req.body?.parallel, existing.parallel);
   const extraData = sanitizeExtraData(req.body?.extra_data, existing.extra_data);
+  const className = buildClassName(year, parallel);
 
   const result = db.prepare(`
-    UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, extra_data = ?
+    UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?
     WHERE id_number = ?
-  `).run(name, phone, phoneCode, track, year, JSON.stringify(extraData), req.params.id_number);
+  `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), req.params.id_number);
   res.json({ success: true });
 });
 
@@ -1634,8 +1637,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
     const rows = parseStudentWorkbook(req.file.buffer);
 
     const upsert = db.prepare(`
-      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, extra_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, parallel, class_name, extra_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id_number) DO UPDATE SET
         name=excluded.name,
         phone=excluded.phone,
@@ -1644,6 +1647,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         year=excluded.year,
         birth_date=excluded.birth_date,
         address=excluded.address,
+        parallel=excluded.parallel,
+        class_name=excluded.class_name,
         extra_data=excluded.extra_data
     `);
     const getExistingStudent = db.prepare('SELECT * FROM students WHERE id_number = ?');
@@ -1712,8 +1717,10 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const mergedPhoneCode = pickValue(existing?.phone_code, phone_code);
         const mergedTrack = mergeTrackValues(existing?.track, track);
         const mergedYear = pickValue(existing?.year, year);
+        const mergedParallel = pickValue(existing?.parallel, String(extraFields.parallel || extraFields['מקבילה'] || '').trim());
         const mergedBirthDate = pickValue(existing?.birth_date, birth_date);
         const mergedAddress = pickValue(existing?.address, address);
+        const mergedClassName = buildClassName(mergedYear, mergedParallel);
 
         upsert.run(
           id_number,
@@ -1724,6 +1731,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
           mergedYear,
           mergedBirthDate,
           mergedAddress,
+          mergedParallel || null,
+          mergedClassName,
           JSON.stringify(mergedExtra.merged)
         );
         imported++;
@@ -2401,6 +2410,669 @@ app.get('/api/students/:id_number/exams', (req, res) => {
     ORDER BY e.created_at DESC
   `).all(req.params.id_number);
   res.json(rows);
+});
+
+// ── Attendance / Schedule ─────────────────────────────────────
+
+// Migration: add parallel and class_name columns to students
+const studentColsCheck = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+if (!studentColsCheck.includes('parallel')) db.exec("ALTER TABLE students ADD COLUMN parallel TEXT");
+if (!studentColsCheck.includes('class_name')) db.exec("ALTER TABLE students ADD COLUMN class_name TEXT");
+
+db.exec(`
+  UPDATE students
+  SET
+    year = CASE
+      WHEN TRIM(COALESCE(year, '')) = '' THEN
+        CASE
+          WHEN TRIM(COALESCE(json_extract(extra_data, '$.כיתה'), '')) <> '' THEN json_extract(extra_data, '$.כיתה')
+          WHEN TRIM(COALESCE(json_extract(extra_data, '$.class'), '')) <> '' THEN json_extract(extra_data, '$.class')
+          ELSE year
+        END
+      ELSE year
+    END,
+    parallel = CASE
+      WHEN TRIM(COALESCE(parallel, '')) = '' THEN
+        CASE
+          WHEN TRIM(COALESCE(json_extract(extra_data, '$.מקבילה'), '')) <> '' THEN json_extract(extra_data, '$.מקבילה')
+          WHEN TRIM(COALESCE(json_extract(extra_data, '$.parallel'), '')) <> '' THEN json_extract(extra_data, '$.parallel')
+          WHEN TRIM(COALESCE(json_extract(extra_data, '$.כיתה'), '')) <> '' THEN json_extract(extra_data, '$.כיתה')
+          ELSE parallel
+        END
+      ELSE parallel
+    END,
+    class_name = CASE
+      WHEN TRIM(COALESCE(year, '')) <> '' OR TRIM(COALESCE(parallel, '')) <> '' THEN (TRIM(COALESCE(year, '')) || TRIM(COALESCE(parallel, '')))
+      ELSE class_name
+    END
+  WHERE TRIM(COALESCE(year, '')) = '' OR TRIM(COALESCE(parallel, '')) = '' OR TRIM(COALESCE(class_name, '')) = '';
+`);
+
+// Teachers table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS teachers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    subject TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// Schedule slots: one row per teacher-class-day combination per week
+// day_of_week: 0=ראשון, 1=שני, 2=שלישי, 3=רביעי, 4=חמישי
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schedule_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    class_year TEXT NOT NULL,
+    class_parallel TEXT NOT NULL,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 4),
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    subject TEXT,
+    week_start TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (teacher_id, class_year, class_parallel, day_of_week, week_start)
+  );
+  CREATE INDEX IF NOT EXISTS schedule_slots_week_idx ON schedule_slots(week_start);
+  CREATE INDEX IF NOT EXISTS schedule_slots_teacher_idx ON schedule_slots(teacher_id);
+`);
+
+// Attendance sessions: one per teacher-class-date event
+db.exec(`
+  CREATE TABLE IF NOT EXISTS attendance_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slot_id INTEGER REFERENCES schedule_slots(id) ON DELETE SET NULL,
+    teacher_id INTEGER NOT NULL REFERENCES teachers(id),
+    class_year TEXT NOT NULL,
+    class_parallel TEXT NOT NULL,
+    lesson_date TEXT NOT NULL,
+    subject TEXT,
+    start_time TEXT,
+    locked INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (teacher_id, class_year, class_parallel, lesson_date)
+  );
+  CREATE INDEX IF NOT EXISTS attendance_sessions_date_idx ON attendance_sessions(lesson_date);
+`);
+
+// Attendance records: per student per session
+db.exec(`
+  CREATE TABLE IF NOT EXISTS attendance_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
+    id_number TEXT NOT NULL REFERENCES students(id_number) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present','absent','late')),
+    recorded_by INTEGER REFERENCES users(id),
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (session_id, id_number)
+  );
+  CREATE INDEX IF NOT EXISTS attendance_records_session_idx ON attendance_records(session_id);
+  CREATE INDEX IF NOT EXISTS attendance_records_student_idx ON attendance_records(id_number);
+`);
+
+const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
+
+// Helper: build attendance barcode string
+function encodeAttendanceCode(teacherId, classYear, classParallel, date) {
+  return `ATT-T${teacherId}-${classYear}${classParallel}-${date}`;
+}
+
+// Helper: get monday (ראשון) of a week containing a date (Israel week starts Sunday)
+function getWeekStart(dateStr) {
+  const d = new Date(dateStr);
+  const day = d.getDay(); // 0=Sun
+  d.setDate(d.getDate() - day);
+  return d.toISOString().split('T')[0];
+}
+
+// ── Teachers CRUD ──────────────────────────────────────────────
+app.get('/api/teachers', (req, res) => {
+  const teachers = db.prepare('SELECT * FROM teachers ORDER BY name').all();
+  res.json(teachers);
+});
+
+app.post('/api/teachers', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
+  try {
+    const result = db.prepare('INSERT INTO teachers (name, subject) VALUES (?, ?)').run(name, req.body?.subject || null);
+    res.json({ id: result.lastInsertRowid, name, subject: req.body?.subject || null });
+  } catch {
+    res.status(400).json({ error: 'מורה עם שם זה כבר קיימת' });
+  }
+});
+
+app.put('/api/teachers/:id', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
+  const result = db.prepare('UPDATE teachers SET name=?, subject=?, active=? WHERE id=?')
+    .run(name, req.body?.subject || null, req.body?.active ?? 1, req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'מורה לא נמצאה' });
+  res.json({ success: true });
+});
+
+app.delete('/api/teachers/:id', (req, res) => {
+  db.prepare('DELETE FROM teachers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ── Schedule Slots CRUD ────────────────────────────────────────
+app.get('/api/schedule', (req, res) => {
+  const { week } = req.query;
+  const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
+  const slots = db.prepare(`
+    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject
+    FROM schedule_slots s
+    JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.week_start = ?
+    ORDER BY s.class_year, s.class_parallel, s.day_of_week, s.start_time
+  `).all(weekStart);
+  res.json({ week_start: weekStart, slots });
+});
+
+app.post('/api/schedule', (req, res) => {
+  const { teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start } = req.body || {};
+  if (!teacher_id || !class_year || !class_parallel || day_of_week == null || !start_time || !week_start) {
+    return res.status(400).json({ error: 'שדות חסרים: מורה, כיתה, יום, שעה, שבוע' });
+  }
+  try {
+    const result = db.prepare(`
+      INSERT INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(teacher_id, String(class_year), String(class_parallel), Number(day_of_week), start_time, end_time || null, subject || null, week_start);
+    res.json({ id: result.lastInsertRowid });
+  } catch {
+    res.status(400).json({ error: 'שיעור כבר קיים לשילוב זה של מורה/כיתה/יום/שבוע' });
+  }
+});
+
+// Copy previous week's schedule to a new week
+app.post('/api/schedule/copy-week', (req, res) => {
+  const { from_week, to_week } = req.body || {};
+  if (!from_week || !to_week) return res.status(400).json({ error: 'חסרים פרמטרים: from_week, to_week' });
+  const existing = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(to_week);
+  if (existing.c > 0) return res.status(400).json({ error: 'שבוע היעד כבר מכיל שיעורים' });
+
+  const slots = db.prepare('SELECT * FROM schedule_slots WHERE week_start = ?').all(from_week);
+  if (!slots.length) return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
+
+  const ins = db.prepare(`INSERT OR IGNORE INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start) VALUES (?,?,?,?,?,?,?,?)`);
+  const tx = db.transaction(() => { for (const s of slots) ins.run(s.teacher_id, s.class_year, s.class_parallel, s.day_of_week, s.start_time, s.end_time, s.subject, to_week); });
+  tx();
+  res.json({ copied: slots.length, to_week });
+});
+
+app.put('/api/schedule/:id', (req, res) => {
+  const { teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject } = req.body || {};
+  const result = db.prepare(`
+    UPDATE schedule_slots SET teacher_id=?, class_year=?, class_parallel=?, day_of_week=?, start_time=?, end_time=?, subject=? WHERE id=?
+  `).run(teacher_id, String(class_year), String(class_parallel), Number(day_of_week), start_time, end_time || null, subject || null, req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'שיעור לא נמצא' });
+  res.json({ success: true });
+});
+
+app.delete('/api/schedule/:id', (req, res) => {
+  db.prepare('DELETE FROM schedule_slots WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Delete entire week
+app.delete('/api/schedule/week/:week_start', (req, res) => {
+  const result = db.prepare('DELETE FROM schedule_slots WHERE week_start=?').run(req.params.week_start);
+  res.json({ deleted: result.changes });
+});
+
+// ── Weekly Sheets – PDF Data ───────────────────────────────────
+// Returns JSON with all data needed to render the printable sheets
+app.get('/api/attendance/weekly-sheets', (req, res) => {
+  const { week } = req.query;
+  const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
+
+  // Get all slots for this week grouped by teacher then by class
+  const slots = db.prepare(`
+    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject
+    FROM schedule_slots s
+    JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.week_start = ?
+    ORDER BY t.name, s.class_year, s.class_parallel, s.day_of_week
+  `).all(weekStart);
+
+  if (!slots.length) return res.json({ week_start: weekStart, sheets: [] });
+
+  // Build date for each day: weekStart + day_of_week
+  function slotDate(slot) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + slot.day_of_week);
+    return d.toISOString().split('T')[0];
+  }
+
+  // Group: teacher → class → days
+  const teacherMap = new Map();
+  for (const slot of slots) {
+    if (!teacherMap.has(slot.teacher_id)) {
+      teacherMap.set(slot.teacher_id, {
+        teacher_id: slot.teacher_id,
+        teacher_name: slot.teacher_name,
+        classes: new Map()
+      });
+    }
+    const teacher = teacherMap.get(slot.teacher_id);
+    const classKey = `${slot.class_year}${slot.class_parallel}`;
+    if (!teacher.classes.has(classKey)) {
+      teacher.classes.set(classKey, {
+        class_year: slot.class_year,
+        class_parallel: slot.class_parallel,
+        class_name: `${slot.class_year}${slot.class_parallel}`,
+        days: []
+      });
+    }
+    const cls = teacher.classes.get(classKey);
+    const lessonDate = slotDate(slot);
+    cls.days.push({
+      slot_id: slot.id,
+      day_of_week: slot.day_of_week,
+      day_name: DAYS_HE[slot.day_of_week],
+      lesson_date: lessonDate,
+      start_time: slot.start_time,
+      end_time: slot.end_time,
+      subject: slot.subject || slot.teacher_subject || '',
+      barcode: encodeAttendanceCode(slot.teacher_id, slot.class_year, slot.class_parallel, lessonDate)
+    });
+
+    // Get students for this class
+    teacher.classes.get(classKey)._studentsLoaded = true;
+  }
+
+  // Load students per class
+  const sheets = [];
+  for (const teacher of teacherMap.values()) {
+    for (const cls of teacher.classes.values()) {
+      const students = db.prepare(`
+        SELECT id_number, name
+        FROM students
+        WHERE year = ? AND parallel = ?
+        ORDER BY name
+      `).all(cls.class_year, cls.class_parallel);
+
+      const studentBarcodes = students.map(s => ({
+        id_number: s.id_number,
+        name: s.name,
+        barcode: `STU-${s.id_number}`
+      }));
+
+      sheets.push({
+        teacher_id: teacher.teacher_id,
+        teacher_name: teacher.teacher_name,
+        class_year: cls.class_year,
+        class_parallel: cls.class_parallel,
+        class_name: cls.class_name,
+        week_start: weekStart,
+        days: cls.days,
+        students: studentBarcodes
+      });
+    }
+  }
+
+  res.json({ week_start: weekStart, sheets });
+});
+
+// ── Attendance Sessions CRUD ───────────────────────────────────
+
+// Resolve or create a session from a scanned attendance barcode
+// barcode format: ATT-T{teacherId}-{year}{parallel}-{date}
+app.post('/api/attendance/scan-session', (req, res) => {
+  const { barcode } = req.body || {};
+  if (!barcode) return res.status(400).json({ error: 'ברקוד חסר' });
+
+  const match = String(barcode).match(/^ATT-T(\d+)-([^-]+)-(\d{4}-\d{2}-\d{2})$/);
+  if (!match) return res.status(400).json({ error: 'ברקוד לא מוכר — פורמט שגוי' });
+
+  const [, teacherIdStr, classFull, lessonDate] = match;
+  const teacherId = Number(teacherIdStr);
+
+  // Split class into year + parallel (year = 'ה'/'ו', parallel = digits)
+  const classMatch = classFull.match(/^([\u05d0-\u05ea]+)(\d+)$/);
+  if (!classMatch) return res.status(400).json({ error: 'ברקוד לא מוכר — פורמט כיתה שגוי' });
+  const [, classYear, classParallel] = classMatch;
+
+  const teacher = db.prepare('SELECT * FROM teachers WHERE id=?').get(teacherId);
+  if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });
+
+  // Find matching slot for subject/time info
+  const weekStart = getWeekStart(lessonDate);
+  const dayOfWeek = new Date(lessonDate).getDay();
+  const slot = db.prepare(`
+    SELECT * FROM schedule_slots
+    WHERE teacher_id=? AND class_year=? AND class_parallel=? AND day_of_week=? AND week_start=?
+  `).get(teacherId, classYear, classParallel, dayOfWeek, weekStart);
+
+  // Get or create session
+  let session = db.prepare(`
+    SELECT * FROM attendance_sessions
+    WHERE teacher_id=? AND class_year=? AND class_parallel=? AND lesson_date=?
+  `).get(teacherId, classYear, classParallel, lessonDate);
+
+  if (!session) {
+    const result = db.prepare(`
+      INSERT INTO attendance_sessions (slot_id, teacher_id, class_year, class_parallel, lesson_date, subject, start_time, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(slot?.id || null, teacherId, classYear, classParallel, lessonDate,
+           slot?.subject || teacher.subject || null,
+           slot?.start_time || null, req.user?.id || null);
+    session = db.prepare('SELECT * FROM attendance_sessions WHERE id=?').get(result.lastInsertRowid);
+  }
+
+  // Count students in class
+  const studentCount = db.prepare(`SELECT COUNT(*) AS c FROM students WHERE year=? AND parallel=?`).get(classYear, classParallel).c;
+
+  // Existing records
+  const records = db.prepare(`SELECT id_number, status FROM attendance_records WHERE session_id=?`).all(session.id);
+
+  res.json({
+    session,
+    teacher,
+    class_name: `${classYear}${classParallel}`,
+    lesson_date: lessonDate,
+    student_count: studentCount,
+    records,
+    subject: session.subject || '',
+    start_time: session.start_time || ''
+  });
+});
+
+// Get session details with full student list
+app.get('/api/attendance/sessions/:id', (req, res) => {
+  const session = db.prepare(`
+    SELECT s.*, t.name AS teacher_name
+    FROM attendance_sessions s
+    JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.id=?
+  `).get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'סשן לא נמצא' });
+
+  const students = db.prepare(`
+    SELECT st.id_number, st.name,
+      COALESCE(r.status, 'present') AS status,
+      r.recorded_at
+    FROM students st
+    LEFT JOIN attendance_records r ON r.id_number = st.id_number AND r.session_id = ?
+    WHERE st.year = ? AND st.parallel = ?
+    ORDER BY st.name
+  `).all(session.id, session.class_year, session.class_parallel);
+
+  res.json({ session, students });
+});
+
+// Record absent students from barcode scan
+app.post('/api/attendance/sessions/:id/absent', (req, res) => {
+  const session = db.prepare('SELECT * FROM attendance_sessions WHERE id=?').get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'סשן לא נמצא' });
+  if (session.locked) return res.status(400).json({ error: 'הסשן נעול ולא ניתן לעדכון' });
+
+  const { id_number } = req.body || {};
+  if (!id_number) return res.status(400).json({ error: 'מספר זהות חסר' });
+
+  const student = db.prepare('SELECT id_number, name FROM students WHERE id_number=?').get(String(id_number));
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+
+  db.prepare(`
+    INSERT INTO attendance_records (session_id, id_number, status, recorded_by)
+    VALUES (?, ?, 'absent', ?)
+    ON CONFLICT(session_id, id_number) DO UPDATE SET status='absent', recorded_by=excluded.recorded_by, recorded_at=datetime('now')
+  `).run(session.id, student.id_number, req.user?.id || null);
+
+  res.json({ success: true, id_number: student.id_number, name: student.name, status: 'absent' });
+});
+
+// Record late students from barcode scan
+app.post('/api/attendance/sessions/:id/late', (req, res) => {
+  const session = db.prepare('SELECT * FROM attendance_sessions WHERE id=?').get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'סשן לא נמצא' });
+  if (session.locked) return res.status(400).json({ error: 'הסשן נעול ולא ניתן לעדכון' });
+
+  const { id_number } = req.body || {};
+  if (!id_number) return res.status(400).json({ error: 'מספר זהות חסר' });
+
+  const student = db.prepare('SELECT id_number, name FROM students WHERE id_number=?').get(String(id_number));
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+
+  db.prepare(`
+    INSERT INTO attendance_records (session_id, id_number, status, recorded_by)
+    VALUES (?, ?, 'late', ?)
+    ON CONFLICT(session_id, id_number) DO UPDATE SET status='late', recorded_by=excluded.recorded_by, recorded_at=datetime('now')
+  `).run(session.id, student.id_number, req.user?.id || null);
+
+  res.json({ success: true, id_number: student.id_number, name: student.name, status: 'late' });
+});
+
+// Lock/finalize a session (mark as done)
+app.post('/api/attendance/sessions/:id/lock', (req, res) => {
+  db.prepare('UPDATE attendance_sessions SET locked=1 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Bulk update: submit full session results at once
+app.put('/api/attendance/sessions/:id/records', (req, res) => {
+  const session = db.prepare('SELECT * FROM attendance_sessions WHERE id=?').get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'סשן לא נמצא' });
+
+  const { records } = req.body || {};
+  if (!Array.isArray(records)) return res.status(400).json({ error: 'רשימת רשומות חסרה' });
+
+  const upsert = db.prepare(`
+    INSERT INTO attendance_records (session_id, id_number, status, recorded_by)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(session_id, id_number) DO UPDATE SET status=excluded.status, recorded_by=excluded.recorded_by, recorded_at=datetime('now')
+  `);
+  const del = db.prepare('DELETE FROM attendance_records WHERE session_id=? AND id_number=?');
+
+  const tx = db.transaction(() => {
+    for (const r of records) {
+      if (!r.id_number || !r.status) continue;
+      if (r.status === 'present') {
+        del.run(session.id, r.id_number); // present = no record needed
+      } else {
+        upsert.run(session.id, r.id_number, r.status, req.user?.id || null);
+      }
+    }
+  });
+  tx();
+  db.prepare('UPDATE attendance_sessions SET locked=1 WHERE id=?').run(session.id);
+  res.json({ success: true });
+});
+
+// ── Attendance Stats per student ───────────────────────────────
+app.get('/api/students/:id_number/attendance', (req, res) => {
+  const student = db.prepare('SELECT * FROM students WHERE id_number=?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+
+  // All sessions the student should have attended (her class)
+  const sessions = db.prepare(`
+    SELECT s.id, s.lesson_date, s.subject, s.class_year, s.class_parallel,
+      t.name AS teacher_name,
+      COALESCE(r.status, 'present') AS status
+    FROM attendance_sessions s
+    JOIN teachers t ON t.id = s.teacher_id
+    LEFT JOIN attendance_records r ON r.session_id = s.id AND r.id_number = ?
+    WHERE s.class_year = ? AND s.class_parallel = ?
+    ORDER BY s.lesson_date DESC
+  `).all(student.id_number, student.year, student.parallel || '');
+
+  // Summarize by subject
+  const bySubject = {};
+  for (const sess of sessions) {
+    const key = sess.subject || 'כללי';
+    if (!bySubject[key]) bySubject[key] = { subject: key, teacher_name: sess.teacher_name, total: 0, absent: 0, late: 0 };
+    bySubject[key].total++;
+    if (sess.status === 'absent') bySubject[key].absent++;
+    if (sess.status === 'late') bySubject[key].late++;
+  }
+
+  const summary = Object.values(bySubject);
+  const totalSessions = sessions.length;
+  const totalAbsent = sessions.filter(s => s.status === 'absent').length;
+  const totalLate = sessions.filter(s => s.status === 'late').length;
+
+  res.json({
+    student: { id_number: student.id_number, name: student.name, class_year: student.year, class_parallel: student.parallel },
+    total_sessions: totalSessions,
+    total_absent: totalAbsent,
+    total_late: totalLate,
+    attendance_pct: totalSessions > 0 ? Math.round((1 - totalAbsent / totalSessions) * 100) : 100,
+    by_subject: summary,
+    sessions
+  });
+});
+
+// Barcode image for an attendance session slot
+app.get('/api/attendance/barcode', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ error: 'code חסר' });
+  try {
+    const png = await bwipjs.toBuffer({ bcid: 'code128', text: String(code), scale: 3, height: 12, includetext: false });
+    res.type('image/png');
+    res.send(png);
+  } catch {
+    res.status(500).json({ error: 'שגיאה ביצירת הברקוד' });
+  }
+});
+
+// Barcode image for a student (student barcode = STU-{id_number})
+app.get('/api/attendance/student-barcode/:id_number', async (req, res) => {
+  const code = `STU-${req.params.id_number}`;
+  try {
+    const png = await bwipjs.toBuffer({ bcid: 'code128', text: code, scale: 3, height: 12, includetext: false });
+    res.type('image/png');
+    res.send(png);
+  } catch {
+    res.status(500).json({ error: 'שגיאה ביצירת הברקוד' });
+  }
+});
+
+// Update student's parallel (class number)
+app.put('/api/students/:id_number/parallel', (req, res) => {
+  const parallel = String(req.body?.parallel || '').trim();
+  const result = db.prepare('UPDATE students SET parallel=? WHERE id_number=?').run(parallel || null, req.params.id_number);
+  if (!result.changes) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  res.json({ success: true });
+});
+
+// ── Import teachers from Excel ─────────────────────────────────
+app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'קובץ חסר' });
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    const insert = db.prepare('INSERT OR IGNORE INTO teachers (name, subject, active) VALUES (?, ?, 1)');
+    const update = db.prepare('UPDATE teachers SET subject=? WHERE name=?');
+
+    let imported = 0, skipped = 0;
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        // Accept columns: שם / name, טלפון / phone, מקצוע / subject
+        const name = String(
+          row['שם'] || row['שם מלא'] || row['name'] || row['Name'] || ''
+        ).trim();
+        if (!name) { skipped++; continue; }
+        const subject = String(row['מקצוע'] || row['subject'] || '').trim() || null;
+        const phone = String(row['טלפון'] || row['phone'] || '').trim() || null;
+
+        const existing = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
+        if (existing) {
+          // Update subject/phone if provided
+          if (subject) update.run(subject, name);
+          skipped++;
+        } else {
+          insert.run(name, subject);
+          if (phone) {
+            const t = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
+            if (t) db.prepare('UPDATE teachers SET phone=? WHERE id=?').run(phone, t.id).toString();
+          }
+          imported++;
+        }
+      }
+    });
+    tx();
+    res.json({ imported, skipped });
+  } catch (e) {
+    res.status(400).json({ error: 'שגיאה בקריאת הקובץ: ' + (e instanceof Error ? e.message : String(e)) });
+  }
+});
+
+// Add phone column to teachers if missing
+const teacherCols = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name);
+if (!teacherCols.includes('phone')) db.exec('ALTER TABLE teachers ADD COLUMN phone TEXT');
+
+// ── Import schedule from Excel ──────────────────────────────────
+// Expected columns: מורה/teacher, שנה/year, מקבילה/parallel, יום/day, שעה_התחלה/start_time, שעה_סיום/end_time, מקצוע/subject
+// day values: ראשון/1, שני/2 etc. or number 0-4
+app.post('/api/schedule/import', xlsxUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'קובץ חסר' });
+  const weekStart = String(req.body?.week_start || '').trim();
+  if (!weekStart) return res.status(400).json({ error: 'week_start חסר' });
+
+  const DAY_MAP = { 'ראשון': 0, 'שני': 1, 'שלישי': 2, 'רביעי': 3, 'חמישי': 4,
+    'א': 0, 'ב': 1, 'ג': 2, 'ד': 3, 'ה': 4,
+    '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+    '0': 0, 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4 };
+
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    let imported = 0, skipped = 0;
+    const errors = [];
+
+    const upsert = db.prepare(`
+      INSERT INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(teacher_id, class_year, class_parallel, day_of_week, week_start)
+      DO UPDATE SET start_time=excluded.start_time, end_time=excluded.end_time, subject=excluded.subject
+    `);
+
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        const teacherName = String(row['מורה'] || row['teacher'] || row['שם מורה'] || '').trim();
+        const classYear   = String(row['שנה']   || row['year']   || row['כיתה שנה'] || '').trim();
+        const classParallel = String(row['מקבילה'] || row['parallel'] || row['מס כיתה'] || row['מספר כיתה'] || '').trim();
+        const dayRaw      = String(row['יום']    || row['day']    || '').trim().toLowerCase();
+        const startTime   = String(row['שעה התחלה'] || row['שעה_התחלה'] || row['start_time'] || row['שעה'] || '').trim();
+        const endTime     = String(row['שעה סיום'] || row['שעה_סיום'] || row['end_time'] || '').trim() || null;
+        const subject     = String(row['מקצוע'] || row['subject'] || '').trim() || null;
+
+        if (!teacherName || !classYear || !classParallel || !dayRaw || !startTime) {
+          skipped++;
+          continue;
+        }
+
+        const dayOfWeek = DAY_MAP[dayRaw] ?? DAY_MAP[dayRaw.replace('יום ', '')] ?? null;
+        if (dayOfWeek === null || dayOfWeek === undefined) {
+          errors.push(`שורה לא מוכרת: יום "${dayRaw}"`);
+          skipped++;
+          continue;
+        }
+
+        let teacher = db.prepare('SELECT id FROM teachers WHERE name=?').get(teacherName);
+        if (!teacher) {
+          const r = db.prepare('INSERT INTO teachers (name, active) VALUES (?, 1)').run(teacherName);
+          teacher = { id: r.lastInsertRowid };
+        }
+
+        upsert.run(teacher.id, classYear, classParallel, dayOfWeek, startTime, endTime, subject, weekStart);
+        imported++;
+      }
+    });
+    tx();
+    res.json({ imported, skipped, errors: errors.slice(0, 10) });
+  } catch (e) {
+    res.status(400).json({ error: 'שגיאה בקריאת הקובץ: ' + (e instanceof Error ? e.message : String(e)) });
+  }
 });
 
 // ── Notifications ─────────────────────────────────────────────

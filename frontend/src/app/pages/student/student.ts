@@ -72,6 +72,10 @@ template: `
 <span>שנה</span>
 <input name="year" [(ngModel)]="studentDraft.year">
 </label>
+<label class="field">
+<span>מקבילה (מספר כיתה)</span>
+<input name="parallel" [(ngModel)]="studentDraft.parallel" placeholder="למשל: 1, 2, 3">
+</label>
 </div>
 </section>
 
@@ -267,6 +271,38 @@ type="checkbox"
 </div>
 </div>
 
+<div class="card" style="margin-top:20px;" *ngIf="attendance() as att">
+<div class="section-title">📊 נוכחות בשיעורים</div>
+<ng-container *ngIf="att.total_sessions > 0; else noAttendance">
+  <!-- Summary banner -->
+  <div class="att-summary" [class.good]="att.attendance_pct >= 80" [class.warn]="att.attendance_pct >= 60 && att.attendance_pct < 80" [class.bad]="att.attendance_pct < 60">
+    <div class="att-pct">{{ att.attendance_pct }}%</div>
+    <div class="att-text">
+      <strong>אחוז נוכחות כללי</strong>
+      <span>{{ att.total_sessions }} שיעורים | {{ att.total_absent }} היעדרויות | {{ att.total_late }} איחורים</span>
+    </div>
+  </div>
+
+  <!-- By subject -->
+  <div class="att-subjects" *ngIf="att.by_subject.length">
+    <div *ngFor="let subj of att.by_subject" class="att-subject-row">
+      <div class="subj-info">
+        <strong>{{ subj.subject }}</strong>
+        <span class="subj-teacher">{{ subj.teacher_name }}</span>
+      </div>
+      <div class="subj-stats">
+        <span *ngIf="subj.absent > 0" class="stat-chip absent">חסרה {{ subj.absent }}</span>
+        <span *ngIf="subj.late > 0" class="stat-chip late">איחרה {{ subj.late }}</span>
+        <span class="stat-chip total">{{ subj.total }} שיעורים</span>
+      </div>
+    </div>
+  </div>
+</ng-container>
+<ng-template #noAttendance>
+  <p class="req-note">עדיין לא נרשמה נוכחות לתלמידה זו.</p>
+</ng-template>
+</div>
+
 <div class="card" style="margin-top:20px;">
 <div class="section-title"> היסטוריית השאלות ({{ student()!.loans?.length || 0 }})</div>
 <div *ngIf="!student()!.loans?.length" class="empty-state" style="padding:30px 0;">
@@ -299,8 +335,7 @@ type="checkbox"
 </div>
 </div>
 
-<div *ngIf="!student() && !loading()" class="empty-state">
-<div class="empty-icon"></div>
+<div *ngIf="!student() && !loading()" class="empty-state"><div class="empty-icon"></div>
 <p>תלמידה לא נמצאה</p>
 <a href="#" (click)="goBack($event)" class="btn btn-primary" style="margin-top:16px;">חזרה</a>
 </div>
@@ -543,6 +578,28 @@ padding: 5px 14px; font-size: 0.8rem; font-weight: 700; color: var(--text-muted)
 display: flex; align-items: center; gap: 6px;
 span { color: var(--text); font-size: 1rem; }
 }
+.att-summary {
+display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: var(--radius-sm);
+margin-bottom: 14px; border: 1.5px solid;
+&.good { background: #f0fdf4; border-color: #bbf7d0; .att-pct { color: #16a34a; } }
+&.warn { background: #fffbeb; border-color: #fde68a; .att-pct { color: #d97706; } }
+&.bad { background: #fef2f2; border-color: #fecaca; .att-pct { color: var(--danger); } }
+}
+.att-pct { font-size: 2rem; font-weight: 800; min-width: 60px; text-align: center; }
+.att-text { strong { display: block; font-size: 0.9rem; } span { font-size: 0.8rem; color: var(--text-muted); } }
+.att-subjects { display: flex; flex-direction: column; gap: 8px; }
+.att-subject-row {
+display: flex; align-items: center; justify-content: space-between; padding: 10px 14px;
+background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.subj-info { strong { display: block; } .subj-teacher { font-size: 0.78rem; color: var(--text-muted); } }
+.subj-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.stat-chip {
+border-radius: 12px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700;
+&.absent { background: #fef2f2; color: #b91c1c; }
+&.late { background: #fffbeb; color: #d97706; }
+&.total { background: var(--surface-2); color: var(--text-muted); }
+}
 `]
 })
 export class StudentComponent implements OnInit {
@@ -552,7 +609,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '' };
+studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -560,6 +617,7 @@ requirements = signal<StudentRequirements | null>(null);
 requirementError = signal('');
 savingRequirementId = signal<number | null>(null);
 exams = signal<any[]>([]);
+attendance = signal<any>(null);
 
 constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
 
@@ -576,7 +634,7 @@ this.loadStudent(id);
 
 loadStudent(id: string) {
 this.api.getStudent(id).subscribe({
-next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); this.loadExams(s.id_number); },
+next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); this.loadExams(s.id_number); this.loadAttendance(s.id_number); },
 error: () => this.loading.set(false)
 });
 }
@@ -585,6 +643,13 @@ loadExams(id_number: string) {
 this.api.getStudentExams(id_number).subscribe({
 next: rows => this.exams.set(rows),
 error: () => this.exams.set([])
+});
+}
+
+loadAttendance(id_number: string) {
+this.api.getStudentAttendance(id_number).subscribe({
+next: att => this.attendance.set(att),
+error: () => this.attendance.set(null)
 });
 }
 
@@ -680,7 +745,8 @@ name: current.name,
 phone: current.phone || '',
 phone_code: current.phone_code || '',
 track: current.track || '',
-year: current.year || ''
+year: current.year || '',
+parallel: current.parallel || ''
 };
 this.editingExtraFields = this.extraFields().map((field) => ({ ...field }));
 this.newExtraField = { key: '', value: '' };
@@ -730,8 +796,7 @@ const payload = {
 ...this.studentDraft,
 extra_data: this.buildExtraDataForSave()
 };
-this.api.updateStudent(current.id_number, payload).subscribe({
-next: () => {
+this.api.updateStudent(current.id_number, payload).subscribe({next: () => {
 this.editing.set(false);
 this.saving.set(false);
 this.loadStudent(current.id_number);
@@ -884,7 +949,8 @@ if (normalizedClass.includes('התמח')) {
 return 'התמחות';
 }
 
-const parallel = this.parallelValue();
+// Prefer the new dedicated 'parallel' field, then fall back to extra_data
+const parallel = String(this.student()?.parallel || '').trim() || this.parallelValue();
 if (!parallel) return baseClass;
 
 const numericParallel = Number(String(parallel).trim());

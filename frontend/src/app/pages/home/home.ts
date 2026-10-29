@@ -190,7 +190,7 @@ interface DashboardStats {
       <p class="nav-eyebrow">ניווט מהיר</p>
       <div class="nav-grid">
         @for (mod of modules; track mod.link) {
-          <a [routerLink]="mod.link" class="nav-item">
+          <a [routerLink]="mod.link" class="nav-item" [class.nav-item--attendance]="mod.group === 'attendance'">
             <div class="nav-item-inner">
               <span class="nav-title">{{ mod.title }}</span>
               <span class="nav-desc">{{ mod.desc }}</span>
@@ -692,6 +692,14 @@ interface DashboardStats {
       min-width: 0;
     }
 
+    .nav-item--attendance {
+      border-color: #bfdbfe;
+      background: linear-gradient(135deg, #f0f7ff 0%, #fafeff 100%);
+      &::before { background: linear-gradient(to bottom, #3b82f6, #06b6d4); }
+      &:hover { border-color: #3b82f6; box-shadow: var(--shadow), 0 0 0 3px rgba(59,130,246,0.15); }
+      .nav-title { color: #1d4ed8; }
+    }
+
     .nav-title {
       display: block;
       font-size: 0.92rem;
@@ -817,14 +825,17 @@ export class HomeComponent implements OnInit {
   });
 
   readonly modules = [
-    { link: '/equipment',          title: 'השאלת ציוד',    desc: 'ניהול ציוד והשאלות',       badge: 0 },
-    { link: '/students',           title: 'תלמידות',       desc: 'פרטים אישיים והיסטוריה',    badge: 0 },
-    { link: '/approvals',          title: 'אישורים',       desc: 'הפקת אישורי נוכחות',        badge: 0 },
-    { link: '/exams',              title: 'מבחנים',        desc: 'ברקודים ורישום ציונים',      badge: 0 },
-    { link: '/pages',              title: 'דפים',          desc: 'נושאים ודפים אישיים',        badge: 0 },
-    { link: '/messages',           title: 'הודעות',        desc: 'שיחות פרטיות',              badge: 0 },
-    { link: '/calendar/personal',  title: 'לוח שנה',       desc: 'הלוח האישי ולוח הציוד',     badge: 0 },
-    { link: '/admin',              title: 'ניהול',         desc: 'נתוני תלמידות ומסלולים',    badge: 0 },
+    { link: '/equipment',          title: 'השאלת ציוד',    desc: 'ניהול ציוד והשאלות',       badge: 0, group: '' },
+    { link: '/students',           title: 'תלמידות',       desc: 'פרטים אישיים והיסטוריה',    badge: 0, group: '' },
+    { link: '/approvals',          title: 'אישורים',       desc: 'הפקת אישורי נוכחות',        badge: 0, group: '' },
+    { link: '/exams',              title: 'מבחנים',        desc: 'ברקודים ורישום ציונים',      badge: 0, group: '' },
+    { link: '/schedule',           title: '📅 מערכת שעות', desc: 'ניהול שיעורים שבועיים',      badge: 0, group: 'attendance' },
+    { link: '/attendance/print',   title: '🖨️ דפי נוכחות', desc: 'הדפסת דפים שבועיים',         badge: 0, group: 'attendance' },
+    { link: '/attendance/scan',    title: '📋 רישום נוכחות',desc: 'סריקת ברקוד שיעור',          badge: 0, group: 'attendance' },
+    { link: '/pages',              title: 'דפים',          desc: 'נושאים ודפים אישיים',        badge: 0, group: '' },
+    { link: '/messages',           title: 'הודעות',        desc: 'שיחות פרטיות',              badge: 0, group: '' },
+    { link: '/calendar/personal',  title: 'לוח שנה',       desc: 'הלוח האישי ולוח הציוד',     badge: 0, group: '' },
+    { link: '/admin',              title: 'ניהול',         desc: 'נתוני תלמידות ומסלולים',    badge: 0, group: '' },
   ];
 
   constructor(

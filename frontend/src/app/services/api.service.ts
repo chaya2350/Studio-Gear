@@ -117,6 +117,17 @@ export class ApiService {
     formData.append('file', file);
     return this.http.post<CalendarImportResult>(`${this.base}/calendar-events/import`, formData);
   }
+  importTeachersExcel(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<{ imported: number; skipped: number }>(`${this.base}/teachers/import`, formData);
+  }
+  importScheduleExcel(file: File, weekStart: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('week_start', weekStart);
+    return this.http.post<{ imported: number; skipped: number; errors?: string[]; error?: string }>(`${this.base}/schedule/import`, formData);
+  }
 
   getCategories() { return this.http.get<Category[]>(`${this.base}/categories`); }
   createCategory(data: { name: string; icon: string; parent_id?: number | null }) { return this.http.post<Category>(`${this.base}/categories`, data); }
@@ -127,7 +138,7 @@ export class ApiService {
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'>) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
   }
   deleteStudent(id_number: string) {
@@ -219,4 +230,37 @@ export class ApiService {
   }
   getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
   globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
+
+  // ── Teachers ──
+  getTeachers() { return this.http.get<any[]>(`${this.base}/teachers`); }
+  createTeacher(data: { name: string; subject?: string }) { return this.http.post<any>(`${this.base}/teachers`, data); }
+  updateTeacher(id: number, data: { name: string; subject?: string; active?: number }) { return this.http.put<{success:boolean}>(`${this.base}/teachers/${id}`, data); }
+  deleteTeacher(id: number) { return this.http.delete(`${this.base}/teachers/${id}`); }
+
+  // ── Schedule ──
+  getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
+  createScheduleSlot(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule`, data); }
+  updateScheduleSlot(id: number, data: any) { return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data); }
+  deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
+  copyWeekSchedule(from: string, to: string) { return this.http.post<{copied:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to }); }
+  deleteWeekSchedule(week: string) { return this.http.delete<{deleted:number}>(`${this.base}/schedule/week/${week}`); }
+
+  // ── Attendance Sheets ──
+  getWeeklySheets(week?: string) { return this.http.get<{week_start:string; sheets:any[]}>(`${this.base}/attendance/weekly-sheets${week ? '?week=' + week : ''}`); }
+  getAttendanceBarcodeUrl(code: string) { return `${this.base}/attendance/barcode?code=${encodeURIComponent(code)}`; }
+  getStudentAttendanceBarcodeUrl(id_number: string) { return `${this.base}/attendance/student-barcode/${encodeURIComponent(id_number)}`; }
+
+  // ── Attendance Sessions ──
+  scanAttendanceBarcode(barcode: string) { return this.http.post<any>(`${this.base}/attendance/scan-session`, { barcode }); }
+  getAttendanceSession(id: number) { return this.http.get<any>(`${this.base}/attendance/sessions/${id}`); }
+  markAbsent(sessionId: number, id_number: string) { return this.http.post<any>(`${this.base}/attendance/sessions/${sessionId}/absent`, { id_number }); }
+  markLate(sessionId: number, id_number: string) { return this.http.post<any>(`${this.base}/attendance/sessions/${sessionId}/late`, { id_number }); }
+  lockSession(sessionId: number) { return this.http.post<{success:boolean}>(`${this.base}/attendance/sessions/${sessionId}/lock`, {}); }
+  submitSessionRecords(sessionId: number, records: {id_number: string; status: string}[]) {
+    return this.http.put<{success:boolean}>(`${this.base}/attendance/sessions/${sessionId}/records`, { records });
+  }
+  getStudentAttendance(id_number: string) { return this.http.get<any>(`${this.base}/students/${encodeURIComponent(id_number)}/attendance`); }
+  updateStudentParallel(id_number: string, parallel: string) {
+    return this.http.put<{success:boolean}>(`${this.base}/students/${encodeURIComponent(id_number)}/parallel`, { parallel });
+  }
 }

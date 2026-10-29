@@ -31,6 +31,13 @@ function parseClassParts(classValue) {
   return { year: match[1], parallel: match[2] || '' };
 }
 
+function buildClassName(yearValue, parallelValue) {
+  const year = String(yearValue ?? '').replace(/\s+/g, '').trim();
+  const parallel = String(parallelValue ?? '').replace(/\s+/g, '').trim();
+  if (!year && !parallel) return '';
+  return `${year}${parallel}`;
+}
+
 function gatherExtraKeys(students) {
   const keys = new Set();
   for (const student of students) {
@@ -246,4 +253,4 @@ function buildClassReport(students, exams, gradesByExam, className) {
   return { class_name: normalizedClass, year, parallel, columns, rows: studentsWithGrades, exams: filteredExams, students: studentsWithGrades };
 }
 
-module.exports = { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey };
+module.exports = { buildTrackReport, buildClassReport, buildClassName, splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey };
