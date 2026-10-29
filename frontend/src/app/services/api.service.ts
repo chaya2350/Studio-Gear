@@ -193,6 +193,8 @@ export class ApiService {
   getExamStats() { return this.http.get<{ byStudent: any[]; byExam: any[] }>(`${this.base}/exams-stats/summary`); }
   getStudentExams(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/exams`); }
   getExamBarcodeUrl(code: string) { return `${this.base}/exam-codes/${encodeURIComponent(code)}/barcode`; }
+  getExamTemplate(id: number) { return this.http.get<any>(`${this.base}/exams/${id}/template`); }
+  saveExamTemplate(id: number, data: { template_type: string; questions: any[] }) { return this.http.put<{ success: boolean }>(`${this.base}/exams/${id}/template`, data); }
 
   // ── דפים אישיים ──
   getPageTopics() { return this.http.get<any[]>(`${this.base}/pages/topics`); }

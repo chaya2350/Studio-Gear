@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams\/\d+\/codes|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -2061,6 +2061,12 @@ db.exec(`
     exam_date TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS exam_templates (
+    exam_id INTEGER PRIMARY KEY REFERENCES exams(id) ON DELETE CASCADE,
+    template_type TEXT NOT NULL DEFAULT 'open',
+    questions TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS exam_codes (
     code TEXT PRIMARY KEY,
     exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
@@ -2097,6 +2103,29 @@ app.post('/api/exams', (req, res) => {
 
 app.delete('/api/exams/:id', (req, res) => {
   db.prepare('DELETE FROM exams WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// תבנית מבחן (שאלות)
+app.get('/api/exams/:id/template', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const tmpl = db.prepare('SELECT * FROM exam_templates WHERE exam_id=?').get(req.params.id);
+  res.json(tmpl || { exam_id: Number(req.params.id), template_type: 'open', questions: [] });
+});
+
+app.put('/api/exams/:id/template', (req, res) => {
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if (!exam) return res.status(404).json({ error: 'מבחן לא נמצא' });
+  const { template_type, questions } = req.body || {};
+  const type = ['multiple_choice', 'open'].includes(template_type) ? template_type : 'open';
+  let qs = [];
+  try { qs = Array.isArray(questions) ? questions : JSON.parse(questions || '[]'); } catch { qs = []; }
+  db.prepare(`
+    INSERT INTO exam_templates (exam_id, template_type, questions, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(exam_id) DO UPDATE SET template_type=excluded.template_type, questions=excluded.questions, updated_at=excluded.updated_at
+  `).run(Number(req.params.id), type, JSON.stringify(qs));
   res.json({ success: true });
 });
 

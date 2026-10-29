@@ -32,6 +32,8 @@ template: `
 <div class="exam-row-stats">
 <span class="stat graded"> {{ e.graded_count }}</span>
 <span class="stat avg" *ngIf="e.avg_grade != null">ממוצע {{ e.avg_grade }}</span>
+<button class="icon-btn" (click)="goToEditor(e, $event)" title="עריכת שאלות"> ✏️</button>
+<button class="icon-btn" (click)="goToPrint(e, $event)" title="הדפסה לכיתה">🖨</button>
 <button class="del-btn" (click)="deleteExam(e, $event)" title="מחיקה"></button>
 </div>
 </div>
@@ -193,6 +195,7 @@ cursor: pointer; transition: all var(--transition);
 .stat { background: var(--surface-2); border-radius: 20px; padding: 3px 10px; font-weight: 700; }
 .stat.graded { color: var(--primary); }
 .del-btn { border: none; background: transparent; cursor: pointer; opacity: 0.5; &:hover { opacity: 1; } }
+.icon-btn { border: none; background: transparent; cursor: pointer; font-size: 1rem; opacity: 0.7; &:hover { opacity: 1; } }
 
 .new-exam { border-radius: var(--radius-sm); padding: 14px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -339,6 +342,16 @@ this.error.set('');
 this.api.getExam(e.id).subscribe(data => {
   this.selectedExamStudents.set(data.students || []);
 });
+}
+
+goToEditor(e: any, ev: Event) {
+  ev.stopPropagation();
+  this.router.navigate(['/exams', e.id, 'edit']);
+}
+
+goToPrint(e: any, ev: Event) {
+  ev.stopPropagation();
+  this.router.navigate(['/exams', e.id, 'print']);
 }
 
 missingStudents() {
