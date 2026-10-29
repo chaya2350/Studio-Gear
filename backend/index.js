@@ -1106,6 +1106,26 @@ app.get('/api/search', (req, res) => {
   res.json({ students, equipment, examCodes });
 });
 
+// רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
+app.get('/api/students/classes', (req, res) => {
+  const rows = db.prepare(`
+    SELECT class_name, parallel, COUNT(*) as count
+    FROM students
+    WHERE class_name IS NOT NULL AND class_name != ''
+      AND parallel IS NOT NULL AND parallel != '' AND parallel != '0'
+    GROUP BY class_name, parallel
+    ORDER BY class_name, parallel
+  `).all();
+  const list = rows.map(r => ({
+    parallel: `${r.class_name}_${r.parallel}`,
+    label: `כיתה ${r.class_name}${r.parallel}`,
+    class_name: r.class_name,
+    parallel_num: r.parallel,
+    count: r.count
+  }));
+  res.json(list);
+});
+
 app.get('/api/students/:id_number', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
@@ -2268,26 +2288,7 @@ function encodeExamCode(examId, idNumber) {
   return `EX${examId}-${idNumber}`;
 }
 
-// רשימת כיתות (מקבילות) ייחודיות לסינון בהפקת מבחנים
-app.get('/api/students/classes', (req, res) => {
-  const rows = db.prepare(`
-    SELECT class_name, parallel, COUNT(*) as count
-    FROM students
-    WHERE class_name IS NOT NULL AND class_name != ''
-      AND parallel IS NOT NULL AND parallel != '' AND parallel != '0'
-    GROUP BY class_name, parallel
-    ORDER BY class_name, parallel
-  `).all();
-  // מחזיר key ייחודי class_name+parallel, ותווית קריאה
-  const list = rows.map(r => ({
-    parallel: `${r.class_name}_${r.parallel}`, // מפתח ייחודי
-    label: `כיתה ${r.class_name}${r.parallel}`,
-    class_name: r.class_name,
-    parallel_num: r.parallel,
-    count: r.count
-  }));
-  res.json(list);
-});
+// רשימת כיתות (מקבילות) ייחודיות לסינון בהפקת מבחנים — הועבר לפני /:id_number
 
 app.post('/api/exams/:id/codes', (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
