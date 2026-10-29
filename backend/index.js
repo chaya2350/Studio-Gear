@@ -1658,7 +1658,8 @@ app.delete('/api/categories/:id', (req, res) => {
 
 // ── Equipment ──────────────────────────────────────────────
 // Helper: build equipment status for a given date
-function equipmentQuery(whereClause = '') {
+function equipmentQuery(whereClause = '', date = null) {
+  const d = date || "date('now')";
   return `
     SELECT e.*,
       CASE WHEN e.category = 'מצלמות אישיות' THEN 'ציוד צילום' ELSE e.category END as category,
@@ -1667,15 +1668,17 @@ function equipmentQuery(whereClause = '') {
       active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
     FROM equipment e
-    LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL AND active.loan_date <= date('now')
-    LEFT JOIN (SELECT equipment_id, COUNT(*) as cnt FROM loans WHERE actual_return IS NULL AND loan_date > date('now') GROUP BY equipment_id) future
+    LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL
+      AND active.loan_date <= ${d} AND active.expected_return >= ${d}
+    LEFT JOIN (SELECT equipment_id, COUNT(*) as cnt FROM loans WHERE actual_return IS NULL AND loan_date > ${d} GROUP BY equipment_id) future
       ON future.equipment_id = e.id
     ${whereClause}
   `;
 }
 
 app.get('/api/equipment', (req, res) => {
-  res.json(db.prepare(equipmentQuery()).all());
+  const date = req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date)) ? `'${req.query.date}'` : null;
+  res.json(db.prepare(equipmentQuery('', date)).all());
 });
 
 // Generate a new unique barcode number
