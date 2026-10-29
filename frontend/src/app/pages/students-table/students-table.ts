@@ -61,14 +61,14 @@ interface TableStudent {
   <div class="filter-row" *ngIf="filterMode()==='track'">
     <div class="form-group">
       <label>מסלול</label>
-      <select [(ngModel)]="selTrack">
+      <select [ngModel]="selTrack()" (ngModelChange)="selTrack.set($event)">
         <option value="">כל המסלולים</option>
         <option *ngFor="let t of trackOptions()" [value]="t">{{ t }}</option>
       </select>
     </div>
     <div class="form-group">
       <label>שנה</label>
-      <select [(ngModel)]="selYear">
+      <select [ngModel]="selYear()" (ngModelChange)="selYear.set($event)">
         <option value="">כל השנים</option>
         <option *ngFor="let y of yearOptions()" [value]="y">{{ toStudyYear(y) }}</option>
       </select>
@@ -78,7 +78,7 @@ interface TableStudent {
   <div class="filter-row" *ngIf="filterMode()==='class'">
     <div class="form-group">
       <label>כיתה</label>
-      <select [(ngModel)]="selClass">
+      <select [ngModel]="selClass()" (ngModelChange)="selClass.set($event)">
         <option value="">בחרי כיתה</option>
         <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }})</option>
       </select>
@@ -88,11 +88,11 @@ interface TableStudent {
   <div class="filter-row">
     <div class="form-group" style="flex:2">
       <label>חיפוש חופשי</label>
-      <input [(ngModel)]="searchQ" placeholder="שם, ת.ז, טלפון...">
+      <input [ngModel]="searchQ()" (ngModelChange)="searchQ.set($event)" placeholder="שם, ת.ז, טלפון...">
     </div>
     <div class="form-group">
       <label>מיון</label>
-      <select [(ngModel)]="sortBy">
+      <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)">
         <option value="family">לפי שם משפחה</option>
         <option value="name">לפי שם פרטי</option>
         <option value="class">לפי כיתה</option>
@@ -179,7 +179,7 @@ interface TableStudent {
 </div>
 
 <div *ngIf="loading()" class="loading-center">טוענת נתונים...</div>
-<div *ngIf="!loading() && !filtered().length && (filterMode()==='all' || selTrack || selYear || selClass || searchQ)"
+<div *ngIf="!loading() && !filtered().length && (filterMode()==='all' || selTrack() || selYear() || selClass() || searchQ())"
      class="empty-state card">אין תלמידות לבחירה הנוכחית</div>
 `,
   styles: [`
@@ -251,11 +251,11 @@ interface TableStudent {
 export class StudentsTableComponent implements OnInit {
   loading = signal(true);
   filterMode = signal<'track' | 'class' | 'all'>('all');
-  selTrack = '';
-  selYear = '';
-  selClass = '';
-  searchQ = '';
-  sortBy = 'family';
+  selTrack = signal('');
+  selYear  = signal('');
+  selClass = signal('');
+  searchQ  = signal('');
+  sortBy   = signal('family');
   showPhoto = true;
   showExtra = false;
 
@@ -302,28 +302,21 @@ export class StudentsTableComponent implements OnInit {
   filtered = computed(() => {
     let list = this.allStudents();
 
-    // סינון לפי מחזור/שנה
     if (this.filterMode() === 'track') {
-      if (this.selYear) list = list.filter(s => s.year === this.selYear);
+      if (this.selYear()) list = list.filter(s => s.year === this.selYear());
     }
-
-    // סינון לפי כיתה — עובד תמיד
-    if (this.selClass) {
-      const [cn, pn] = this.selClass.split('_');
+    if (this.selClass()) {
+      const [cn, pn] = this.selClass().split('_');
       list = list.filter(s =>
         String(s.class_name || '').trim() === cn &&
         String(s.parallel  || '').trim() === pn
       );
     }
-
-    // סינון לפי מסלול — עובד תמיד
-    if (this.selTrack) {
-      list = list.filter(s => (s.track || '').includes(this.selTrack));
+    if (this.selTrack()) {
+      list = list.filter(s => (s.track || '').includes(this.selTrack()));
     }
-
-    // חיפוש חופשי
-    if (this.searchQ.trim()) {
-      const q = this.searchQ.trim().toLowerCase();
+    if (this.searchQ().trim()) {
+      const q = this.searchQ().trim().toLowerCase();
       list = list.filter(s =>
         s.name.toLowerCase().includes(q) ||
         s.id_number.includes(q) ||
@@ -331,15 +324,13 @@ export class StudentsTableComponent implements OnInit {
         (s.address || '').includes(q)
       );
     }
-
-    // מיון
     const familyName = (n: string) => n.trim().split(/\s+/).pop() || n;
     return [...list].sort((a, b) => {
-      if (this.sortBy === 'family')  return familyName(a.name).localeCompare(familyName(b.name), 'he');
-      if (this.sortBy === 'name')    return a.name.localeCompare(b.name, 'he');
-      if (this.sortBy === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
-      if (this.sortBy === 'missing') return b.missingRequired - a.missingRequired;
-      if (this.sortBy === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1);
+      if (this.sortBy() === 'family')  return familyName(a.name).localeCompare(familyName(b.name), 'he');
+      if (this.sortBy() === 'name')    return a.name.localeCompare(b.name, 'he');
+      if (this.sortBy() === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
+      if (this.sortBy() === 'missing') return b.missingRequired - a.missingRequired;
+      if (this.sortBy() === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1);
       return 0;
     });
   });
