@@ -93,9 +93,9 @@ interface TableStudent {
     <div class="form-group">
       <label>מיון</label>
       <select [(ngModel)]="sortBy">
-        <option value="name">לפי שם</option>
+        <option value="family">לפי שם משפחה</option>
+        <option value="name">לפי שם פרטי</option>
         <option value="class">לפי כיתה</option>
-        <option value="track">לפי מסלול</option>
         <option value="missing">לפי חסרות</option>
         <option value="avg">לפי ממוצע</option>
       </select>
@@ -255,7 +255,7 @@ export class StudentsTableComponent implements OnInit {
   selYear = '';
   selClass = '';
   searchQ = '';
-  sortBy = 'name';
+  sortBy = 'family';
   showPhoto = true;
   showExtra = false;
 
@@ -302,31 +302,44 @@ export class StudentsTableComponent implements OnInit {
   filtered = computed(() => {
     let list = this.allStudents();
 
+    // סינון לפי מחזור/שנה
     if (this.filterMode() === 'track') {
-      if (this.selTrack) list = list.filter(s => (s.track || '').includes(this.selTrack));
       if (this.selYear) list = list.filter(s => s.year === this.selYear);
-    } else if (this.filterMode() === 'class') {
-      if (this.selClass) {
-        const [cn, pn] = this.selClass.split('_');
-        list = list.filter(s => s.class_name === cn && s.parallel === pn);
-      }
     }
 
+    // סינון לפי כיתה — עובד תמיד
+    if (this.selClass) {
+      const [cn, pn] = this.selClass.split('_');
+      list = list.filter(s =>
+        String(s.class_name || '').trim() === cn &&
+        String(s.parallel  || '').trim() === pn
+      );
+    }
+
+    // סינון לפי מסלול — עובד תמיד
+    if (this.selTrack) {
+      list = list.filter(s => (s.track || '').includes(this.selTrack));
+    }
+
+    // חיפוש חופשי
     if (this.searchQ.trim()) {
       const q = this.searchQ.trim().toLowerCase();
       list = list.filter(s =>
         s.name.toLowerCase().includes(q) ||
         s.id_number.includes(q) ||
-        (s.phone || '').includes(q)
+        (s.phone || '').includes(q) ||
+        (s.address || '').includes(q)
       );
     }
 
+    // מיון
+    const familyName = (n: string) => n.trim().split(/\s+/).pop() || n;
     return [...list].sort((a, b) => {
-      if (this.sortBy === 'name') return a.name.localeCompare(b.name, 'he');
-      if (this.sortBy === 'class') return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
-      if (this.sortBy === 'track') return (a.track || '').localeCompare(b.track || '', 'he');
+      if (this.sortBy === 'family')  return familyName(a.name).localeCompare(familyName(b.name), 'he');
+      if (this.sortBy === 'name')    return a.name.localeCompare(b.name, 'he');
+      if (this.sortBy === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
       if (this.sortBy === 'missing') return b.missingRequired - a.missingRequired;
-      if (this.sortBy === 'avg') return (b.examAvg ?? -1) - (a.examAvg ?? -1);
+      if (this.sortBy === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1);
       return 0;
     });
   });
