@@ -2320,7 +2320,6 @@ app.post('/api/exams/:id/codes', (req, res) => {
     students = db.prepare(`SELECT * FROM students ${where} ORDER BY name`).all(...params);
     if (track) students = students.filter((student) => studentHasTrack(student.track, track));
   }
-  }
   if (!students.length) return res.status(400).json({ error: 'לא נמצאו תלמידות מתאימות' });
   const insert = db.prepare('INSERT OR IGNORE INTO exam_codes (code, exam_id, id_number) VALUES (?, ?, ?)');
   const tx = db.transaction(() => {
