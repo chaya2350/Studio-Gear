@@ -22,6 +22,7 @@ import { filter, takeUntil } from 'rxjs/operators';
       <div class="nav-links">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">בית</a>
         <a routerLink="/students" [class.active]="currentPath === '/students' || currentPath.startsWith('/students/')">תלמידות</a>
+        <a routerLink="/students-table" routerLinkActive="active">📋 טבלה</a>
         <a routerLink="/equipment" [class.active]="isEquipmentSection()">השאלת ציוד</a>
         <a routerLink="/approvals" [class.active]="isApprovalsSection()">אישורים</a>
         <a routerLink="/exams" [class.active]="isExamsSection()">מבחנים</a>
