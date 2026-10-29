@@ -71,12 +71,33 @@ class="section-tab"
 <button class="btn btn-primary" (click)="createUser()"> יצירת חשבון</button>
 </div>
 <div *ngIf="userError()" class="alert alert-error user-error" role="alert"> {{ userError() }}</div>
-<form *ngIf="passwordTarget() as target" class="alert user-error set-password" (submit)="$event.preventDefault(); savePassword()">
-<label>סיסמה חדשה עבור <strong>{{ target.name }}</strong> (12–128 תווים):</label>
-<input type="password" autocomplete="new-password" minlength="12" maxlength="128" [value]="newPassword()" (input)="newPassword.set($any($event.target).value)">
-<button class="btn btn-primary" type="submit" [disabled]="newPassword().length < 12">שמירה</button>
-<button class="btn btn-secondary" type="button" (click)="passwordTarget.set(null)">ביטול</button>
-</form>
+<div *ngIf="passwordMessage()" class="alert alert-success user-error" role="status">{{ passwordMessage() }}</div>
+<div *ngIf="passwordTarget() as target" class="set-password">
+<div class="set-password-heading">
+<div class="password-lock-icon" aria-hidden="true">✦</div>
+<div>
+<h3>קביעת סיסמה חדשה</h3>
+<p>עבור {{ target.name }} · לפחות 12 תווים</p>
+</div>
+</div>
+<label class="password-label" for="new-user-password">סיסמה חדשה</label>
+<div class="password-input-wrap">
+<input id="new-user-password" [type]="showNewPassword() ? 'text' : 'password'" autocomplete="new-password" minlength="12" maxlength="128" required [value]="newPassword()" placeholder="הקלידי סיסמה חדשה" (input)="newPassword.set($any($event.target).value)" (keyup.enter)="savePassword()">
+<button class="password-visibility" type="button" (click)="showNewPassword.update(value => !value)" [attr.aria-label]="showNewPassword() ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'" [attr.aria-pressed]="showNewPassword()" title="{{ showNewPassword() ? 'הסתרת הסיסמה' : 'הצגת הסיסמה' }}">
+<svg *ngIf="!showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+<svg *ngIf="showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+</button>
+</div>
+<div class="password-hint" [class.password-ready]="newPassword().length >= 12">
+<span class="password-hint-mark">{{ newPassword().length >= 12 ? '✓' : 'i' }}</span>
+{{ newPassword().length >= 12 ? 'אורך הסיסמה תקין' : 'הסיסמה צריכה להכיל לפחות 12 תווים' }}
+<span class="password-count">{{ newPassword().length }}/128</span>
+</div>
+<div class="password-actions">
+<button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומרת...' : 'שמירת סיסמה' }}</button>
+<button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
+</div>
+</div>
 <div *ngIf="resetResult() as r" class="alert alert-success user-error" role="status">
 סיסמה זמנית עבור <strong>{{ r.name }}</strong>:
 <code class="temp-password">{{ r.password }}</code>
@@ -287,10 +308,47 @@ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .user-info span { color: var(--text-muted); font-size: 0.78rem; }
 .user-row select { max-width: 180px; }
 .user-error { margin-top: 12px; margin-bottom: 0; }
+.set-password {
+max-width: 520px; margin: 16px 0 4px; padding: 22px 24px; background: var(--surface);
+border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+.set-password-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.password-lock-icon {
+width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 13px;
+background: var(--primary-light); color: var(--primary); font-size: 1.25rem;
+}
+.set-password-heading h3 { margin: 0 0 4px; color: var(--text); font-size: 1.05rem; }
+.set-password-heading p { margin: 0; color: var(--text-muted); font-size: 0.84rem; }
+.password-label { display: block; margin-bottom: 7px; color: var(--text); font-size: 0.88rem; font-weight: 700; }
+.password-input-wrap { position: relative; }
+.password-input-wrap input {
+width: 100%; min-height: 48px; padding: 11px 48px 11px 14px; direction: ltr; text-align: left;
+border: 1.5px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+font: inherit; font-size: 0.98rem; letter-spacing: 0.025em; transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.password-input-wrap input::placeholder { color: var(--text-light); letter-spacing: 0; }
+.password-input-wrap input:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 4px var(--primary-glow); }
+.password-visibility {
+position: absolute; top: 50%; right: 8px; transform: translateY(-50%); width: 34px; height: 34px;
+display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent;
+color: var(--text-muted); cursor: pointer; transition: color var(--transition), background var(--transition);
+}
+.password-visibility:hover { color: var(--primary); background: var(--primary-light); }
+.password-visibility:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.password-visibility svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.password-hint { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: var(--text-muted); font-size: 0.79rem; }
+.password-hint-mark { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-3); font-size: 0.7rem; font-weight: 800; }
+.password-hint.password-ready { color: #15803d; }
+.password-ready .password-hint-mark { background: #dcfce7; }
+.password-count { margin-inline-start: auto; color: var(--text-light); direction: ltr; font-variant-numeric: tabular-nums; }
+.password-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 19px; }
 .temp-password { direction: ltr; display: inline-block; font-size: 1.1rem; font-weight: 800; letter-spacing: 1px; background: var(--surface); padding: 2px 10px; border-radius: 6px; user-select: all; }
 @media (max-width: 640px) {
 .user-row { align-items: stretch; flex-direction: column; }
 .user-row select { max-width: none; }
+.set-password { padding: 18px; }
+.password-actions { flex-direction: column; }
+.password-actions .btn { width: 100%; }
 }
 `]
 })
@@ -315,6 +373,8 @@ editingApproval = signal<any | null>(null);
 users = signal<UserAccount[]>([]);
 userError = signal('');
 resetResult = signal<{ name: string; password: string } | null>(null);
+passwordMessage = signal('');
+savingPassword = signal(false);
 newUser: { name: string; email: string; password: string; role: UserRole } = {
 name: '', email: '', password: '', role: 'laborant'
 };
@@ -364,24 +424,39 @@ error: error => this.userError.set(error.error?.error || 'לא ניתן ליצו
 
 passwordTarget = signal<UserAccount | null>(null);
 newPassword = signal('');
+showNewPassword = signal(false);
 
 startSetPassword(user: UserAccount) {
 this.userError.set('');
+this.passwordMessage.set('');
 this.resetResult.set(null);
 this.newPassword.set('');
+this.showNewPassword.set(false);
 this.passwordTarget.set(user);
 }
 
 savePassword() {
 const user = this.passwordTarget();
-if (!user) return;
-this.http.post(`/api/users/${user.id}/password`, { password: this.newPassword() }).subscribe({
+const password = this.newPassword();
+if (!user || this.savingPassword()) return;
+if (password.length < 12 || password.length > 128) {
+this.userError.set('הסיסמה חייבת להכיל 12 עד 128 תווים');
+return;
+}
+this.userError.set('');
+this.passwordMessage.set('');
+this.savingPassword.set(true);
+this.http.post<{ success: boolean }>(`/api/users/${user.id}/password`, { password }).subscribe({
 next: () => {
+this.savingPassword.set(false);
 this.passwordTarget.set(null);
 this.newPassword.set('');
-alert(`הסיסמה של ${user.name} עודכנה. היא נותקה מהמערכת ותתחבר עם הסיסמה החדשה.`);
+this.passwordMessage.set(`הסיסמה של ${user.name} עודכנה בהצלחה. המשתמשת תצטרך להתחבר מחדש.`);
 },
-error: error => this.userError.set(error.error?.error || 'לא ניתן לשנות את הסיסמה')
+error: error => {
+this.savingPassword.set(false);
+this.userError.set(error.error?.error || 'לא ניתן לשנות את הסיסמה');
+}
 });
 }
 
