@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel|photo))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -268,6 +268,10 @@ if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_r
 // Migration: personal_tasks — הוספת עמודת visibility וביטול חובת source_message_id
 const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+
+// Migration: student photo
+const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
 // Migration: source_message_id — הפיכה ל-nullable (לאפשר משימות ישירות ללא הודעה)
 // SQLite לא תומך ב-ALTER COLUMN, לכן נבצע recreate אם source_message_id עדיין NOT NULL
 const srcCol = db.prepare('PRAGMA table_info(personal_tasks)').all().find(c => c.name === 'source_message_id');
@@ -1174,7 +1178,25 @@ app.put('/api/students/:id_number', (req, res) => {
   const result = db.prepare(`
     UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?
     WHERE id_number = ?
-  `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), req.params.id_number);
+  `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), req.params.id_number);  res.json({ success: true });
+});
+
+// העלאת תמונת פרופיל לתלמידה
+app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) => {
+  const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
+  const photoUrl = `/uploads/${req.file.filename}`;
+  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
+  res.json({ url: photoUrl });
+});
+
+// עדכון/הסרת תמונת פרופיל
+app.patch('/api/students/:id_number/photo', (req, res) => {
+  const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  const photoUrl = req.body?.photo_url || null;
+  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
   res.json({ success: true });
 });
 

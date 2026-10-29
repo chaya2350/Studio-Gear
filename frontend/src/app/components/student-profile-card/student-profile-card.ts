@@ -20,7 +20,11 @@ import { RouterLink } from '@angular/router';
       <!-- Avatar + identity -->
       <div class="identity">
         <div class="avatar" [style.background]="avatarColor">
-          <span>{{ initials }}</span>
+          @if (imageUrl) {
+            <img [src]="imageUrl" [alt]="name" class="avatar-img">
+          } @else {
+            <span>{{ initials }}</span>
+          }
           @if (completionPct === 100) {
             <span class="avatar-crown" title="כל הדרישות הושלמו">✓</span>
           }
@@ -163,6 +167,14 @@ import { RouterLink } from '@angular/router';
       flex-shrink: 0;
       position: relative;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    .avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
 
     .avatar-crown {
@@ -393,6 +405,7 @@ export class StudentProfileCardComponent implements OnChanges {
   @Input() track = '';
   @Input() year = '';
   @Input() phone = '';
+  @Input() imageUrl = '';
   @Input() totalReqs = 0;
   @Input() completedReqs = 0;
   @Input() missingRequired = 0;

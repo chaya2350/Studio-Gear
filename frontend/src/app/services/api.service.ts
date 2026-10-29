@@ -139,6 +139,14 @@ export class ApiService {
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
+  uploadStudentPhoto(id_number: string, file: File) {
+    const fd = new FormData();
+    fd.append('image', file);
+    return this.http.post<{ url: string }>(`${this.base}/students/${encodeURIComponent(id_number)}/photo`, fd);
+  }
+  updateStudentPhoto(id_number: string, photo_url: string) {
+    return this.http.patch<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id_number)}/photo`, { photo_url });
+  }
   updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
   }

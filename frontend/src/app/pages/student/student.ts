@@ -31,6 +31,7 @@ template: `
   [track]="student()!.track || ''"
   [year]="student()!.year || ''"
   [phone]="student()!.phone || ''"
+  [imageUrl]="student()!.photo_url || ''"
   [totalReqs]="(requirements()?.requirements || []).length"
   [completedReqs]="(requirements()?.requirements || []).filter(r => !!r.completed_at).length"
   [missingRequired]="missingRequired()"
@@ -39,6 +40,16 @@ template: `
   [examAvg]="examAvgNum()"
   [examGrades]="examGradesForCard()">
 </app-student-profile-card>
+
+<!-- העלאת תמונת פרופיל -->
+<div class="photo-upload-bar">
+  <label class="photo-upload-btn" [class.uploading]="uploadingPhoto()">
+    <input type="file" accept="image/*" [disabled]="uploadingPhoto()" (change)="uploadPhoto($event)" style="display:none">
+    {{ uploadingPhoto() ? 'מעלה...' : student()!.photo_url ? '🖼 החלף תמונה' : '📷 הוסף תמונה' }}
+  </label>
+  <button *ngIf="student()!.photo_url" class="photo-remove-btn" (click)="removePhoto()">הסר תמונה</button>
+  <span *ngIf="photoError()" class="photo-error">{{ photoError() }}</span>
+</div>
 
 <div class="detail-grid">
 <div class="card">
@@ -348,6 +359,24 @@ text-decoration: none; color: var(--text-muted); font-size: 1rem; font-weight: 7
 transition: all var(--transition); box-shadow: var(--shadow-xs);
 &:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
 }
+.photo-upload-bar {
+  display: flex; align-items: center; gap: 8px; margin: 8px 0 16px; flex-wrap: wrap;
+}
+.photo-upload-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1.5px solid var(--border);
+  font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer; color: var(--text-muted);
+  transition: all var(--transition);
+  &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  &.uploading { opacity: 0.6; cursor: wait; }
+}
+.photo-remove-btn {
+  padding: 6px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  background: transparent; font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--danger);
+  &:hover { background: #fee2e2; border-color: var(--danger); }
+}
+.photo-error { font-size: 0.78rem; color: var(--danger); }
 .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .student-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .student-card-header .section-title { margin-bottom: 0; }
@@ -619,7 +648,39 @@ savingRequirementId = signal<number | null>(null);
 exams = signal<any[]>([]);
 attendance = signal<any>(null);
 
+uploadingPhoto = signal(false);
+photoError = signal('');
+
 constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
+
+uploadPhoto(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const current = this.student();
+  input.value = '';
+  if (!file || !current) return;
+  this.uploadingPhoto.set(true);
+  this.photoError.set('');
+  this.api.uploadStudentPhoto(current.id_number, file).subscribe({
+    next: (res: { url: string }) => {
+      this.uploadingPhoto.set(false);
+      this.student.update(s => s ? { ...s, photo_url: res.url } : s);
+    },
+    error: () => {
+      this.uploadingPhoto.set(false);
+      this.photoError.set('שגיאה בהעלאת התמונה');
+    }
+  });
+}
+
+removePhoto() {
+  const current = this.student();
+  if (!current) return;
+  this.api.updateStudentPhoto(current.id_number, '').subscribe({
+    next: () => this.student.update(s => s ? { ...s, photo_url: undefined } : s),
+    error: () => {}
+  });
+}
 
 goBack(event: Event) {
 event.preventDefault();
