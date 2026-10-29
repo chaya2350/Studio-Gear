@@ -2270,25 +2270,22 @@ function encodeExamCode(examId, idNumber) {
 
 // רשימת כיתות (מקבילות) ייחודיות לסינון בהפקת מבחנים
 app.get('/api/students/classes', (req, res) => {
-  const rows = db.prepare('SELECT extra_data, track, year, parallel, class_name FROM students').all();
-  const result = new Map();
-  for (const row of rows) {
-    // קודם מנסה עמודת parallel החדשה, אחר-כך extra_data.מקבילה
-    let p = String(row.parallel || '').trim();
-    let label = String(row.class_name || '').trim();
-    if (!p) {
-      try {
-        const extra = JSON.parse(row.extra_data || '{}');
-        p = String(extra['מקבילה'] || '').trim();
-      } catch {}
-    }
-    if (!p || p === '0') continue;
-    if (!label) label = `כיתה ${p}`;
-    if (!result.has(p)) result.set(p, { label, count: 0, track: row.track, year: row.year });
-    result.get(p).count++;
-  }
-  const list = [...result.entries()].map(([parallel, v]) => ({ parallel, ...v }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'he'));
+  const rows = db.prepare(`
+    SELECT class_name, parallel, COUNT(*) as count
+    FROM students
+    WHERE class_name IS NOT NULL AND class_name != ''
+      AND parallel IS NOT NULL AND parallel != '' AND parallel != '0'
+    GROUP BY class_name, parallel
+    ORDER BY class_name, parallel
+  `).all();
+  // מחזיר key ייחודי class_name+parallel, ותווית קריאה
+  const list = rows.map(r => ({
+    parallel: `${r.class_name}_${r.parallel}`, // מפתח ייחודי
+    label: `כיתה ${r.class_name}${r.parallel}`,
+    class_name: r.class_name,
+    parallel_num: r.parallel,
+    count: r.count
+  }));
   res.json(list);
 });
 
@@ -2300,16 +2297,21 @@ app.post('/api/exams/:id/codes', (req, res) => {
   if (id_number) {
     students = db.prepare('SELECT * FROM students WHERE id_number = ?').all(String(id_number));
   } else if (class_num || parallel) {
-    // סינון לפי כיתה — עמודת parallel החדשה, ו-extra_data.מקבילה כגיבוי
-    const parallelVal = String(parallel || class_num || '').trim();
+    // סינון לפי כיתה — parallel הוא מפתח "class_name_parallel_num" כמו "ה_3"
+    const parallelKey = String(parallel || class_num || '').trim();
+    const [className, parallelNum] = parallelKey.includes('_') ? parallelKey.split('_') : ['', parallelKey];
     let all = db.prepare('SELECT * FROM students ORDER BY name').all();
-    if (year) all = all.filter(s => s.year === String(year));
     if (track) all = all.filter(s => studentHasTrack(s.track, track));
     students = all.filter(s => {
-      if (s.parallel && String(s.parallel).trim() === parallelVal) return true;
+      if (className && parallelNum) {
+        return String(s.class_name || '').trim() === className &&
+               String(s.parallel || '').trim() === parallelNum;
+      }
+      // fallback: רק parallel
+      if (s.parallel && String(s.parallel).trim() === parallelKey) return true;
       try {
         const extra = JSON.parse(s.extra_data || '{}');
-        return String(extra['מקבילה'] || '').trim() === parallelVal;
+        return String(extra['מקבילה'] || '').trim() === parallelKey;
       } catch { return false; }
     });
   } else {
