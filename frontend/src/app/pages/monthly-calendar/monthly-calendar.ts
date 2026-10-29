@@ -85,7 +85,8 @@ interface CtxMenu {
   template: `
 <!-- Context menu (right-click) -->
 <div *ngIf="ctxMenu()" class="ctx-menu"
-     [style.top.px]="ctxMenu()!.y" [style.left.px]="ctxMenu()!.x">
+     [style.top.px]="ctxMenu()!.y" [style.left.px]="ctxMenu()!.x"
+     (click)="$event.stopPropagation()">
   <div class="ctx-header">{{ formatShortDate(ctxMenu()!.date) }}</div>
   <button (click)="openAddTask()"> הוספת משימה</button>
   <button (click)="openAddExam()"> הוספת מבחן</button>
@@ -834,12 +835,16 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   // ── Context menu ──
   onRightClick(ev: MouseEvent, date: string) {
     ev.preventDefault();
+    ev.stopPropagation();
     this.selectDate(date);
-    this.ctxMenu.set({ x: ev.clientX, y: ev.clientY, date });
+    // מוודא שהתפריט לא יוצא מהמסך
+    const menuW = 200, menuH = 160;
+    const x = ev.clientX + menuW > window.innerWidth  ? ev.clientX - menuW : ev.clientX;
+    const y = ev.clientY + menuH > window.innerHeight ? ev.clientY - menuH : ev.clientY;
+    this.ctxMenu.set({ x, y, date });
   }
 
   @HostListener('document:click')
-  @HostListener('document:contextmenu')
   closeCtxMenu() { this.ctxMenu.set(null); }
 
   // ── Dialogs: open ──
