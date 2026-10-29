@@ -34,8 +34,14 @@ autofocus
 <!-- dropdown -->
 <div *ngIf="suggestions().length" class="suggestions">
 <div *ngFor="let s of suggestions()" class="suggestion-item" (mousedown)="select(s)">
-<div class="sug-name">{{ s.name }}</div>
-<div class="sug-meta">{{ s.id_number }}<span *ngIf="s.track"> · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span></div>
+<div class="sug-avatar" [style.background]="sugAvatarColor(s)">
+  <img *ngIf="s.photo_url" [src]="s.photo_url" class="sug-avatar-img" [alt]="s.name">
+  <span *ngIf="!s.photo_url">{{ s.name.charAt(0) }}</span>
+</div>
+<div>
+  <div class="sug-name">{{ s.name }}</div>
+  <div class="sug-meta">{{ s.id_number }}<span *ngIf="s.track"> · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span></div>
+</div>
 </div>
 </div>
 </div>
@@ -43,7 +49,10 @@ autofocus
 <!-- תוצאה נבחרת -->
 <div *ngIf="selected()" class="result-card">
 <div class="result-header">
-<div class="result-avatar">{{ selected()!.name.charAt(0) }}</div>
+  <div class="result-avatar" [style.background]="avatarColor()">
+    <img *ngIf="selected()!.photo_url" [src]="selected()!.photo_url" class="result-avatar-img" [alt]="selected()!.name">
+    <span *ngIf="!selected()!.photo_url">{{ selected()!.name.charAt(0) }}</span>
+  </div>
 <div class="result-info">
 <div class="result-name">{{ selected()!.name }}</div>
 <div class="result-meta">
@@ -109,11 +118,17 @@ background: var(--surface); border: 1.5px solid var(--border-focus);
 border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden; margin-top: 4px;
 }
 .suggestion-item {
-padding: 10px 14px; cursor: pointer;
+padding: 8px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;
 border-bottom: 1px solid var(--border); transition: background var(--transition);
 &:last-child { border-bottom: none; }
 &:hover { background: var(--primary-light); }
 }
+.sug-avatar {
+width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+display: flex; align-items: center; justify-content: center;
+color: white; font-size: 0.85rem; font-weight: 800; overflow: hidden;
+}
+.sug-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .sug-name { font-weight: 700; font-size: 0.9rem; color: var(--text); }
 .sug-meta { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
 .result-card {
@@ -128,6 +143,10 @@ width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
 background: linear-gradient(135deg, #0d9488, #0891b2);
 color: white; font-size: 1.3rem; font-weight: 800;
 display: flex; align-items: center; justify-content: center;
+overflow: hidden;
+}
+.result-avatar-img {
+width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
 }
 .result-info { flex: 1; min-width: 0; }
 .result-name { font-size: 1.05rem; font-weight: 800; color: var(--text); }
@@ -182,4 +201,18 @@ activeLoans() { return (this.selected()?.loans || []).filter((l: any) => !l.actu
 activeCount() { return this.activeLoans().length; }
 overdueCount() { return this.activeLoans().filter((l: any) => this.isOverdue(l)).length; }
 isOverdue(l: any) { return !l.actual_return && l.expected_return < this.today; }
+
+private readonly PALETTE = ['#0d9488','#0891b2','#6366f1','#8b5cf6','#ec4899','#f97316','#10b981','#f59e0b'];
+avatarColor(): string {
+  const id = this.selected()?.id_number || '';
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+  return this.PALETTE[hash % this.PALETTE.length];
+}
+
+sugAvatarColor(s: Student): string {
+  let hash = 0;
+  for (const ch of s.id_number) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+  return this.PALETTE[hash % this.PALETTE.length];
+}
 }
