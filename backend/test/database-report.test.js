@@ -18,6 +18,9 @@ test('studentHasTrack matches a selected single track inside a combined student 
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'הוראה מתקנת'), true);
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה מתקדמת'), false);
   assert.equal(studentHasTrack('יעוץ מס / הוראה / ייעוץ מס', 'ייעוץ מס'), true);
+  assert.equal(studentHasTrack('רו״ח / גרפיקה', 'ראיית חשבון'), true);
+  assert.equal(studentHasTrack('ראיית חשבון / גרפיקה', 'רו"ח'), true);
+  assert.equal(studentHasTrack('ספורט טיפולי / מתמטיקה', 'ספורט'), true);
 });
 
 test('resolveStudentTrackIds includes each constituent track and resolves merged tracks to their main track', () => {

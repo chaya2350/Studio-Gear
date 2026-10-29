@@ -50,7 +50,7 @@ function gatherExtraKeys(students) {
 }
 
 function normalizeTrackKey(value) {
-  return String(value || '').normalize('NFKC').replace(/[\u2018\u2019\u05F3\u05F4'"`]/g, '').replace(/[-_]/g, '').replace(/\s+/g, '').toLocaleLowerCase();
+  return String(value || '').normalize('NFKC').replace(/[\u2018\u2019\u05F3\u05F4'"`]/g, '').replace(/[-_]/g, '').replace(/[\s.]/g, '').toLocaleLowerCase();
 }
 
 function displayTrackName(value) {
@@ -58,9 +58,13 @@ function displayTrackName(value) {
   if (!raw) return raw;
   const normalized = normalizeTrackKey(raw);
   const map = {
+    'רו"ח': 'ראיית חשבון',
     'רוח': 'ראיית חשבון',
-    'ראייתחשבון': 'ראיית חשבון',
+    'ורוח': 'ראיית חשבון',
+    'רווח': 'ראיית חשבון',
     'רוחח': 'ראיית חשבון',
+    'רוחה': 'ראיית חשבון',
+    'ראייתחשבון': 'ראיית חשבון',
     'ספורט': 'ספורט טיפולי',
     'ספורטטיפולי': 'ספורט טיפולי',
     'הומ': 'הוראה מתקנת',
@@ -69,9 +73,11 @@ function displayTrackName(value) {
     'חמ': 'חינוך מיוחד',
     'חינוך': 'חינוך מיוחד',
     'חינוךמיוחד': 'חינוך מיוחד',
+    'חינוךממיוחד': 'חינוך מיוחד',
     'ללאמיסים': 'ייעוץ מס',
     'יעוץמס': 'ייעוץ מס',
     'ייעוץמס': 'ייעוץ מס',
+    'יעוץ מס': 'ייעוץ מס',
     'יעוץמסללאמיסים': 'ייעוץ מס',
     'הנדסתחשמל': 'הנדסת אנרגיה',
     'הנדסתאנרגיה': 'הנדסת אנרגיה',
@@ -99,6 +105,7 @@ function displayExamName(value) {
     'חמ': 'חינוך מיוחד',
     'חינוך': 'חינוך מיוחד',
     'חינוךמיוחד': 'חינוך מיוחד',
+    'חינוךממיוחד': 'חינוך מיוחד',
     'ללאמיסים': 'ייעוץ מס',
     'ייעוץמס': 'ייעוץ מס',
     'יעוץמס': 'ייעוץ מס',
@@ -129,8 +136,12 @@ function splitTrackValues(value) {
 }
 
 function studentHasTrack(trackValues, trackName) {
-  const canonicalTrackName = displayTrackName(trackName);
-  return splitTrackValues(trackValues).includes(canonicalTrackName);
+  const wantedTrack = String(trackName || '').trim();
+  if (!wantedTrack) return false;
+  const canonicalWanted = normalizeTrackKey(displayTrackName(wantedTrack));
+  return splitTrackValues(trackValues).some((studentTrack) =>
+    normalizeTrackKey(displayTrackName(studentTrack)) === canonicalWanted
+  );
 }
 
 function resolveStudentTrackIds(trackValue, tracks) {

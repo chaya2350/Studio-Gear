@@ -209,9 +209,9 @@ export class ApiService {
   // ── Exams ──
   getExams() { return this.http.get<any[]>(`${this.base}/exams`); }
   getExam(id: number) { return this.http.get<any>(`${this.base}/exams/${id}`); }
-  createExam(data: { name: string; track?: string; year?: string; exam_date?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
+  createExam(data: { name: string; track?: string; year?: string; exam_date?: string; parallel?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
   deleteExam(id: number) { return this.http.delete(`${this.base}/exams/${id}`); }
-  generateExamCodes(id: number, data: { track?: string; year?: string; id_number?: string }) { return this.http.post<{ created: number }>(`${this.base}/exams/${id}/codes`, data); }
+  generateExamCodes(id: number, data: { track?: string; year?: string; id_number?: string; parallel?: string }) { return this.http.post<{ created: number }>(`${this.base}/exams/${id}/codes`, data); }
   getExamCode(code: string) { return this.http.get<any>(`${this.base}/exam-codes/${encodeURIComponent(code)}`); }
   setExamCodeGrade(code: string, grade: number) { return this.http.put(`${this.base}/exam-codes/${encodeURIComponent(code)}/grade`, { grade }); }
   getExamStats() { return this.http.get<{ byStudent: any[]; byExam: any[] }>(`${this.base}/exams-stats/summary`); }
