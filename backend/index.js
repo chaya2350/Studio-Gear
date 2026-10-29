@@ -120,7 +120,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events\/import|messages(?:\/\d+\/(?:reactions|tasks))?|tasks\/\d+\/completion|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -264,6 +264,36 @@ db.exec(`
 const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().map((c) => c.name);
 if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
 if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
+
+// Migration: personal_tasks — הוספת עמודת visibility וביטול חובת source_message_id
+const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
+if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+// Migration: source_message_id — הפיכה ל-nullable (לאפשר משימות ישירות ללא הודעה)
+// SQLite לא תומך ב-ALTER COLUMN, לכן נבצע recreate אם source_message_id עדיין NOT NULL
+const srcCol = db.prepare('PRAGMA table_info(personal_tasks)').all().find(c => c.name === 'source_message_id');
+if (srcCol && srcCol.notnull === 1) {
+  db.exec(`
+    PRAGMA foreign_keys=OFF;
+    CREATE TABLE IF NOT EXISTS personal_tasks_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source_message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'private'
+    );
+    INSERT INTO personal_tasks_new (id, user_id, source_message_id, title, due_date, completed_at, created_at, visibility)
+      SELECT id, user_id, source_message_id, title, due_date, completed_at, created_at,
+        COALESCE(visibility, 'private')
+      FROM personal_tasks;
+    DROP TABLE personal_tasks;
+    ALTER TABLE personal_tasks_new RENAME TO personal_tasks;
+    CREATE INDEX IF NOT EXISTS personal_tasks_user_due_idx ON personal_tasks(user_id, due_date);
+    PRAGMA foreign_keys=ON;
+  `);
+}
 
 // ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
 function pageRow(row, userId) {
@@ -455,6 +485,31 @@ app.get('/api/calendar-events', (req, res) => {
     FROM calendar_events
     ORDER BY event_date, category, title
   `).all());
+});
+
+// יצירת אירוע ידני מלוח השנה
+app.post('/api/calendar-events', (req, res) => {
+  const title = String(req.body?.title || '').trim();
+  const event_date = req.body?.event_date;
+  const category = String(req.body?.category || 'כללי').trim();
+  const source_sheet = String(req.body?.source_sheet || 'ידני').trim();
+  if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
+    return res.status(400).json({ error: 'תאריך לא תקין' });
+  const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+  const result = db.prepare(`
+    INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
+  `).run(title, event_date, hebrewYear, category, source_sheet);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+// מחיקת אירוע ידני
+app.delete('/api/calendar-events/:id', (req, res) => {
+  db.prepare('DELETE FROM calendar_events WHERE id = ? AND source_sheet = ?')
+    .run(Number(req.params.id), 'ידני');
+  res.json({ success: true });
 });
 
 app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, res) => {
@@ -685,13 +740,65 @@ app.get('/api/tasks', (req, res) => {
   const fromDate = from || null;
   const toDate = to || null;
   const tasks = db.prepare(`
-    SELECT id, user_id, source_message_id, title, due_date,
-      completed_at IS NOT NULL AS completed, completed_at, created_at
-    FROM personal_tasks
-    WHERE user_id = ? AND (? IS NULL OR due_date >= ?) AND (? IS NULL OR due_date <= ?)
-    ORDER BY due_date, completed_at IS NOT NULL, id DESC
+    SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
+      pt.visibility, u.name AS creator_name
+    FROM personal_tasks pt
+    JOIN users u ON u.id = pt.user_id
+    WHERE (pt.user_id = ? OR pt.visibility = 'public')
+      AND (? IS NULL OR pt.due_date >= ?) AND (? IS NULL OR pt.due_date <= ?)
+    ORDER BY pt.due_date, pt.completed_at IS NOT NULL, pt.id DESC
   `).all(req.user.id, fromDate, fromDate, toDate, toDate);
   res.json(tasks.map(task => ({ ...task, completed: Boolean(task.completed) })));
+});
+
+// יצירת משימה ישירות (ללא הודעה) — לשימוש מלוח השנה
+app.post('/api/tasks', (req, res) => {
+  const title = String(req.body?.title || '').trim();
+  const dueDate = req.body?.due_date;
+  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  if (!title || title.length > 200) return res.status(400).json({ error: 'כותרת המשימה חסרה או ארוכה מדי' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
+    Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
+    new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
+    return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
+  }
+  const result = db.prepare(`
+    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, visibility, created_at)
+    VALUES (?, NULL, ?, ?, ?, ?)
+  `).run(req.user.id, title, dueDate, visibility, new Date().toISOString());
+  const task = db.prepare(`
+    SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
+      pt.visibility, u.name AS creator_name
+    FROM personal_tasks pt JOIN users u ON u.id = pt.user_id
+    WHERE pt.id = ?
+  `).get(result.lastInsertRowid);
+  res.status(201).json({ ...task, completed: Boolean(task.completed) });
+});
+
+// עדכון תאריך משימה (גרירה בלוח)
+app.patch('/api/tasks/:id/due-date', (req, res) => {
+  const dueDate = req.body?.due_date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
+    Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
+    new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
+    return res.status(400).json({ error: 'תאריך לא תקין' });
+  }
+  const task = db.prepare('SELECT id FROM personal_tasks WHERE id = ? AND user_id = ?')
+    .get(Number(req.params.id), req.user.id);
+  if (!task) return res.status(404).json({ error: 'המשימה לא נמצאה' });
+  db.prepare('UPDATE personal_tasks SET due_date = ? WHERE id = ?').run(dueDate, task.id);
+  res.json({ success: true });
+});
+
+// מחיקת משימה
+app.delete('/api/tasks/:id', (req, res) => {
+  const task = db.prepare('SELECT id FROM personal_tasks WHERE id = ? AND user_id = ?')
+    .get(Number(req.params.id), req.user.id);
+  if (!task) return res.status(404).json({ error: 'המשימה לא נמצאה' });
+  db.prepare('DELETE FROM personal_tasks WHERE id = ?').run(task.id);
+  res.json({ success: true });
 });
 
 app.post('/api/messages/:id/tasks', (req, res) => {

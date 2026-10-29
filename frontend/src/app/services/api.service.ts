@@ -109,6 +109,9 @@ export class ApiService {
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
+    return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
+  }
   importCalendarWorkbook(file: File) {
     const formData = new FormData();
     formData.append('file', file);
