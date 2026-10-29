@@ -1002,24 +1002,15 @@ return normalized === 'שם' || normalized === 'שםמלא' || normalized === '�
 }
 
 classDisplayValue() {
-const baseClass = String(this.student()?.year || '').trim() || this.extraValueByKey((key) => this.isClassKey(key));
-if (!baseClass) return '';
+  // Use class_name from server (year + parallel combined), fallback to manual calculation
+  const cn = String((this.student() as any)?.class_name || '').trim();
+  if (cn) return cn;
 
-const normalizedClass = this.normalizeFieldKey(baseClass);
-if (normalizedClass.includes('התמח')) {
-return 'התמחות';
-}
-
-// Prefer the new dedicated 'parallel' field, then fall back to extra_data
-const parallel = String(this.student()?.parallel || '').trim() || this.parallelValue();
-if (!parallel) return baseClass;
-
-const numericParallel = Number(String(parallel).trim());
-if (Number.isFinite(numericParallel)) {
-return `${baseClass}${numericParallel + 1}`;
-}
-
-return `${baseClass}${parallel}`;
+  const year = String(this.student()?.year || '').trim();
+  const parallel = String(this.student()?.parallel || '').trim();
+  if (year && parallel) return `${year}${parallel}`;
+  if (year) return year;
+  return '';
 }
 
 parallelValue() {

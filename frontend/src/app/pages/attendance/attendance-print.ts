@@ -154,6 +154,7 @@ function addDays(dateStr: string, days: number): string {
               <td class="num-cell">{{ si + 1 }}</td>
               <td class="barcode-cell">
                 <img [src]="getStudentBarcodeUrl(student.id_number)" [alt]="student.barcode" crossorigin="anonymous" class="student-barcode-img">
+                <div class="barcode-manual-text">{{ student.id_number }}</div>
               </td>
               <td class="name-cell">{{ student.name }}</td>
               <ng-container *ngFor="let day of sheet.days">
@@ -163,12 +164,6 @@ function addDays(dateStr: string, days: number): string {
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <!-- Footer -->
-      <div class="print-footer">
-        <span>הודפס: {{ today }}</span>
-        <span>סה"כ תלמידות: {{ sheet.students.length }}</span>
       </div>
     </div>
   </ng-container>
@@ -294,19 +289,18 @@ function addDays(dateStr: string, days: number): string {
   .name-cell { min-width: 120px; }
   .barcode-cell { width: 90px; padding: 2px 4px; }
   .student-barcode-img { width: 80px; height: 20px; object-fit: contain; }
+  .barcode-manual-text {
+    font-family: monospace;
+    font-size: 6.5pt;
+    color: #444;
+    text-align: center;
+    margin-top: 1px;
+    letter-spacing: 0.5px;
+  }
   .day-col { width: 42px; text-align: center; }
   .check-cell { width: 42px; }
   .notes-cell { min-width: 60px; }
 
-  .print-footer {
-    display: flex;
-    justify-content: space-between;
-    font-size: 8pt;
-    color: #777;
-    border-top: 1px solid #ccc;
-    padding-top: 6px;
-    margin-top: 8px;
-  }
 }
   `]
 })

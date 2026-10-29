@@ -568,7 +568,7 @@ app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, r
 });
 
 function logActivity(userId, action, itemType, itemId, details = '') {
-  db.prepare('INSERT INTO activity_log (user_id, action, item_type, item_id, details) VALUES (?, ?, ?)')
+  db.prepare('INSERT INTO activity_log (user_id, action, item_type, item_id, details) VALUES (?, ?, ?, ?, ?)')
     .run(userId || null, action, itemType, String(itemId), String(details).slice(0, 500));
 }
 
@@ -1933,8 +1933,19 @@ app.put('/api/equipment/:id', (req, res) => {
 });
 
 app.delete('/api/equipment/:id', (req, res) => {
-  db.prepare('DELETE FROM equipment WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'מזהה ציוד לא תקין' });
+
+  try {
+    db.transaction(() => {
+      db.prepare('DELETE FROM loans WHERE equipment_id=?').run(id);
+      db.prepare('DELETE FROM equipment WHERE id=?').run(id);
+    })();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete equipment failed:', error);
+    res.status(400).json({ error: 'לא ניתן למחוק ציוד עם השאלות שמורות' });
+  }
 });
 
 app.get('/api/equipment/:id/barcode', async (req, res) => {
@@ -2509,6 +2520,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     subject TEXT,
+    phone TEXT,
+    email TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -2583,6 +2596,19 @@ function getWeekStart(dateStr) {
   return d.toISOString().split('T')[0];
 }
 
+function getLastNameFromName(name = '') {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function compareByLastName(a, b) {
+  const aLast = getLastNameFromName(a.name || a);
+  const bLast = getLastNameFromName(b.name || b);
+  const lastNameCompare = aLast.localeCompare(bLast, 'he', { numeric: true });
+  if (lastNameCompare !== 0) return lastNameCompare;
+  return String(a.name || a).localeCompare(String(b.name || b), 'he', { numeric: true });
+}
+
 // ── Teachers CRUD ──────────────────────────────────────────────
 app.get('/api/teachers', (req, res) => {
   const teachers = db.prepare('SELECT * FROM teachers ORDER BY name').all();
@@ -2592,9 +2618,13 @@ app.get('/api/teachers', (req, res) => {
 app.post('/api/teachers', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
+  const subject = String(req.body?.subject || '').trim() || null;
+  const phone = String(req.body?.phone || '').trim() || null;
+  const email = String(req.body?.email || '').trim() || null;
   try {
-    const result = db.prepare('INSERT INTO teachers (name, subject) VALUES (?, ?)').run(name, req.body?.subject || null);
-    res.json({ id: result.lastInsertRowid, name, subject: req.body?.subject || null });
+    const result = db.prepare('INSERT INTO teachers (name, subject, phone, email) VALUES (?, ?, ?, ?)')
+      .run(name, subject, phone, email);
+    res.json({ id: result.lastInsertRowid, name, subject, phone, email });
   } catch {
     res.status(400).json({ error: 'מורה עם שם זה כבר קיימת' });
   }
@@ -2603,15 +2633,58 @@ app.post('/api/teachers', (req, res) => {
 app.put('/api/teachers/:id', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
-  const result = db.prepare('UPDATE teachers SET name=?, subject=?, active=? WHERE id=?')
-    .run(name, req.body?.subject || null, req.body?.active ?? 1, req.params.id);
+  const subject = String(req.body?.subject || '').trim() || null;
+  const phone = String(req.body?.phone || '').trim() || null;
+  const email = String(req.body?.email || '').trim() || null;
+  const result = db.prepare('UPDATE teachers SET name=?, subject=?, phone=?, email=?, active=? WHERE id=?')
+    .run(name, subject, phone, email, req.body?.active ?? 1, req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'מורה לא נמצאה' });
   res.json({ success: true });
 });
 
+app.delete('/api/teachers', (req, res) => {
+  try {
+    const tx = db.transaction(() => {
+      const attendanceSessionIds = db.prepare('SELECT id FROM attendance_sessions WHERE teacher_id IN (SELECT id FROM teachers)').all().map(r => r.id);
+      if (attendanceSessionIds.length) {
+        const placeholders = attendanceSessionIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM attendance_records WHERE session_id IN (${placeholders})`).run(...attendanceSessionIds);
+      }
+
+      db.prepare('DELETE FROM attendance_sessions WHERE teacher_id IN (SELECT id FROM teachers)').run();
+      db.prepare('DELETE FROM schedule_slots WHERE teacher_id IN (SELECT id FROM teachers)').run();
+
+      const result = db.prepare('DELETE FROM teachers').run();
+      return { deleted: result.changes };
+    });
+
+    const result = tx();
+    res.json({ success: true, deleted: result.deleted });
+  } catch (e) {
+    res.status(400).json({ error: 'לא ניתן למחוק את כל המורות: ' + (e instanceof Error ? e.message : String(e)) });
+  }
+});
+
 app.delete('/api/teachers/:id', (req, res) => {
-  db.prepare('DELETE FROM teachers WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  try {
+    const tx = db.transaction(() => {
+      const attendanceSessionIds = db.prepare('SELECT id FROM attendance_sessions WHERE teacher_id = ?').all(req.params.id).map(r => r.id);
+      if (attendanceSessionIds.length) {
+        const placeholders = attendanceSessionIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM attendance_records WHERE session_id IN (${placeholders})`).run(...attendanceSessionIds);
+      }
+
+      db.prepare('DELETE FROM attendance_sessions WHERE teacher_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM schedule_slots WHERE teacher_id = ?').run(req.params.id);
+      const result = db.prepare('DELETE FROM teachers WHERE id=?').run(req.params.id);
+      return result.changes;
+    });
+
+    tx();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ error: 'לא ניתן למחוק מורה: ' + (e instanceof Error ? e.message : String(e)) });
+  }
 });
 
 // ── Schedule Slots CRUD ────────────────────────────────────────
@@ -2749,8 +2822,7 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
         SELECT id_number, name
         FROM students
         WHERE year = ? AND parallel = ?
-        ORDER BY name
-      `).all(cls.class_year, cls.class_parallel);
+      `).all(cls.class_year, cls.class_parallel).sort(compareByLastName);
 
       const studentBarcodes = students.map(s => ({
         id_number: s.id_number,
@@ -2824,7 +2896,12 @@ app.post('/api/attendance/scan-session', (req, res) => {
   const studentCount = db.prepare(`SELECT COUNT(*) AS c FROM students WHERE year=? AND parallel=?`).get(classYear, classParallel).c;
 
   // Existing records
-  const records = db.prepare(`SELECT id_number, status FROM attendance_records WHERE session_id=?`).all(session.id);
+  const records = db.prepare(`
+    SELECT r.id_number, r.status, s.name
+    FROM attendance_records r
+    JOIN students s ON s.id_number = r.id_number
+    WHERE r.session_id=?
+  `).all(session.id);
 
   res.json({
     session,
@@ -2855,8 +2932,7 @@ app.get('/api/attendance/sessions/:id', (req, res) => {
     FROM students st
     LEFT JOIN attendance_records r ON r.id_number = st.id_number AND r.session_id = ?
     WHERE st.year = ? AND st.parallel = ?
-    ORDER BY st.name
-  `).all(session.id, session.class_year, session.class_parallel);
+  `).all(session.id, session.class_year, session.class_parallel).sort(compareByLastName);
 
   res.json({ session, students });
 });
@@ -3020,34 +3096,75 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'קובץ חסר' });
   try {
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const teacherSheetName = wb.SheetNames.find((name) => /מורות|teachers?|teacher/i.test(String(name || '')));
+    const ws = teacherSheetName
+      ? wb.Sheets[teacherSheetName]
+      : wb.Sheets[wb.SheetNames.find((name) => {
+          const sheet = wb.Sheets[name];
+          if (!sheet) return false;
+          const values = Object.values(XLSX.utils.sheet_to_json(sheet, { defval: '' }) || [])
+            .flatMap((row) => Object.values(row || {}))
+            .map((value) => String(value ?? '').trim().toLowerCase());
+          return values.some((value) =>
+            value.includes('שם פרטי') ||
+            value.includes('first name') ||
+            value.includes('מייל') ||
+            value.includes('email') ||
+            value.includes('תפקיד')
+          );
+        })] || wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-    const insert = db.prepare('INSERT OR IGNORE INTO teachers (name, subject, active) VALUES (?, ?, 1)');
-    const update = db.prepare('UPDATE teachers SET subject=? WHERE name=?');
+    const insert = db.prepare('INSERT OR IGNORE INTO teachers (name, subject, phone, email, active) VALUES (?, ?, ?, ?, 1)');
+    const update = db.prepare('UPDATE teachers SET subject=?, phone=?, email=? WHERE name=?');
+
+    const normalizeHeaderKey = (key) => String(key ?? '')
+      .trim()
+      .replace(/\uFEFF/g, '')
+      .replace(/[\s\-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+
+    const normalizeRow = (row) => {
+      const normalized = {};
+      for (const [key, value] of Object.entries(row || {})) {
+        normalized[normalizeHeaderKey(key)] = value;
+      }
+      return normalized;
+    };
+
+    const getValue = (row, aliases) => {
+      const normalizedRow = normalizeRow(row);
+      for (const alias of aliases) {
+        const key = normalizeHeaderKey(alias);
+        if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+          return normalizedRow[key];
+        }
+      }
+      return '';
+    };
 
     let imported = 0, skipped = 0;
     const tx = db.transaction(() => {
       for (const row of rows) {
-        // Accept columns: שם / name, טלפון / phone, מקצוע / subject
-        const name = String(
-          row['שם'] || row['שם מלא'] || row['name'] || row['Name'] || ''
-        ).trim();
+        const fullName = String(getValue(row, ['שם מלא', 'מורה', 'teacher', 'full name', 'fullname'])).trim().replace(/\s+/g, ' ');
+        const firstName = String(getValue(row, ['שם פרטי', 'first name', 'firstname', 'first_name', 'שם', 'name'])).trim().replace(/\s+/g, ' ');
+        const lastName = String(getValue(row, ['משפחה','שם משפחה', 'last name', 'lastname', 'last_name', 'שם משפחה מורה', 'family name'])).trim().replace(/\s+/g, ' ');
+        const explicitFullName = fullName && /\s+/.test(fullName) ? fullName : '';
+        const reconstructedName = [lastName, firstName].filter(Boolean).join(' ').trim();
+        const name = explicitFullName || reconstructedName || fullName;
+
         if (!name) { skipped++; continue; }
-        const subject = String(row['מקצוע'] || row['subject'] || '').trim() || null;
-        const phone = String(row['טלפון'] || row['phone'] || '').trim() || null;
+        const subject = String(getValue(row, ['תפקיד', 'מקצוע', 'subject', 'role', 'תפקיד מורה'])).trim().replace(/\s+/g, ' ') || null;
+        const phone = String(getValue(row, ['טלפון', 'phone', 'מספר טלפון'])).trim() || null;
+        const email = String(getValue(row, ['מייל', 'email', 'אימייל', 'mail'])).trim() || null;
 
         const existing = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
         if (existing) {
-          // Update subject/phone if provided
-          if (subject) update.run(subject, name);
+          if (subject || phone || email) update.run(subject, phone, email, name);
           skipped++;
         } else {
-          insert.run(name, subject);
-          if (phone) {
-            const t = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
-            if (t) db.prepare('UPDATE teachers SET phone=? WHERE id=?').run(phone, t.id).toString();
-          }
+          insert.run(name, subject, phone, email);
           imported++;
         }
       }
@@ -3059,9 +3176,10 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
   }
 });
 
-// Add phone column to teachers if missing
+// Add optional teacher columns if missing
 const teacherCols = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name);
 if (!teacherCols.includes('phone')) db.exec('ALTER TABLE teachers ADD COLUMN phone TEXT');
+if (!teacherCols.includes('email')) db.exec('ALTER TABLE teachers ADD COLUMN email TEXT');
 
 // ── Import schedule from Excel ──────────────────────────────────
 // Expected columns: מורה/teacher, שנה/year, מקבילה/parallel, יום/day, שעה_התחלה/start_time, שעה_סיום/end_time, מקצוע/subject

@@ -64,6 +64,7 @@ export interface Student {
   track?: string;
   year?: string;
   parallel?: string;
+  class_name?: string;
   birth_date?: string;
   address?: string;
   photo_url?: string;
@@ -75,6 +76,7 @@ export interface Teacher {
   id: number;
   name: string;
   subject?: string;
+  specialization?: string;
   active: number;
   created_at?: string;
 }
