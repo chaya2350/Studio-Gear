@@ -195,6 +195,7 @@ interface CtxMenu {
         </div>
       </div>
       <div class="modal-actions">
+        <a class="btn btn-primary" [routerLink]="['/calendar/events', selectedEvent()!.id]" (click)="closeEventDetail()">📄 דף פרטים</a>
         <button *ngIf="selectedEvent()!.source_sheet === 'ידני'" class="btn btn-secondary" (click)="startEditEvent()">עריכה</button>
         <button *ngIf="selectedEvent()!.source_sheet === 'ידני'" class="btn btn-danger" (click)="deleteEvent(selectedEvent()!)">מחיקה</button>
         <button class="btn btn-secondary" (click)="closeEventDetail()">סגור</button>
@@ -926,6 +927,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   // ── Dialogs: open ──
   openAddTask() {
     this.ctxMenu.set(null);
+    this.eventDetailOpen.set(false);
     this.newTask = { title: '', visibility: 'private' };
     this.dialogError.set('');
     this.addTaskOpen.set(true);
@@ -934,6 +936,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   openAddExam() {
     this.ctxMenu.set(null);
+    this.eventDetailOpen.set(false);
     this.newExam = { name: '', track: '', year: '' };
     this.dialogError.set('');
     this.addExamOpen.set(true);
@@ -942,6 +945,8 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   openAddEvent() {
     this.ctxMenu.set(null);
+    this.eventDetailOpen.set(false);
+    this.editingEvent.set(false);
     this.newEvent = { title: '', category: '' };
     this.dialogError.set('');
     this.addEventOpen.set(true);
@@ -992,7 +997,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   saveEvent() {
     const title = this.newEvent.title.trim();
     if (!title) return;
-    // שמירה דרך API — נשתמש ב-route החדש שניצור
     this.api.createCalendarEvent({
       title,
       event_date: this.selectedDate(),
@@ -1060,6 +1064,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   }
 
   openEventDetail(event: CalendarEvent) {
+    this.addTaskOpen.set(false);
+    this.addExamOpen.set(false);
+    this.addEventOpen.set(false);
     this.selectedEvent.set(event);
     this.editingEvent.set(false);
     this.dialogError.set('');

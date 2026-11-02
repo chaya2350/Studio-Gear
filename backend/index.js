@@ -269,6 +269,10 @@ const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().
 if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
 if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
 
+// Migration: calendar_events — הוספת עמודת notes
+const calEventCols = db.prepare('PRAGMA table_info(calendar_events)').all().map(c => c.name);
+if (!calEventCols.includes('notes')) db.exec("ALTER TABLE calendar_events ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+
 // Migration: personal_tasks — הוספת עמודת visibility וביטול חובת source_message_id
 const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
@@ -489,33 +493,86 @@ const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏
 
 app.get('/api/calendar-events', (req, res) => {
   res.json(db.prepare(`
-    SELECT id, title, event_date, hebrew_year, category, source_sheet
+    SELECT id, title, event_date, hebrew_year, category, source_sheet, notes
     FROM calendar_events
     ORDER BY event_date, category, title
   `).all());
 });
 
+// קבלת ארוע בודד לפי ID
+app.get('/api/calendar-events/:id', (req, res) => {
+  const event = db.prepare(
+    'SELECT id, title, event_date, hebrew_year, category, source_sheet, notes FROM calendar_events WHERE id = ?'
+  ).get(Number(req.params.id));
+  if (!event) return res.status(404).json({ error: 'הארוע לא נמצא' });
+  res.json(event);
+});
+
+// עדכון ארוע
+app.put('/api/calendar-events/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const event = db.prepare('SELECT id, source_sheet FROM calendar_events WHERE id = ?').get(id);
+    if (!event) return res.status(404).json({ error: 'הארוע לא נמצא' });
+
+    const notes = String(req.body?.notes ?? '');
+    // כותרת, תאריך וקטגוריה ניתנים לעדכון רק לארועים ידניים
+    if (event.source_sheet === 'ידני') {
+      const title = String(req.body?.title || '').trim();
+      const event_date = req.body?.event_date;
+      const category = String(req.body?.category || 'כללי').trim();
+      if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
+        return res.status(400).json({ error: 'תאריך לא תקין' });
+      let hebrewYear = 0;
+      try {
+        const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+        hebrewYear = hd.getFullYear();
+      } catch (_) {}
+      db.prepare(`UPDATE calendar_events SET title=?, event_date=?, category=?, hebrew_year=?, notes=? WHERE id=?`)
+        .run(title, event_date, category, hebrewYear, notes, id);
+    } else {
+      // ארועים שיובאו — רק הערות ניתנות לעדכון
+      db.prepare('UPDATE calendar_events SET notes=? WHERE id=?').run(notes, id);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('calendar-events PUT error:', err);
+    res.status(500).json({ error: 'שגיאה בעדכון האירוע: ' + (err.message || err) });
+  }
+});
+
 // יצירת אירוע ידני מלוח השנה
 app.post('/api/calendar-events', (req, res) => {
-  const title = String(req.body?.title || '').trim();
-  const event_date = req.body?.event_date;
-  const category = String(req.body?.category || 'כללי').trim();
-  const source_sheet = 'ידני';
-  if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
-    return res.status(400).json({ error: 'תאריך לא תקין' });
-  const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
-  const hebrewYear = hd.getFullYear();
-  // בדיקת כפילות ידנית לפני הכנסה
-  const existing = db.prepare(`
-    SELECT id FROM calendar_events WHERE event_date = ? AND title = ? AND category = ? AND source_sheet = 'ידני'
-  `).get(event_date, title, category);
-  if (existing) return res.status(409).json({ error: 'אירוע עם אותה כותרת כבר קיים בתאריך זה' });
-  const result = db.prepare(`
-    INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `).run(title, event_date, hebrewYear, category, source_sheet);
-  res.status(201).json({ id: result.lastInsertRowid });
+  try {
+    const title = String(req.body?.title || '').trim();
+    const event_date = req.body?.event_date;
+    const category = String(req.body?.category || 'כללי').trim();
+    const source_sheet = 'ידני';
+    if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
+      return res.status(400).json({ error: 'תאריך לא תקין' });
+
+    let hebrewYear = 0;
+    try {
+      const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+      hebrewYear = hd.getFullYear();
+    } catch (_) { /* fallback — hebrew year not critical */ }
+
+    const existing = db.prepare(`
+      SELECT id FROM calendar_events WHERE event_date = ? AND title = ? AND category = ? AND source_sheet = 'ידני'
+    `).get(event_date, title, category);
+    if (existing) return res.status(409).json({ error: 'אירוע עם אותה כותרת כבר קיים בתאריך זה' });
+
+    const result = db.prepare(`
+      INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(title, event_date, hebrewYear, category, source_sheet);
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (err) {
+    console.error('calendar-events POST error:', err);
+    res.status(500).json({ error: 'שגיאה בשמירת האירוע: ' + (err.message || err) });
+  }
 });
 
 // מחיקת אירוע ידני

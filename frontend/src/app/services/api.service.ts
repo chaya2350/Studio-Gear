@@ -9,6 +9,7 @@ export interface CalendarEvent {
   hebrew_year: number;
   category: string;
   source_sheet: string;
+  notes: string;
 }
 
 export interface CalendarImportResult {
@@ -109,8 +110,12 @@ export class ApiService {
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
   createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
     return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
+  }
+  updateCalendarEvent(id: number, data: { title?: string; event_date?: string; category?: string; notes: string }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/calendar-events/${id}`, data);
   }
   deleteCalendarEvent(id: number) { return this.http.delete(`${this.base}/calendar-events/${id}`); }
   importCalendarWorkbook(file: File) {
