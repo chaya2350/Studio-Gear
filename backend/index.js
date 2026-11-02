@@ -2792,6 +2792,27 @@ app.get('/api/teachers', (req, res) => {
   res.json(teachers);
 });
 
+// ייצוא רשימת מורות לאקסל — חייב להיות לפני /:id
+app.get('/api/teachers/export', (req, res) => {
+  const XLSX = require('xlsx');
+  const teachers = db.prepare('SELECT name, subject, phone, email, active FROM teachers ORDER BY name').all();
+  const rows = teachers.map(t => ({
+    'שם': t.name,
+    'מקצוע': t.subject || '',
+    'טלפון': t.phone || '',
+    'אימייל': t.email || '',
+    'פעיל': t.active ? 'כן' : 'לא',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 26 }, { wch: 8 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'מורות');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="teachers.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 app.get('/api/teachers/:id', (req, res) => {
   const teacher = db.prepare('SELECT * FROM teachers WHERE id = ?').get(req.params.id);
   if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });

@@ -1,162 +1,188 @@
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-teacher-search',
+  standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <div class="search-page">
-      <div class="search-hero">
-        <div class="hero-icon"></div>
-        <h1>חיפוש מורה לפי שם</h1>
-        <p class="subtitle">הקלד שם של מורה כדי לראות תוצאות עם השלמה אוטומטית</p>
-      </div>
-
-      <div class="search-card">
-        <div class="search-input-wrap" [class.focused]="focused">
-          <span class="search-icon">⌕</span>
-          <input
-            [(ngModel)]="query"
-            placeholder="שם מורה..."
-            (ngModelChange)="onInput()"
-            (focus)="focused = true"
-            (blur)="onBlur()"
-            autocomplete="off"
-            autofocus
-          >
-          <button class="clear-btn" *ngIf="query" (click)="query=''; suggestions.set([]); selected.set(null)">✕</button>
-        </div>
-
-        <div *ngIf="suggestions().length" class="suggestions">
-          <div *ngFor="let t of suggestions()" class="suggestion-item" (mousedown)="select(t)">
-            <div class="sug-avatar" [style.background]="avatarColor(t.name)">{{ initials(t.name) }}</div>
-            <div>
-              <div class="sug-name">{{ t.name }}</div>
-              <div class="sug-meta">
-                {{ t.subject || 'מורה' }}
-                <span *ngIf="t.email"> · {{ t.email }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div *ngIf="selected() as teacher" class="result-card">
-          <div class="result-header">
-            <div class="result-avatar" [style.background]="avatarColor(teacher.name)">{{ initials(teacher.name) }}</div>
-            <div class="result-info">
-              <div class="result-name">{{ teacher.name }}</div>
-              <div class="result-meta">
-                <span>{{ teacher.subject || 'מורה' }}</span>
-                <span *ngIf="teacher.email">{{ teacher.email }}</span>
-                <span *ngIf="teacher.phone">{{ teacher.phone }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="result-actions">
-            <a [routerLink]="['/teachers', teacher.id]" class="view-full-btn">צפייה בפרופיל →</a>
-          </div>
-        </div>
-      </div>
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1>רשימת מורות</h1>
+      <p class="subtitle">{{ allTeachers().length }} מורות במערכת</p>
     </div>
+    <div class="header-actions">
+      <button class="btn btn-ghost" (click)="exportExcel()" [disabled]="exporting()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="12" x2="12" y2="18"/>
+          <polyline points="9 15 12 18 15 15"/>
+        </svg>
+        {{ exporting() ? 'מוריד...' : 'ייצוא לאקסל' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Search bar -->
+  <div class="search-wrap">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <input [(ngModel)]="query" (ngModelChange)="onSearch()" placeholder="חיפוש לפי שם או מקצוע..." autocomplete="off">
+    <button *ngIf="query" class="clear-btn" (click)="query=''; onSearch()">✕</button>
+  </div>
+
+  <!-- Loading -->
+  <div *ngIf="loading()" class="empty-state">טוענת...</div>
+
+  <!-- Empty -->
+  <div *ngIf="!loading() && !filtered().length" class="empty-state">
+    {{ query ? 'לא נמצאו מורות התואמות לחיפוש' : 'אין מורות במערכת' }}
+  </div>
+
+  <!-- List -->
+  <div *ngIf="!loading() && filtered().length" class="teachers-grid">
+    <a *ngFor="let t of filtered()" [routerLink]="['/teachers', t.id]" class="teacher-card">
+      <div class="teacher-avatar" [style.background]="avatarColor(t.name)">
+        {{ initials(t.name) }}
+      </div>
+      <div class="teacher-info">
+        <div class="teacher-name">{{ t.name }}</div>
+        <div class="teacher-meta">
+          <span *ngIf="t.subject" class="meta-chip subject">{{ t.subject }}</span>
+          <span *ngIf="t.phone" class="meta-chip">{{ t.phone }}</span>
+          <span *ngIf="t.email" class="meta-chip email">{{ t.email }}</span>
+        </div>
+      </div>
+      <div class="teacher-arrow">›</div>
+      <span *ngIf="!t.active" class="inactive-badge">לא פעיל</span>
+    </a>
+  </div>
+</div>
   `,
   styles: [`
-    .search-page { max-width: 520px; margin: 60px auto 0; display: flex; flex-direction: column; align-items: center; gap: 28px; }
-    .search-hero { text-align: center; }
-    .hero-icon { font-size: 3.4rem; margin-bottom: 12px; }
-    h1 { margin: 0 0 8px; font-size: 1.65rem; }
-    .subtitle { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
-    .search-card {
-      width: 100%; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
-      padding: 24px; box-shadow: var(--shadow); position: relative;
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    .header-actions { display: flex; gap: 8px; }
+
+    .search-wrap {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      padding: 0 14px; height: 46px; margin-bottom: 20px;
+      &:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
     }
-    .search-input-wrap {
-      display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm); padding: 0 14px; height: 52px; transition: all 0.18s;
+    .search-icon { width: 18px; height: 18px; color: var(--text-muted); flex-shrink: 0; }
+    .search-wrap input {
+      flex: 1; border: none; background: transparent; font: inherit; font-size: 0.95rem; color: var(--text);
+      &:focus { outline: none; }
     }
-    .search-input-wrap.focused { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px var(--primary-glow); }
-    .search-icon { font-size: 1.2rem; flex-shrink: 0; }
-    input {
-      flex: 1; border: none; background: transparent; color: var(--text); font: inherit; font-size: 1rem;
-    }
-    input:focus { outline: none; }
     .clear-btn {
-      background: none; border: none; cursor: pointer; color: var(--text-muted); border-radius: 50%; padding: 4px 6px;
+      background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.85rem;
+      padding: 4px 6px; border-radius: 4px;
+      &:hover { color: var(--text); }
     }
-    .suggestions {
-      position: absolute; right: 24px; left: 24px; top: calc(100% + 8px); z-index: 10; background: var(--surface);
-      border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden;
+
+    .empty-state { text-align: center; color: var(--text-muted); padding: 48px 0; font-size: 0.9rem; }
+
+    .teachers-grid { display: flex; flex-direction: column; gap: 8px; }
+
+    .teacher-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      text-decoration: none; color: inherit; position: relative;
+      transition: all var(--transition);
+      &:hover {
+        border-color: var(--primary); background: var(--primary-light);
+        transform: translateX(-2px);
+        .teacher-arrow { color: var(--primary); opacity: 1; }
+      }
     }
-    .suggestion-item {
-      display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
+
+    .teacher-avatar {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 1rem;
     }
-    .suggestion-item:last-child { border-bottom: none; }
-    .suggestion-item:hover { background: var(--primary-light); }
-    .sug-avatar, .result-avatar {
-      width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      color: white; font-weight: 800; flex-shrink: 0;
+
+    .teacher-info { flex: 1; min-width: 0; }
+    .teacher-name { font-weight: 800; font-size: 0.97rem; margin-bottom: 4px; }
+    .teacher-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .meta-chip {
+      font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+      background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
+      &.subject { background: var(--primary-light); color: var(--primary); border-color: transparent; }
+      &.email { direction: ltr; }
     }
-    .sug-name { font-size: 0.95rem; font-weight: 800; color: var(--text); }
-    .sug-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
-    .result-card {
-      margin-top: 18px; background: linear-gradient(135deg, var(--primary-light), var(--surface)); border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm); overflow: hidden; 
+
+    .teacher-arrow {
+      font-size: 1.4rem; color: var(--text-muted); opacity: 0.3;
+      transition: all var(--transition); flex-shrink: 0;
     }
-    .result-header { display: flex; align-items: center; gap: 14px; padding: 18px; }
-    .result-avatar { width: 52px; height: 52px; font-size: 1.3rem; }
-    .result-info { flex: 1; min-width: 0; }
-    .result-name { font-size: 1.05rem; font-weight: 800; }
-    .result-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; color: var(--text-muted); font-size: 0.78rem; }
-    .result-actions { border-top: 1px solid var(--border); }
-    .view-full-btn {
-      display: block; text-align: center; padding: 12px 16px; text-decoration: none; font-weight: 800; color: var(--primary);
+
+    .inactive-badge {
+      position: absolute; top: 8px; left: 12px;
+      font-size: 0.66rem; padding: 1px 7px; border-radius: 999px;
+      background: var(--danger-soft); color: var(--danger); font-weight: 700;
     }
   `]
 })
-export class TeacherSearchComponent {
+export class TeacherSearchComponent implements OnInit {
   query = '';
-  focused = false;
-  suggestions = signal<any[]>([]);
-  selected = signal<any | null>(null);
+  allTeachers = signal<any[]>([]);
+  loading = signal(true);
+  exporting = signal(false);
 
-  constructor(private api: ApiService) {}
+  filtered = computed(() => {
+    const q = this.query.trim().toLowerCase();
+    if (!q) return this.allTeachers();
+    return this.allTeachers().filter(t =>
+      (t.name || '').toLowerCase().includes(q) ||
+      (t.subject || '').toLowerCase().includes(q) ||
+      (t.email || '').toLowerCase().includes(q)
+    );
+  });
 
-  onInput() {
-    const value = this.query.trim();
-    this.selected.set(null);
-    if (value.length < 2) { this.suggestions.set([]); return; }
-    this.api.getTeachers(value).subscribe((teachers) => {
-      const list = Array.isArray(teachers) ? teachers : [];
-      this.suggestions.set(list.slice(0, 8));
-      if (list.length) {
-        this.selected.set(list[0]);
-      }
+  constructor(private api: ApiService, private router: Router) {}
+
+  ngOnInit() {
+    this.api.getTeachers().subscribe({
+      next: teachers => { this.allTeachers.set(teachers); this.loading.set(false); },
+      error: () => this.loading.set(false),
     });
   }
 
-  select(teacher: any) {
-    this.query = teacher.name;
-    this.selected.set(teacher);
-    this.suggestions.set([]);
-  }
+  onSearch() { /* filtered is computed — nothing extra needed */ }
 
-  onBlur() {
-    this.focused = false;
-    setTimeout(() => this.suggestions.set([]), 150);
+  exportExcel() {
+    this.exporting.set(true);
+    this.api.exportTeachersExcel().subscribe({
+      next: (blob: Blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'teachers.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+        this.exporting.set(false);
+      },
+      error: () => this.exporting.set(false),
+    });
   }
 
   initials(name: string): string {
-    return (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'מ';
+    return (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(p => p[0]).join('').toUpperCase() || 'מ';
   }
 
   avatarColor(name: string): string {
-    const palette = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
-    const normalized = (name || '').trim();
-    let hash = 0;
-    for (let i = 0; i < normalized.length; i++) hash = (hash * 31 + normalized.charCodeAt(i)) >>> 0;
-    return palette[hash % palette.length];
+    const palette = ['#7c3aed','#0ea5e9','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6','#6366f1'];
+    let h = 0;
+    for (const c of (name || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return palette[h % palette.length];
   }
 }

@@ -255,6 +255,7 @@ export class ApiService {
   getTeacherProfile(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}/profile`); }
   getMyTeacherProfile() { return this.http.get<any>(`${this.base}/teachers/profile`); }
   getTeachers(q?: string) { return this.http.get<any[]>(`${this.base}/teachers${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  exportTeachersExcel() { return this.http.get(`${this.base}/teachers/export`, { responseType: 'blob' }); }
   createTeacher(data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string }) { return this.http.post<any>(`${this.base}/teachers`, data); }
   updateTeacher(id: number, data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string; active?: number }) { return this.http.put<{success:boolean}>(`${this.base}/teachers/${id}`, data); }
   deleteTeacher(id: number) { return this.http.delete(`${this.base}/teachers/${id}`); }
