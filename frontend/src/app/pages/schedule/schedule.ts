@@ -139,7 +139,7 @@ function formatHebDate(dateStr: string): string {
       <div class="teacher-info" *ngIf="editingTeacherId() !== t.id">
         <div class="teacher-color" [style.background]="teacherColor(t.id)"></div>
         <div>
-          <strong>{{ t.name }}</strong>
+          <a [routerLink]="['/teachers', t.id]" class="teacher-name-link"><strong>{{ t.name }}</strong></a>
           <span *ngIf="t.subject" class="teacher-subject">{{ t.subject }}</span>
           <span *ngIf="t.specialization" class="teacher-specialization">{{ t.specialization }}</span>
         </div>
@@ -353,6 +353,7 @@ function formatHebDate(dateStr: string): string {
 .teacher-row { padding: 12px 16px; }
 .teacher-info { display: flex; align-items: center; gap: 12px; }
 .teacher-color { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+.teacher-name-link { color: var(--text); text-decoration: none; &:hover { color: var(--primary); text-decoration: underline; } }
 .teacher-subject { color: var(--text-muted); font-size: 0.82rem; margin-right: 8px; }
 .teacher-specialization { background: var(--primary-light); color: var(--primary); border-radius: 10px; padding: 1px 8px; font-size: 0.75rem; font-weight: 600; margin-right: 8px; }
 .teacher-count { margin-inline-start: auto; font-size: 0.8rem; color: var(--text-muted); }
