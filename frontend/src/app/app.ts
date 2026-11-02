@@ -1021,7 +1021,7 @@ export class App implements OnInit {
   }
 
   isEquipmentSection(): boolean {
-    return ['/equipment', '/scan', '/loans', '/calendar', '/checkout'].some(
+    return ['/equipment', '/scan', '/loans', '/checkout'].some(
       (p) =>
         this.currentPath === p ||
         this.currentPath.startsWith(p + '/') ||
