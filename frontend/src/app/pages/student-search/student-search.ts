@@ -1,9 +1,8 @@
 import { Component, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
-import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 
 @Component({
@@ -17,57 +16,10 @@ template: `
 <p class="subtitle">הקלד שם או ת.ז. לחיפוש תלמידה</p>
 </div>
 
-<!-- Add student modal -->
-<div *ngIf="addOpen && canAdd()" class="modal-backdrop" (click)="addOpen=false">
-  <div class="modal-card" (click)="$event.stopPropagation()">
-    <div class="modal-title">הוספת תלמידה חדשה</div>
-    <div class="form-group">
-      <label>ת.ז. *</label>
-      <input [(ngModel)]="newStudent.id_number" placeholder="7–9 ספרות" maxlength="9">
-    </div>
-    <div class="form-group">
-      <label>שם מלא *</label>
-      <input [(ngModel)]="newStudent.name" placeholder="שם פרטי ומשפחה">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>מסלול</label>
-        <input [(ngModel)]="newStudent.track" placeholder="למשל: מוסיקה">
-      </div>
-      <div class="form-group">
-        <label>שנה</label>
-        <input [(ngModel)]="newStudent.year" placeholder="א, ב, ג...">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>מקבילה</label>
-        <input [(ngModel)]="newStudent.parallel" placeholder="1, 2, 3...">
-      </div>
-      <div class="form-group">
-        <label>טלפון</label>
-        <input [(ngModel)]="newStudent.phone" placeholder="050-0000000">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>כתובת</label>
-      <input [(ngModel)]="newStudent.address" placeholder="רחוב, עיר">
-    </div>
-    <p *ngIf="addError" class="add-error" role="alert">{{ addError }}</p>
-    <div class="modal-actions">
-      <button class="btn btn-primary" [disabled]="adding || !newStudent.id_number || !newStudent.name" (click)="saveNewStudent()">
-        {{ adding ? 'שומר...' : 'הוסף תלמידה' }}
-      </button>
-      <button class="btn btn-secondary" (click)="addOpen=false">ביטול</button>
-    </div>
-  </div>
-</div>
+
+<!-- Add student modal removed — add from admin panel only -->
 
 <div class="search-card">
-<div class="search-top-bar">
-  <span class="search-top-title">חיפוש</span>
-  <button class="add-student-btn" *ngIf="canAdd()" (click)="openAdd()">+ הוספת תלמידה חדשה</button>
-</div>
 <div class="search-input-wrap" [class.focused]="focused" style="position:relative;">
 <span class="search-icon"></span>
 <input
@@ -296,49 +248,7 @@ suggestions = signal<Student[]>([]);
 selected = signal<Student | null>(null);
 today = new Date().toISOString().split('T')[0];
 
-// Add student
-addOpen = false;
-adding = false;
-addError = '';
-newStudent = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '' };
-
-constructor(private api: ApiService, private router: Router, private auth: AuthService) {}
-
-canAdd() {
-  const role = this.auth.user()?.role;
-  return role === 'admin' || role === 'secretary';
-}
-
-openAdd() {
-  this.newStudent = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '' };
-  this.addError = '';
-  this.addOpen = true;
-}
-
-saveNewStudent() {
-  if (!this.newStudent.id_number || !this.newStudent.name) return;
-  this.adding = true;
-  this.addError = '';
-  this.api.createStudent({
-    id_number: this.newStudent.id_number.trim(),
-    name: this.newStudent.name.trim(),
-    phone: this.newStudent.phone.trim() || undefined,
-    track: this.newStudent.track.trim() || undefined,
-    year: this.newStudent.year.trim() || undefined,
-    parallel: this.newStudent.parallel.trim() || undefined,
-    address: this.newStudent.address.trim() || undefined,
-  }).subscribe({
-    next: (r) => {
-      this.adding = false;
-      this.addOpen = false;
-      this.router.navigate(['/students', r.id_number]);
-    },
-    error: (e) => {
-      this.adding = false;
-      this.addError = e.error?.error || 'לא ניתן להוסיף תלמידה';
-    }
-  });
-}
+constructor(private api: ApiService) {}
 
 onInput() {
 this.selected.set(null);
