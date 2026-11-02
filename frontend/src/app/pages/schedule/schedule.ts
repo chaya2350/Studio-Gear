@@ -189,17 +189,10 @@ function formatHebDate(dateStr: string): string {
         </select>
       </label>
       <label class="field">
-        <span>שנה</span>
-        <select [(ngModel)]="newSlot.class_year">
-          <option value="">שנה</option>
-          <option *ngFor="let y of YEARS" [value]="y">{{ y }}</option>
-        </select>
-      </label>
-      <label class="field">
-        <span>מקבילה</span>
-        <select [(ngModel)]="newSlot.class_parallel">
-          <option value="">מס׳</option>
-          <option *ngFor="let p of PARALLELS" [value]="p">{{ p }}</option>
+        <span>כיתה</span>
+        <select [(ngModel)]="newSlot.class_key">
+          <option value="">בחר כיתה</option>
+          <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }})</option>
         </select>
       </label>
       <label class="field">
@@ -210,12 +203,11 @@ function formatHebDate(dateStr: string): string {
         </select>
       </label>
       <label class="field">
-        <span>שעת התחלה</span>
-        <input type="time" [(ngModel)]="newSlot.start_time">
-      </label>
-      <label class="field">
-        <span>שעת סיום</span>
-        <input type="time" [(ngModel)]="newSlot.end_time">
+        <span>שיעור</span>
+        <select [ngModel]="newSlot.period_id" (ngModelChange)="pickPeriod(newSlot, $event)">
+          <option value="">בחר שיעור</option>
+          <option *ngFor="let p of lessonPeriods()" [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
+        </select>
       </label>
       <label class="field">
         <span>מקצוע (אופציונלי)</span>
@@ -290,8 +282,12 @@ function formatHebDate(dateStr: string): string {
         <option *ngFor="let t of kodeshTeachers()" [value]="t.id">{{ t.name }}</option>
       </select>
     </label>
-    <label>שעת התחלה: <input type="time" [(ngModel)]="quickAddSlot.start_time"></label>
-    <label>שעת סיום: <input type="time" [(ngModel)]="quickAddSlot.end_time"></label>
+    <label>שיעור:
+      <select [ngModel]="quickAddSlot.period_id" (ngModelChange)="pickPeriod(quickAddSlot, $event)">
+        <option value="">בחר שיעור</option>
+        <option *ngFor="let p of lessonPeriods()" [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
+      </select>
+    </label>
     <label>מקצוע: <input [(ngModel)]="quickAddSlot.subject" placeholder="מקצוע"></label>
     <div class="form-actions">
       <button class="btn btn-primary" (click)="saveQuickSlot()">הוסף</button>
@@ -448,7 +444,7 @@ export class ScheduleComponent implements OnInit {
   lessonType = signal<'class' | 'specialization'>('class');
 
   // Slot CRUD
-  newSlot: any = { teacher_id: '', class_year: '', class_parallel: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
+  newSlot: any = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
   savingSlot = signal(false);
   slotError = signal('');
   slotSuccess = signal('');
@@ -476,6 +472,20 @@ export class ScheduleComponent implements OnInit {
 
   loadTeachers() {
     this.api.getTeachers().subscribe({ next: t => this.teachers.set(t), error: () => {} });
+    this.api.getLessonPeriods().subscribe({ next: p => this.periods.set(p), error: () => {} });
+    this.api.getStudentClasses().subscribe({ next: c => this.classOptions.set(c), error: () => {} });
+  }
+
+  classOptions = signal<{ parallel: string; label: string; count: number }[]>([]);
+
+  periods = signal<any[]>([]);
+  lessonPeriods = computed(() => this.periods().filter(p => !p.is_break));
+
+  pickPeriod(target: any, id: string) {
+    const p = this.periods().find(x => String(x.id) === String(id));
+    target.period_id = id;
+    target.start_time = p?.start_time || '';
+    target.end_time = p?.end_time || '';
   }
 
   // Teachers with specialization = 'קודש' (for שיעור לכיתה)
@@ -545,15 +555,16 @@ export class ScheduleComponent implements OnInit {
 
   createSlot() {
     const s = this.newSlot;
-    if (!s.teacher_id || !s.class_year || !s.class_parallel || s.day_of_week === '' || !s.start_time) {
-      this.slotError.set('יש למלא: מורה, כיתה, יום, שעת התחלה'); return;
+    if (!s.teacher_id || !s.class_key || s.day_of_week === '' || !s.start_time) {
+      this.slotError.set('יש למלא: מורה, כיתה, יום, שיעור'); return;
     }
+    const [class_year, class_parallel] = String(s.class_key).split('_');
     this.savingSlot.set(true); this.slotError.set(''); this.slotSuccess.set('');
-    this.api.createScheduleSlot({ ...s, teacher_id: Number(s.teacher_id), day_of_week: Number(s.day_of_week), week_start: this._weekStart() }).subscribe({
+    this.api.createScheduleSlot({ ...s, class_year, class_parallel, teacher_id: Number(s.teacher_id), day_of_week: Number(s.day_of_week), week_start: this._weekStart() }).subscribe({
       next: () => {
         this.savingSlot.set(false);
         this.slotSuccess.set('שיעור נוסף בהצלחה');
-        this.newSlot = { teacher_id: '', class_year: '', class_parallel: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
+        this.newSlot = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
         this.loadSchedule();
       },
       error: e => { this.savingSlot.set(false); this.slotError.set(e.error?.error || 'שגיאה'); }

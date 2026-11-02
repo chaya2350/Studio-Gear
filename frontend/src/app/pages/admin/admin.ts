@@ -287,6 +287,28 @@ class="section-tab"
     </div>
   </div>
 
+  <!-- ניהול שעות שיעורים -->
+  <div class="card" style="max-width:640px; margin-bottom:16px;">
+    <div class="section-title">ניהול שעות שיעורים</div>
+    <p class="import-hint">הגדרת מבנה היום (שיעורים והפסקות). בלוח המערכת בוחרים שיעור מהרשימה.</p>
+    <div class="period-row period-form">
+      <input class="admin-input" [(ngModel)]="periodDraft.name" placeholder="שם (למשל שיעור ראשון)">
+      <input type="time" class="admin-input" [(ngModel)]="periodDraft.start_time">
+      <input type="time" class="admin-input" [(ngModel)]="periodDraft.end_time">
+      <label class="period-break"><input type="checkbox" [(ngModel)]="periodDraft.is_break"> הפסקה</label>
+      <button class="btn btn-primary" (click)="savePeriod()">{{ editingPeriodId() ? 'עדכון' : 'הוספה' }}</button>
+      <button class="btn btn-secondary" *ngIf="editingPeriodId()" (click)="resetPeriodDraft()">ביטול</button>
+    </div>
+    <p *ngIf="periodError()" class="alert alert-error">{{ periodError() }}</p>
+    <div *ngIf="!periods().length" class="empty-hint">עדיין לא הוגדרו שעות</div>
+    <div *ngFor="let p of periods()" class="period-row" [class.is-break]="p.is_break">
+      <span class="period-time">{{ p.start_time }} – {{ p.end_time }}</span>
+      <span class="period-name">{{ p.name }}{{ p.is_break ? ' (הפסקה)' : '' }}</span>
+      <button class="btn btn-secondary" style="padding:4px 10px" (click)="editPeriod(p)">עריכה</button>
+      <button class="btn btn-danger" style="padding:4px 10px" (click)="deletePeriod(p.id)">מחיקה</button>
+    </div>
+  </div>
+
   <!-- ייבוא מערכת שעות מאקסל -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
     <div class="section-title">ייבוא מערכת שעות מקובץ Excel</div>
@@ -388,6 +410,12 @@ background: var(--surface-2);
 .upload-text { font-weight: 700; color: var(--text); margin-bottom: 4px; }
 .upload-hint { font-size: 0.78rem; color: var(--text-muted); }
 
+.period-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
+.period-row.is-break { background: #fef9c3; border-radius: 6px; padding: 6px 8px; }
+.period-form .admin-input { width: auto; }
+.period-time { font-weight: 600; min-width: 110px; direction: ltr; text-align: right; }
+.period-name { flex: 1; }
+.period-break { display: flex; gap: 4px; align-items: center; }
 .import-status {
 margin-top: 12px; padding: 12px 16px; border-radius: var(--radius-sm);
 font-size: 0.875rem; display: flex; align-items: center; gap: 8px;
@@ -561,6 +589,7 @@ this.loadTotal();
 this.loadApprovals();
 if (auth.user()?.role === 'admin') this.loadUsers();
 this.loadTeachers();
+this.loadPeriods();
 }
 
 sections(): { id: AdminSection; icon: string; label: string }[] {
@@ -697,6 +726,36 @@ draggingSchedule = signal(false);
 importingSchedule = signal(false);
 scheduleImportResult = signal<any>(null);
 scheduleImportWeek = '';
+
+periods = signal<any[]>([]);
+editingPeriodId = signal(0);
+periodError = signal('');
+periodDraft = { name: '', start_time: '', end_time: '', is_break: false };
+
+loadPeriods() {
+  this.api.getLessonPeriods().subscribe({ next: p => this.periods.set(p), error: () => {} });
+}
+resetPeriodDraft() {
+  this.editingPeriodId.set(0);
+  this.periodDraft = { name: '', start_time: '', end_time: '', is_break: false };
+}
+editPeriod(p: any) {
+  this.editingPeriodId.set(p.id);
+  this.periodDraft = { name: p.name, start_time: p.start_time, end_time: p.end_time, is_break: !!p.is_break };
+}
+savePeriod() {
+  this.periodError.set('');
+  const id = this.editingPeriodId();
+  const req = id ? this.api.updateLessonPeriod(id, this.periodDraft) : this.api.createLessonPeriod(this.periodDraft);
+  req.subscribe({
+    next: () => { this.resetPeriodDraft(); this.loadPeriods(); },
+    error: (e: any) => this.periodError.set(e.error?.error || 'שגיאה בשמירה')
+  });
+}
+deletePeriod(id: number) {
+  if (!confirm('למחוק שורה זו מהרשימה? שיעורים קיימים בלוח לא יושפעו.')) return;
+  this.api.deleteLessonPeriod(id).subscribe({ next: () => this.loadPeriods() });
+}
 
 private readonly teacherColors = ['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#ede9fe','#ffedd5','#e0f2fe','#f0fdf4'];
 teacherColor(id: number) { return this.teacherColors[(id - 1) % this.teacherColors.length]; }

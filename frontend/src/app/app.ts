@@ -126,7 +126,7 @@ import { filter, takeUntil } from 'rxjs/operators';
     </header>
 
     <!-- ───────────── LAYOUT SHELL ───────────── -->
-    <div class="app-shell" [class.has-nav]="currentPath !== '/login' && currentPath !== '/kiosk'" [class.sidebar-collapsed]="sidebarCollapsed">
+    <div class="app-shell" [class.has-nav]="currentPath !== '/login' && currentPath !== '/kiosk'" [class.kiosk-layout]="currentPath === '/kiosk'" [class.sidebar-collapsed]="sidebarCollapsed">
 
       <!-- ── SIDEBAR ── -->
       <aside
@@ -341,26 +341,16 @@ import { filter, takeUntil } from 'rxjs/operators';
           <a routerLink="/checkout" routerLinkActive="active">הזמנה</a>
         </nav>
 
-        <main class="container" [class.login-container]="currentPath === '/login'">
+        <main class="container" [class.login-container]="currentPath === '/login'" [class.kiosk-container]="currentPath === '/kiosk'">
           <router-outlet />
         </main>
 
-        <footer *ngIf="currentPath !== '/login' && currentPath !== '/attendance/print'" class="app-footer">
+        <footer *ngIf="currentPath !== '/login' && currentPath !== '/kiosk' && currentPath !== '/attendance/print'" class="app-footer">
           <img src="/MCP.png" alt="MCP" class="footer-logo" />
           <span>כל הזכויות שמורות</span>
         </footer>
       </div>
     </div>
-
-    <!-- Login page (no shell) -->
-    <main *ngIf="currentPath === '/login'" class="container login-container">
-      <router-outlet />
-    </main>
-
-    <!-- Kiosk page (no shell) -->
-    <main *ngIf="currentPath === '/kiosk'">
-      <router-outlet />
-    </main>
 
     <!-- Cart FAB -->
     <a *ngIf="currentPath !== '/login' && cart.count() > 0" routerLink="/checkout" class="cart-fab">
@@ -634,6 +624,16 @@ import { filter, takeUntil } from 'rxjs/operators';
       &.has-nav {
         padding-top: 58px;
       }
+
+      &:not(.has-nav) .main-area {
+        width: 100%;
+        margin-right: 0;
+      }
+
+      &.kiosk-layout .main-area,
+      &.kiosk-layout .kiosk-container {
+        min-height: 100vh;
+      }
     }
 
     /* ── Sidebar ───────────────────────────────── */
@@ -817,6 +817,7 @@ import { filter, takeUntil } from 'rxjs/operators';
     /* ── Container / page ──────────────────────── */
     .container { width: 100%; padding: 28px 28px; box-sizing: border-box; }
     .login-container { max-width: none; padding: 0; margin: 0; }
+    .kiosk-container { max-width: none; padding: 0; margin: 0; }
 
     /* ── Footer ────────────────────────────────── */
     .app-footer {

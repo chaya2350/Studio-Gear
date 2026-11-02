@@ -2736,6 +2736,52 @@ app.delete('/api/teachers/:id', (req, res) => {
   }
 });
 
+// ── Day structure (lesson periods and breaks) ──────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lesson_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    is_break INTEGER NOT NULL DEFAULT 0
+  );
+`);
+
+function readPeriodBody(body = {}) {
+  const name = String(body.name || '').trim();
+  const start = String(body.start_time || '').trim();
+  const end = String(body.end_time || '').trim();
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!name) return { error: 'יש להזין שם לשיעור/הפסקה' };
+  if (!timeRe.test(start) || !timeRe.test(end)) return { error: 'שעות לא תקינות' };
+  if (end <= start) return { error: 'שעת הסיום חייבת להיות אחרי שעת ההתחלה' };
+  return { value: [name, start, end, body.is_break ? 1 : 0] };
+}
+
+app.get('/api/schedule/periods', (req, res) => {
+  res.json(db.prepare('SELECT * FROM lesson_periods ORDER BY start_time, id').all());
+});
+
+app.post('/api/schedule/periods', (req, res) => {
+  const { value, error } = readPeriodBody(req.body);
+  if (error) return res.status(400).json({ error });
+  const r = db.prepare('INSERT INTO lesson_periods (name, start_time, end_time, is_break) VALUES (?, ?, ?, ?)').run(...value);
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.put('/api/schedule/periods/:id', (req, res) => {
+  const { value, error } = readPeriodBody(req.body);
+  if (error) return res.status(400).json({ error });
+  const r = db.prepare('UPDATE lesson_periods SET name=?, start_time=?, end_time=?, is_break=? WHERE id=?').run(...value, req.params.id);
+  if (!r.changes) return res.status(404).json({ error: 'לא נמצא' });
+  res.json({ success: true });
+});
+
+app.delete('/api/schedule/periods/:id', (req, res) => {
+  db.prepare('DELETE FROM lesson_periods WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ── Schedule Slots CRUD ────────────────────────────────────────
 app.get('/api/schedule', (req, res) => {
   const { week } = req.query;
@@ -2750,11 +2796,51 @@ app.get('/api/schedule', (req, res) => {
   res.json({ week_start: weekStart, slots });
 });
 
+// A missing end time is treated as a lesson that occupies only its start minute
+function findClassTimeConflict({ class_year, class_parallel, day_of_week, start_time, end_time, week_start, excludeId = 0 }) {
+  const newEnd = end_time && end_time > start_time ? end_time : start_time;
+  const rows = db.prepare(`
+    SELECT s.*, t.name AS teacher_name FROM schedule_slots s JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.week_start = ? AND s.class_year = ? AND s.class_parallel = ? AND s.day_of_week = ? AND s.id != ?
+  `).all(week_start, String(class_year), String(class_parallel), Number(day_of_week), Number(excludeId));
+  return rows.find(r => {
+    const exEnd = r.end_time && r.end_time > r.start_time ? r.end_time : r.start_time;
+    const sameInstant = start_time === r.start_time;
+    return sameInstant || (start_time < exEnd && r.start_time < newEnd);
+  });
+}
+
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  const ae = aEnd && aEnd > aStart ? aEnd : aStart;
+  const be = bEnd && bEnd > bStart ? bEnd : bStart;
+  return aStart === bStart || (aStart < be && bStart < ae);
+}
+
+function findTeacherTimeConflict({ teacher_id, day_of_week, start_time, end_time, week_start, excludeId = 0 }) {
+  const rows = db.prepare(`
+    SELECT s.*, t.name AS teacher_name FROM schedule_slots s JOIN teachers t ON t.id = s.teacher_id
+    WHERE s.week_start = ? AND s.teacher_id = ? AND s.day_of_week = ? AND s.id != ?
+  `).all(week_start, Number(teacher_id), Number(day_of_week), Number(excludeId));
+  return rows.find(r => overlaps(start_time, end_time, r.start_time, r.end_time));
+}
+
+function teacherConflictMessage(c) {
+  return `למורה ${c.teacher_name} כבר יש שיעור באותה שעה בכיתה ${c.class_year}${c.class_parallel} (${c.start_time}${c.end_time ? '–' + c.end_time : ''})`;
+}
+
+function conflictMessage(c) {
+  return `בכיתה זו כבר יש שיעור באותה שעה (${c.start_time}${c.end_time ? '–' + c.end_time : ''}, ${c.teacher_name})`;
+}
+
 app.post('/api/schedule', (req, res) => {
   const { teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start } = req.body || {};
   if (!teacher_id || !class_year || !class_parallel || day_of_week == null || !start_time || !week_start) {
     return res.status(400).json({ error: 'שדות חסרים: מורה, כיתה, יום, שעה, שבוע' });
   }
+  const conflict = findClassTimeConflict({ class_year, class_parallel, day_of_week, start_time, end_time, week_start });
+  if (conflict) return res.status(409).json({ error: conflictMessage(conflict) });
+  const teacherConflict = findTeacherTimeConflict({ teacher_id, day_of_week, start_time, end_time, week_start });
+  if (teacherConflict) return res.status(409).json({ error: teacherConflictMessage(teacherConflict) });
   try {
     const result = db.prepare(`
       INSERT INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
@@ -2784,6 +2870,12 @@ app.post('/api/schedule/copy-week', (req, res) => {
 
 app.put('/api/schedule/:id', (req, res) => {
   const { teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject } = req.body || {};
+  const current = db.prepare('SELECT week_start FROM schedule_slots WHERE id=?').get(req.params.id);
+  if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
+  const conflict = findClassTimeConflict({ class_year, class_parallel, day_of_week, start_time, end_time, week_start: current.week_start, excludeId: req.params.id });
+  if (conflict) return res.status(409).json({ error: conflictMessage(conflict) });
+  const teacherConflict = findTeacherTimeConflict({ teacher_id, day_of_week, start_time, end_time, week_start: current.week_start, excludeId: req.params.id });
+  if (teacherConflict) return res.status(409).json({ error: teacherConflictMessage(teacherConflict) });
   const result = db.prepare(`
     UPDATE schedule_slots SET teacher_id=?, class_year=?, class_parallel=?, day_of_week=?, start_time=?, end_time=?, subject=? WHERE id=?
   `).run(teacher_id, String(class_year), String(class_parallel), Number(day_of_week), start_time, end_time || null, subject || null, req.params.id);

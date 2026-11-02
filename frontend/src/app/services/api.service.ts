@@ -256,6 +256,10 @@ export class ApiService {
   createScheduleSlot(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule`, data); }
   updateScheduleSlot(id: number, data: any) { return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data); }
   deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
+  getLessonPeriods() { return this.http.get<any[]>(`${this.base}/schedule/periods`); }
+  createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
+  updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
+  deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
   copyWeekSchedule(from: string, to: string) { return this.http.post<{copied:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to }); }
   deleteWeekSchedule(week: string) { return this.http.delete<{deleted:number}>(`${this.base}/schedule/week/${week}`); }
 
