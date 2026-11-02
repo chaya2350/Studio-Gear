@@ -502,6 +502,7 @@ app.post('/api/calendar-events', (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
     return res.status(400).json({ error: 'תאריך לא תקין' });
   const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+  const hebrewYear = hd.getFullYear();
   const result = db.prepare(`
     INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -630,7 +631,7 @@ app.post('/api/notes', (req, res) => {
     ? db.prepare('SELECT 1 FROM students WHERE id_number = ?').get(itemId)
     : db.prepare('SELECT 1 FROM equipment WHERE id = ?').get(Number(itemId));
   if (!exists) return res.status(404).json({ error: 'הפריט לא נמצא' });
-  const result = db.prepare('INSERT INTO staff_notes (user_id, item_type, item_id, body) VALUES (?, ?, ?)')
+  const result = db.prepare('INSERT INTO staff_notes (user_id, item_type, item_id, body) VALUES (?, ?, ?, ?)')
     .run(req.user.id, itemType, itemId, body);
   logActivity(req.user.id, 'הוסיפה הערת צוות', itemType, itemId, body.slice(0, 120));
   res.status(201).json({ id: result.lastInsertRowid });
@@ -658,6 +659,28 @@ app.get('/api/messages/users', (req, res) => {
   `).all(req.user.id));
 });
 
+// ── Dashboard stats — endpoint ייעודי לדשבורד (קריאה אחת במקום 4) ──
+app.get('/api/stats', (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  const activeLoans = db.prepare(`
+    SELECT COUNT(*) AS c FROM loans l
+    JOIN equipment e ON e.id = l.equipment_id
+    WHERE l.actual_return IS NULL AND l.loan_date <= ?
+      AND NOT (e.category = 'מצלמות אישיות' OR (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות'))
+  `).get(today).c;
+  const overdueLoans = db.prepare(`
+    SELECT COUNT(*) AS c FROM loans l
+    JOIN equipment e ON e.id = l.equipment_id
+    WHERE l.actual_return IS NULL AND l.loan_date <= ? AND l.expected_return < ?
+      AND NOT (e.category = 'מצלמות אישיות' OR (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות'))
+  `).get(today, today).c;
+  const unreadMessages = db.prepare(
+    'SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL'
+  ).get(req.user.id).c;
+  const totalStudents = db.prepare('SELECT COUNT(*) AS c FROM students').get().c;
+  res.json({ activeLoans, overdueLoans, unreadMessages, totalStudents });
+});
+
 app.get('/api/messages/unread-count', (req, res) => {
   const { count } = db.prepare(`
     SELECT COUNT(*) AS count FROM messages
@@ -668,8 +691,11 @@ app.get('/api/messages/unread-count', (req, res) => {
 
 app.get('/api/messages', (req, res) => {
   const now = new Date().toISOString();
-  db.prepare('UPDATE messages SET read_at = ? WHERE recipient_id = ? AND read_at IS NULL')
-    .run(now, req.user.id);
+  // mark-as-read רק כשמועבר ?markRead=1 (מהפרונטאנד בעת פתיחת הדף בפועל)
+  if (req.query.markRead === '1') {
+    db.prepare('UPDATE messages SET read_at = ? WHERE recipient_id = ? AND read_at IS NULL')
+      .run(now, req.user.id);
+  }
   const messages = db.prepare(`
     SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
       recipient.name AS recipient_name, m.body, m.created_at, m.read_at
@@ -680,13 +706,26 @@ app.get('/api/messages', (req, res) => {
     ORDER BY m.created_at DESC, m.id DESC
     LIMIT 300
   `).all(req.user.id, req.user.id);
-  const getReactions = db.prepare(`
+
+  // שאילתה אחת לכל ה-reactions במקום N+1
+  if (!messages.length) return res.json([]);
+  const ids = messages.map(m => m.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const allReactions = db.prepare(`
     SELECT r.message_id, r.user_id, r.emoji, u.name AS user_name
     FROM message_reactions r JOIN users u ON u.id = r.user_id
-    WHERE r.message_id = ?
+    WHERE r.message_id IN (${placeholders})
     ORDER BY r.created_at
-  `);
-  res.json(messages.map(message => ({ ...message, reactions: getReactions.all(message.id) })));
+  `).all(...ids);
+
+  // קיבוץ reactions לפי message_id
+  const reactionsMap = new Map();
+  for (const r of allReactions) {
+    if (!reactionsMap.has(r.message_id)) reactionsMap.set(r.message_id, []);
+    reactionsMap.get(r.message_id).push(r);
+  }
+
+  res.json(messages.map(m => ({ ...m, reactions: reactionsMap.get(m.id) || [] })));
 });
 
 app.post('/api/messages', (req, res) => {
@@ -1099,7 +1138,7 @@ app.get('/api/students', (req, res) => {
 // חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
 app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [] });
+  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [] });
   const like = `%${q}%`;
   const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
   const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
@@ -1109,7 +1148,19 @@ app.get('/api/search', (req, res) => {
     WHERE c.code LIKE ? LIMIT 5
   `).all(like);
   const teachers = db.prepare('SELECT * FROM teachers WHERE name LIKE ? OR subject LIKE ? ORDER BY name LIMIT 5').all(like, like);
-  res.json({ students, equipment, examCodes, teachers });
+  // חיפוש בדפים אישיים — רק דפים שהמשתמשת רשאית לראות
+  const pages = db.prepare(`
+    SELECT p.id, p.title, t.name AS topic_name
+    FROM personal_pages p
+    JOIN page_topics t ON t.id = p.topic_id
+    WHERE (p.title LIKE ? OR p.body LIKE ?)
+      AND (p.visibility = 'public' OR p.created_by = ? OR EXISTS (
+        SELECT 1 FROM page_access_requests r
+        WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'
+      ))
+    LIMIT 5
+  `).all(like, like, req.user.id, req.user.id);
+  res.json({ students, equipment, examCodes, teachers, pages });
 });
 
 // סיכום דרישות לכל התלמידות בקריאה אחת — לטבלת Excel
@@ -2028,7 +2079,7 @@ app.post('/api/loans', (req, res) => {
           deposit_check, deposit_scan_url, hebrew_year } = req.body;
   const today = new Date().toISOString().split('T')[0];
 
-  const eq = db.prepare('SELECT category, subcategory FROM equipment WHERE id=?').get(equipment_id);
+  const eq = db.prepare('SELECT category, subcategory, overdue_price_per_day FROM equipment WHERE id=?').get(equipment_id);
   const isLaptop = eq && eq.category === 'מחשב נייד';
   const isPersonalCamera = eq && (
     eq.category === 'מצלמות אישיות' ||
@@ -2084,12 +2135,16 @@ app.post('/api/loans', (req, res) => {
   `).get(equipment_id, expected_return, loan_date);
   if (overlap) return res.status(400).json({ error: 'הציוד כבר תפוס בתאריכים אלו' });
 
+  // קביעת סטטוס תשלום: רק השכרות וציוד עם קנס איחור מקבלים 'pending'
+  const hasPotentialCharge = (loan_type || 'loan') === 'rental' || Number(eq?.overdue_price_per_day || overdue_price_per_day || 0) > 0;
+  const initialPaymentStatus = hasPotentialCharge ? 'pending' : 'none';
+
   const result = db.prepare(
     `INSERT INTO loans (equipment_id, borrower_name, borrower_phone, borrower_id_number, loan_date, expected_return, notes,
       loan_type, price_per_day, card_last4, card_expiry, card_holder, payment_status, track, location)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(equipment_id, borrower_name, borrower_phone, borrower_id_number || null, loan_date, expected_return, notes,
-        loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, 'pending', track || null, location || null);
+        loan_type || 'loan', price_per_day || 0, card_last4, card_expiry, card_holder, initialPaymentStatus, track || null, location || null);
   logActivity(req.user.id, 'יצרה השאלת ציוד', 'equipment', equipment_id, borrower_name);
   res.json({ id: result.lastInsertRowid });
 });
@@ -2134,7 +2189,22 @@ app.put('/api/loans/:id/charge', (req, res) => {
 });
 
 app.delete('/api/loans/:id', (req, res) => {
-  db.prepare('DELETE FROM loans WHERE id=?').run(req.params.id);
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
+  // רק admin יכול למחוק השאלה
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'רק מנהלת מערכת רשאית למחוק השאלה' });
+  const loan = db.prepare(`
+    SELECT l.*, e.name AS equipment_name FROM loans l
+    JOIN equipment e ON e.id = l.equipment_id WHERE l.id = ?
+  `).get(id);
+  if (!loan) return res.status(404).json({ error: 'השאלה לא נמצאה' });
+  // מוחקים תמונת deposit אם קיימת
+  if (loan.deposit_scan_url) {
+    const fname = require('path').basename(loan.deposit_scan_url);
+    require('fs').rm(require('path').join(uploadsDir, fname), { force: true }, () => {});
+  }
+  db.prepare('DELETE FROM loans WHERE id=?').run(id);
+  logActivity(req.user.id, 'מחקה השאלה', 'equipment', loan.equipment_id, loan.borrower_name);
   res.json({ success: true });
 });
 
@@ -2160,12 +2230,14 @@ app.get('/api/loans/receipt-barcode/:id', async (req, res) => {
 // ── Laptop overdue ────────────────────────────────────────
 
 function getLaptopOverdue() {
+  const today = new Date().toISOString().split('T')[0];
   return db.prepare(`
     SELECT l.*, e.name as equipment_name, e.category
     FROM loans l JOIN equipment e ON e.id = l.equipment_id
     WHERE e.category = 'מחשב נייד'
       AND l.actual_return IS NULL
-  `).all();
+      AND l.loan_date <= ?
+  `).all(today);
 }
 
 app.get('/api/laptops/overdue', (req, res) => {

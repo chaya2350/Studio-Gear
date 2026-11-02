@@ -81,7 +81,7 @@ interface DashboardStats {
         <header class="card-header">
           <span class="card-eyebrow">היום</span>
           <h2 class="card-title">משימות</h2>
-          <a routerLink="/messages" class="card-cta">
+          <a routerLink="/calendar/personal" class="card-cta">
             כל המשימות
             <svg viewBox="0 0 16 16" fill="none"><path d="M10 8H6m4 0-2.5-2.5M10 8l-2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </a>
@@ -865,37 +865,23 @@ export class HomeComponent implements OnInit {
   }
 
   private loadStats(): void {
-    let loans: any[] | null    = null;
-    let overdue: any[] | null  = null;
-    let msgs: number | null    = null;
-    let students: any[] | null = null;
-
-    const commit = () => {
-      if ([loans, overdue, msgs, students].some(v => v === null)) return;
-      this.stats.set({
-        activeLoans:    (loans  as any[]).filter(l => !l.actual_return).length,
-        overdueLoans:   (overdue as any[]).length,
-        unreadMessages: msgs as number,
-        totalStudents:  (students as any[]).length,
-      });
-      const m = this.modules;
-      const msg = m.find(x => x.link === '/messages');
-      const eq  = m.find(x => x.link === '/equipment');
-      if (msg) msg.badge = msgs as number;
-      if (eq)  eq.badge  = (overdue as any[]).length;
-    };
-
-    this.api.getLoans().subscribe({
-      next: d => { loans = d; commit(); }, error: () => { loans = []; commit(); }
-    });
-    this.api.getOverdueLoans().subscribe({
-      next: d => { overdue = d; commit(); }, error: () => { overdue = []; commit(); }
-    });
-    this.http.get<{ count: number }>('/api/messages/unread-count').subscribe({
-      next: d => { msgs = d.count; commit(); }, error: () => { msgs = 0; commit(); }
-    });
-    this.api.getStudents().subscribe({
-      next: d => { students = d; commit(); }, error: () => { students = []; commit(); }
+    this.http.get<{ activeLoans: number; overdueLoans: number; unreadMessages: number; totalStudents: number }>('/api/stats').subscribe({
+      next: d => {
+        this.stats.set({
+          activeLoans:    d.activeLoans,
+          overdueLoans:   d.overdueLoans,
+          unreadMessages: d.unreadMessages,
+          totalStudents:  d.totalStudents,
+        });
+        const m = this.modules;
+        const msg = m.find(x => x.link === '/messages');
+        const eq  = m.find(x => x.link === '/equipment');
+        if (msg) msg.badge = d.unreadMessages;
+        if (eq)  eq.badge  = d.overdueLoans;
+      },
+      error: () => {
+        this.stats.set({ activeLoans: 0, overdueLoans: 0, unreadMessages: 0, totalStudents: 0 });
+      }
     });
   }
 

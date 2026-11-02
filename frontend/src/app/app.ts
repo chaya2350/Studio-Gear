@@ -71,7 +71,14 @@ import { filter, takeUntil } from 'rxjs/operators';
               {{ searchResults.examCodes[0].code }} — {{ searchResults.examCodes[0].student_name }}
             </a>
           </div>
-          <p *ngIf="!searchResults.students.length && !searchResults.teachers.length && !searchResults.equipment.length && !searchResults.examCodes.length" class="search-empty">לא נמצאו תוצאות</p>
+          <div *ngIf="searchResults.pages?.length" class="search-group">
+            <div class="search-group-title">דפים</div>
+            <a *ngFor="let p of searchResults.pages" [routerLink]="['/pages']" [queryParams]="{ page: p.id }" (click)="clearSearch()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+              {{ p.title }} <span>{{ p.topic_name }}</span>
+            </a>
+          </div>
+          <p *ngIf="!searchResults.students.length && !searchResults.teachers?.length && !searchResults.equipment.length && !searchResults.examCodes.length && !searchResults.pages?.length" class="search-empty">לא נמצאו תוצאות</p>
         </div>
       </div>
 
@@ -889,7 +896,7 @@ export class App implements OnInit {
   grantedCount = 0;
   private destroy$ = new Subject<void>();
   searchQuery = '';
-  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[] } | null = null;
+  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[] } | null = null;
   private searchTimer: any;
 
   toggleSidebar() {
@@ -924,6 +931,7 @@ export class App implements OnInit {
           equipment: r?.equipment ?? [],
           examCodes: r?.examCodes ?? [],
           teachers: r?.teachers ?? [],
+          pages: r?.pages ?? [],
         };
       });
     }, 250);

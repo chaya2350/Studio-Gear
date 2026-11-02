@@ -90,9 +90,8 @@ template: `
 <div style="display:flex; gap:8px;">
 <select [(ngModel)]="form.trackName" style="flex:2" (ngModelChange)="form.trackYear=''">
 <option value="">בחר מסלול</option>
-<option>אדריכלות</option><option>הנדסאים</option><option>הנדסת אנרגיה</option>
-<option>הוראה מתקנת</option><option>תקשורת</option><option>גרפיקה</option>
-<option>בימוי</option><option>ייעוץ מס</option><option value="אחר">אחר</option>
+<option *ngFor="let t of trackOptions" [value]="t">{{ t }}</option>
+<option value="אחר">אחר</option>
 </select>
 <select [(ngModel)]="form.trackYear" style="flex:1" *ngIf="form.trackName && form.trackName !== 'אחר'">
 <option value="" disabled>שנה</option>
@@ -141,7 +140,9 @@ maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length >
 </div>
 <div class="form-group" style="flex:1">
 <label>תוקף *</label>
-<input [(ngModel)]="form.card_expiry" placeholder="MM/YY" maxlength="5" (input)="formatExpiry($event)">
+<input [(ngModel)]="form.card_expiry" placeholder="MM/YY" maxlength="5" (input)="formatExpiry($event)"
+  [class.invalid]="form.card_expiry?.length === 5 && !cardExpiryValid()">
+<span *ngIf="form.card_expiry?.length === 5 && !cardExpiryValid()" class="field-error">תוקף פג</span>
 </div>
 <div class="form-group" style="flex:1">
 <label>CVV *</label>
@@ -310,6 +311,7 @@ submitting = signal(false);
 confirmedOrder = signal<{ orderId: number; itemCount: number; borrowerName: string; itemIds: number[]; items: Array<{ id: number; name: string; category: string; subcategory?: string }> } | null>(null);
 cardNumber = '';
 cvv = '';
+trackOptions: string[] = [];
 
 form: any = {
 borrower_name: '', borrower_phone: '', trackName: '', trackYear: '',
@@ -319,7 +321,18 @@ loan_type: 'loan', card_holder: '', card_expiry: ''
 
 constructor(public cart: CartService, public api: ApiService, public router: Router) {}
 
-ngOnInit() {}
+ngOnInit() {
+  // שליפת מסלולים דינמית מה-API
+  this.api.getTracks().subscribe({
+    next: (data) => {
+      this.trackOptions = (data.tracks || [])
+        .filter((t: any) => !t.merged_into)
+        .map((t: any) => t.name)
+        .sort((a: string, b: string) => a.localeCompare(b, 'he'));
+    },
+    error: () => {}
+  });
+}
 
 onIdInput() {
 this.student.set(null);
@@ -382,6 +395,16 @@ if (v.length >= 2) v = v.slice(0, 2) + '/' + v.slice(2);
 this.form.card_expiry = v;
 }
 
+cardExpiryValid(): boolean {
+const expiry = this.form.card_expiry;
+if (!expiry || !/^\d{2}\/\d{2}$/.test(expiry)) return false;
+const [mm, yy] = expiry.split('/').map(Number);
+if (mm < 1 || mm > 12) return false;
+const now = new Date();
+const expDate = new Date(2000 + yy, mm, 0); // last day of expiry month
+return expDate >= now;
+}
+
 submit() {
 const s = this.student();
 const name = s ? s.name : this.form.borrower_name;
@@ -389,6 +412,8 @@ if (!name) { this.error.set('נא למלא שם שואלת'); return; }
 if (!this.form.loan_date || !this.form.expected_return) { this.error.set('נא למלא תאריכים'); return; }
 if (!this.form.card_holder || !this.luhnValid() || !this.form.card_expiry) { this.error.set('נא למלא פרטי אשראי תקינים'); return; }
 if (!/^\d{3}$/.test(this.cvv)) { this.error.set('CVV חייב להכיל 3 ספרות'); return; }
+// בדיקה שתוקף הכרטיס לא בעבר
+if (!this.cardExpiryValid()) { this.error.set('תוקף כרטיס האשראי פג — בדקי שוב'); return; }
 
 const track = this.form.trackName
 ? (this.form.trackName !== 'אחר' && this.form.trackYear ? `${this.form.trackName} ${this.form.trackYear}` : this.form.trackName)
@@ -478,8 +503,12 @@ setTimeout(() => win.print(), 250);
 
 onDone(failed: number, createdIds: number[], borrowerName: string) {
 this.submitting.set(false);
-if (failed > 0) {
-this.error.set(`${failed} פריטים לא נרשמו (כנראה תפוסים בתאריכים אלו)`);
+if (failed > 0 && createdIds.length > 0) {
+  // Rollback — delete successfully created loans so equipment isn't stuck
+  createdIds.forEach(id => this.api.cancelLoan(id).subscribe({ error: () => {} }));
+  this.error.set(`${failed} פריטים לא נרשמו (כנראה תפוסים בתאריכים אלו). ההזמנה בוטלה — נסי שנית.`);
+} else if (failed > 0) {
+  this.error.set(`ההזמנה נכשלה — הפריטים כנראה תפוסים בתאריכים אלו.`);
 } else {
 const orderId = createdIds[0] ?? 0;
 const items = this.cart.items().map(item => ({

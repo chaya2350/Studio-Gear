@@ -218,10 +218,10 @@ private changeDetector: ChangeDetectorRef
 
 ngOnInit() {
 this.loadUsers();
-this.loadMessages();
+this.loadMessages(true);  // בפתיחה — מסמן הכל כנקרא
 this.loadTasks();
-// רענון אוטומטי כל 30 שניות כדי לראות הודעות חדשות בלי לרענן ידנית
-interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages());
+// רענון אוטומטי כל 30 שניות — בלי לסמן כנקרא
+interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages(false));
 }
 
 ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
@@ -351,10 +351,10 @@ this.sendError = '';
 this.sendSuccess = '';
 }
 
-loadMessages() {
+loadMessages(markRead = false) {
 this.loading = true;
 this.messagesError = '';
-this.messagesApi.getMessages().subscribe({
+this.messagesApi.getMessages(markRead).subscribe({
 next: messages => {
 this.messages = messages;
 this.loading = false;
