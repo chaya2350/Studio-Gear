@@ -3,6 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 
 @Component({
@@ -17,7 +18,7 @@ template: `
 </div>
 
 <!-- Add student modal -->
-<div *ngIf="addOpen" class="modal-backdrop" (click)="addOpen=false">
+<div *ngIf="addOpen && canAdd()" class="modal-backdrop" (click)="addOpen=false">
   <div class="modal-card" (click)="$event.stopPropagation()">
     <div class="modal-title">הוספת תלמידה חדשה</div>
     <div class="form-group">
@@ -65,7 +66,7 @@ template: `
 <div class="search-card">
 <div class="search-top-bar">
   <span class="search-top-title">חיפוש</span>
-  <button class="add-student-btn" (click)="openAdd()">+ הוספת תלמידה חדשה</button>
+  <button class="add-student-btn" *ngIf="canAdd()" (click)="openAdd()">+ הוספת תלמידה חדשה</button>
 </div>
 <div class="search-input-wrap" [class.focused]="focused" style="position:relative;">
 <span class="search-icon"></span>
@@ -301,7 +302,12 @@ adding = false;
 addError = '';
 newStudent = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '' };
 
-constructor(private api: ApiService, private router: Router) {}
+constructor(private api: ApiService, private router: Router, private auth: AuthService) {}
+
+canAdd() {
+  const role = this.auth.user()?.role;
+  return role === 'admin' || role === 'secretary';
+}
 
 openAdd() {
   this.newStudent = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '' };

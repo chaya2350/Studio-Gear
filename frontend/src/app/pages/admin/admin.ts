@@ -141,6 +141,55 @@ class="section-tab"
 
 <app-tracks *ngIf="activeSection() === 'tracks'"></app-tracks>
 
+<!-- הוספת תלמידה ידנית — admin ומזכירות בלבד -->
+<div *ngIf="activeSection() === 'students' && canAddStudent()" class="card" style="max-width:560px; margin-bottom:16px;">
+  <div class="section-title">➕ הוספת תלמידה ידנית</div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>ת.ז. *</label>
+      <input [(ngModel)]="newStudentDraft.id_number" placeholder="7–9 ספרות" maxlength="9">
+    </div>
+    <div class="form-group">
+      <label>שם מלא *</label>
+      <input [(ngModel)]="newStudentDraft.name" placeholder="שם פרטי ומשפחה">
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>מסלול</label>
+      <input [(ngModel)]="newStudentDraft.track" placeholder="למשל: מוסיקה">
+    </div>
+    <div class="form-group">
+      <label>שנה</label>
+      <input [(ngModel)]="newStudentDraft.year" placeholder="א, ב, ג...">
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label>מקבילה</label>
+      <input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3...">
+    </div>
+    <div class="form-group">
+      <label>טלפון</label>
+      <input [(ngModel)]="newStudentDraft.phone" placeholder="050-0000000">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>כתובת</label>
+    <input [(ngModel)]="newStudentDraft.address" placeholder="רחוב, עיר">
+  </div>
+  <div class="form-group">
+    <label>תאריך לידה</label>
+    <input type="date" [(ngModel)]="newStudentDraft.birth_date">
+  </div>
+  <div *ngIf="addStudentError()" class="alert alert-error" style="margin:0 0 10px;" role="alert">{{ addStudentError() }}</div>
+  <button class="btn btn-primary"
+    [disabled]="addingStudent() || !newStudentDraft.id_number.trim() || !newStudentDraft.name.trim()"
+    (click)="saveNewStudent()">
+    {{ addingStudent() ? 'שומר...' : 'הוסף תלמידה' }}
+  </button>
+</div>
+
 <div *ngIf="activeSection() === 'students'" class="card" style="max-width:560px;">
 <div class="section-title"> ייבוא תלמידות מאקסל</div>
 <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
@@ -583,6 +632,44 @@ savingApproval = signal(false);
 section = signal<AdminSection | null>(null);
 resettingDb = signal(false);
 resetDbMessage = signal('');
+
+// ── הוספת תלמידה ידנית ──
+addingStudent = signal(false);
+addStudentError = signal('');
+newStudentDraft = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '', birth_date: '' };
+
+canAddStudent() {
+  const role = this.auth.user()?.role;
+  return role === 'admin' || role === 'secretary';
+}
+
+saveNewStudent() {
+  const d = this.newStudentDraft;
+  if (!d.id_number.trim() || !d.name.trim()) return;
+  this.addingStudent.set(true);
+  this.addStudentError.set('');
+  this.api.createStudent({
+    id_number: d.id_number.trim(),
+    name: d.name.trim(),
+    phone: d.phone.trim() || undefined,
+    track: d.track.trim() || undefined,
+    year: d.year.trim() || undefined,
+    parallel: d.parallel.trim() || undefined,
+    address: d.address.trim() || undefined,
+    birth_date: d.birth_date.trim() || undefined,
+  }).subscribe({
+    next: () => {
+      this.addingStudent.set(false);
+      this.newStudentDraft = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '', birth_date: '' };
+      this.loadTotal();
+      this.addStudentError.set('✓ התלמידה נוספה בהצלחה');
+    },
+    error: (e) => {
+      this.addingStudent.set(false);
+      this.addStudentError.set(e.error?.error || 'לא ניתן להוסיף תלמידה');
+    }
+  });
+}
 
 constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
 this.loadTotal();
