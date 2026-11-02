@@ -1199,10 +1199,10 @@ app.get('/api/students', (req, res) => {
   res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
 });
 
-// חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
+// חיפוש גלובלי: תלמידות, ציוד, קודי מבחן, מורות, דפים, ארועים ומבחנים
 app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [] });
+  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] });
   const like = `%${q}%`;
   const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
   const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
@@ -1224,7 +1224,21 @@ app.get('/api/search', (req, res) => {
       ))
     LIMIT 5
   `).all(like, like, req.user.id, req.user.id);
-  res.json({ students, equipment, examCodes, teachers, pages });
+  // חיפוש ארועי לוח שנה
+  const calendarEvents = db.prepare(`
+    SELECT id, title, event_date, category, source_sheet
+    FROM calendar_events
+    WHERE title LIKE ? OR category LIKE ? OR notes LIKE ?
+    ORDER BY event_date DESC LIMIT 5
+  `).all(like, like, like);
+  // חיפוש מבחנים לפי שם
+  const exams = db.prepare(`
+    SELECT id, name, exam_date, track
+    FROM exams
+    WHERE name LIKE ? OR track LIKE ?
+    ORDER BY exam_date DESC LIMIT 5
+  `).all(like, like);
+  res.json({ students, equipment, examCodes, teachers, pages, calendarEvents, exams });
 });
 
 // סיכום דרישות לכל התלמידות בקריאה אחת — לטבלת Excel
