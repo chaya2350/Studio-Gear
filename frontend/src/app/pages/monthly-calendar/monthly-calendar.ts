@@ -181,15 +181,15 @@ interface CtxMenu {
         {{ selectedEvent()!.title }}
       </div>
       <div class="event-detail-info">
-        <div class="event-detail-row">
+        <div class="event-info-row">
           <span class="event-detail-label">תאריך</span>
           <span>{{ formatShortDate(selectedEvent()!.event_date) }}</span>
         </div>
-        <div class="event-detail-row">
+        <div class="event-info-row">
           <span class="event-detail-label">קטגוריה</span>
           <span class="event-category-chip" [style.background]="schoolEventColor(selectedEvent()!) + '22'" [style.color]="schoolEventColor(selectedEvent()!)">{{ selectedEvent()!.category }}</span>
         </div>
-        <div class="event-detail-row" *ngIf="selectedEvent()!.source_sheet">
+        <div class="event-info-row" *ngIf="selectedEvent()!.source_sheet">
           <span class="event-detail-label">מקור</span>
           <span>{{ selectedEvent()!.source_sheet === 'ידני' ? 'נוסף ידנית' : selectedEvent()!.source_sheet }}</span>
         </div>
@@ -401,7 +401,7 @@ interface CtxMenu {
   <!-- Schedule events -->
   <ng-container *ngIf="has('schedule') && selectedDayEvents().length">
     <h3 class="layer-title">לוח אירועים</h3>
-    <div *ngFor="let event of selectedDayEvents()" class="detail-row event-detail-row" (click)="openEventDetail(event)">
+    <div *ngFor="let event of selectedDayEvents()" class="detail-row event-detail-row clickable" (click)="openEventDetail(event)">
       <span class="detail-dot" [style.background]="schoolEventColor(event)"></span>
       <div class="detail-main">
         <strong>{{ event.title }}</strong>
@@ -651,7 +651,7 @@ interface CtxMenu {
     .exam-row-btns { display: flex; gap: 4px; flex-shrink: 0; }
 
     /* ── Event detail styles ── */
-    .event-detail-row {
+    .event-detail-row.clickable {
       cursor: pointer;
       &:hover { background: var(--surface-3); }
     }
@@ -661,7 +661,7 @@ interface CtxMenu {
       flex-shrink: 0;
     }
     .event-detail-info { display: flex; flex-direction: column; gap: 10px; }
-    .event-detail-row {
+    .event-info-row {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 6px 0; border-bottom: 1px solid var(--border);
       &:last-child { border-bottom: none; }
