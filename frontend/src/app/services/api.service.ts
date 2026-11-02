@@ -239,7 +239,7 @@ export class ApiService {
     return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
   }
   getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
-  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
+  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 
   // ── Teachers ──
   getTeacher(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}`); }
