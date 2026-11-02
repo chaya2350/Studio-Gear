@@ -497,16 +497,20 @@ app.post('/api/calendar-events', (req, res) => {
   const title = String(req.body?.title || '').trim();
   const event_date = req.body?.event_date;
   const category = String(req.body?.category || 'כללי').trim();
-  const source_sheet = String(req.body?.source_sheet || 'ידני').trim();
+  const source_sheet = 'ידני';
   if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
     return res.status(400).json({ error: 'תאריך לא תקין' });
   const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
   const hebrewYear = hd.getFullYear();
+  // בדיקת כפילות ידנית לפני הכנסה
+  const existing = db.prepare(`
+    SELECT id FROM calendar_events WHERE event_date = ? AND title = ? AND category = ? AND source_sheet = 'ידני'
+  `).get(event_date, title, category);
+  if (existing) return res.status(409).json({ error: 'אירוע עם אותה כותרת כבר קיים בתאריך זה' });
   const result = db.prepare(`
     INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
   `).run(title, event_date, hebrewYear, category, source_sheet);
   res.status(201).json({ id: result.lastInsertRowid });
 });
@@ -1188,8 +1192,30 @@ app.get('/api/students/requirements-summary', (req, res) => {
 });
 
 // רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
-app.get('/api/students/classes', (req, res) => {
-  const rows = db.prepare(`
+// יצירת תלמידה חדשה ידנית
+app.post('/api/students', (req, res) => {
+  const id_number = String(req.body?.id_number || '').trim();
+  const name      = String(req.body?.name      || '').trim();
+  const phone     = String(req.body?.phone     || '').trim() || null;
+  const track     = String(req.body?.track     || '').trim() || null;
+  const year      = String(req.body?.year      || '').trim() || null;
+  const parallel  = String(req.body?.parallel  || '').trim() || null;
+  const address   = String(req.body?.address   || '').trim() || null;
+  const birth_date= String(req.body?.birth_date|| '').trim() || null;
+  if (!id_number) return res.status(400).json({ error: 'מספר תעודת זהות הוא שדה חובה' });
+  if (!name)      return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
+  if (!/^\d{7,9}$/.test(id_number)) return res.status(400).json({ error: 'מספר תעודת זהות צריך להכיל 7–9 ספרות' });
+  const existing = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(id_number);
+  if (existing) return res.status(409).json({ error: 'תלמידה עם מספר תעודת זהות זה כבר קיימת במערכת' });
+  const className = buildClassName(year, parallel);
+  db.prepare(`
+    INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, extra_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
+  `).run(id_number, name, phone, track, year, parallel, className, address, birth_date);
+  res.status(201).json({ id_number, name });
+});
+
+app.get('/api/students/classes', (req, res) => {  const rows = db.prepare(`
     SELECT class_name, parallel, COUNT(*) as count
     FROM students
     WHERE class_name IS NOT NULL AND class_name != ''

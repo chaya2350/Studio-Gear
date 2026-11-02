@@ -112,6 +112,7 @@ export class ApiService {
   createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
     return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
   }
+  deleteCalendarEvent(id: number) { return this.http.delete(`${this.base}/calendar-events/${id}`); }
   importCalendarWorkbook(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -137,6 +138,9 @@ export class ApiService {
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
+    return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
+  }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
   getStudentRequirementsSummary() { return this.http.get<Record<string, { total: number; completed: number; missing: number }>>(`${this.base}/students/requirements-summary`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }

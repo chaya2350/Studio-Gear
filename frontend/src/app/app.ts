@@ -233,35 +233,14 @@ import { filter, takeUntil } from 'rxjs/operators';
           <!-- ── לוחות שנה ── -->
           <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">לוח שנה</div>
           <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/calendar/personal" [class.active]="currentPath === '/calendar/personal'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה אישי' : ''" (click)="clearSearch()">
+          <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
               <line x1="8" y1="2" x2="8" y2="6"/>
               <line x1="3" y1="10" x2="21" y2="10"/>
             </svg>
-            <span>לוח שנה אישי</span>
-          </a>
-          <a routerLink="/calendar/equipment" [class.active]="currentPath === '/calendar/equipment'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה ציוד' : ''" (click)="clearSearch()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <circle cx="12" cy="16" r="2"/>
-            </svg>
-            <span>לוח שנה ציוד</span>
-          </a>
-          <a routerLink="/calendar/schedule" [class.active]="currentPath === '/calendar/schedule'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה שיעורים' : ''" (click)="clearSearch()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <line x1="8" y1="15" x2="16" y2="15"/>
-              <line x1="8" y1="19" x2="13" y2="19"/>
-            </svg>
-            <span>לוח שנה שיעורים</span>
+            <span>לוח שנה</span>
           </a>
           <a routerLink="/attendance/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקת נוכחות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

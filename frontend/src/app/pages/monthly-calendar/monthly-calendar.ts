@@ -173,7 +173,53 @@ interface CtxMenu {
   </div>
 </div>
 
-<!-- ── Main layout ── -->
+<!-- Event detail / edit dialog -->
+<div *ngIf="eventDetailOpen()" class="modal-backdrop" (click)="closeEventDetail()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <ng-container *ngIf="!editingEvent()">
+      <div class="modal-title" [style.color]="schoolEventColor(selectedEvent()!)">
+        {{ selectedEvent()!.title }}
+      </div>
+      <div class="event-detail-info">
+        <div class="event-detail-row">
+          <span class="event-detail-label">תאריך</span>
+          <span>{{ formatShortDate(selectedEvent()!.event_date) }}</span>
+        </div>
+        <div class="event-detail-row">
+          <span class="event-detail-label">קטגוריה</span>
+          <span class="event-category-chip" [style.background]="schoolEventColor(selectedEvent()!) + '22'" [style.color]="schoolEventColor(selectedEvent()!)">{{ selectedEvent()!.category }}</span>
+        </div>
+        <div class="event-detail-row" *ngIf="selectedEvent()!.source_sheet">
+          <span class="event-detail-label">מקור</span>
+          <span>{{ selectedEvent()!.source_sheet === 'ידני' ? 'נוסף ידנית' : selectedEvent()!.source_sheet }}</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button *ngIf="selectedEvent()!.source_sheet === 'ידני'" class="btn btn-secondary" (click)="startEditEvent()">עריכה</button>
+        <button *ngIf="selectedEvent()!.source_sheet === 'ידני'" class="btn btn-danger" (click)="deleteEvent(selectedEvent()!)">מחיקה</button>
+        <button class="btn btn-secondary" (click)="closeEventDetail()">סגור</button>
+      </div>
+    </ng-container>
+    <ng-container *ngIf="editingEvent()">
+      <div class="modal-title">עריכת אירוע</div>
+      <div class="form-group">
+        <label>כותרת *</label>
+        <input [(ngModel)]="editEventDraft.title" placeholder="שם האירוע">
+      </div>
+      <div class="form-group">
+        <label>קטגוריה</label>
+        <input [(ngModel)]="editEventDraft.category" placeholder="לדוגמה: חג, טיול, בחינות...">
+      </div>
+      <p *ngIf="dialogError()" class="hint" style="color:var(--danger)">{{ dialogError() }}</p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" [disabled]="!editEventDraft.title.trim()" (click)="saveEditEvent()">שמור</button>
+        <button class="btn btn-secondary" (click)="editingEvent.set(false)">ביטול</button>
+      </div>
+    </ng-container>
+  </div>
+</div>
+
+
 <div class="page-header">
   <div>
     <h1>לוח שנה</h1>
@@ -355,12 +401,13 @@ interface CtxMenu {
   <!-- Schedule events -->
   <ng-container *ngIf="has('schedule') && selectedDayEvents().length">
     <h3 class="layer-title">לוח אירועים</h3>
-    <div *ngFor="let event of selectedDayEvents()" class="detail-row">
+    <div *ngFor="let event of selectedDayEvents()" class="detail-row event-detail-row" (click)="openEventDetail(event)">
       <span class="detail-dot" [style.background]="schoolEventColor(event)"></span>
       <div class="detail-main">
         <strong>{{ event.title }}</strong>
-        <span>{{ event.category }}{{ event.source_sheet ? ' · '+event.source_sheet : '' }}</span>
+        <span>{{ event.category }}{{ event.source_sheet && event.source_sheet !== 'ידני' ? ' · '+event.source_sheet : '' }}</span>
       </div>
+      <span *ngIf="event.source_sheet === 'ידני'" class="manual-badge">ידני</span>
     </div>
   </ng-container>
 
@@ -603,6 +650,29 @@ interface CtxMenu {
     }
     .exam-row-btns { display: flex; gap: 4px; flex-shrink: 0; }
 
+    /* ── Event detail styles ── */
+    .event-detail-row {
+      cursor: pointer;
+      &:hover { background: var(--surface-3); }
+    }
+    .manual-badge {
+      font-size: 0.68rem; font-weight: 700; color: var(--primary);
+      background: var(--primary-light); border-radius: 999px; padding: 2px 8px;
+      flex-shrink: 0;
+    }
+    .event-detail-info { display: flex; flex-direction: column; gap: 10px; }
+    .event-detail-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 6px 0; border-bottom: 1px solid var(--border);
+      &:last-child { border-bottom: none; }
+      cursor: default;
+    }
+    .event-detail-label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); }
+    .event-category-chip {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      font-size: 0.8rem; font-weight: 700;
+    }
+
     .empty-state { color: var(--text-muted); font-size: 0.85rem; }
     .calendar-error { color: var(--danger); font-size: 0.85rem; margin-bottom: 10px; }
 
@@ -679,6 +749,12 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   uploadMessage = '';
   uploading     = false;
   updatingTaskId: number | null = null;
+
+  // ── Event detail ──
+  readonly eventDetailOpen = signal(false);
+  readonly selectedEvent   = signal<CalendarEvent | null>(null);
+  readonly editingEvent    = signal(false);
+  editEventDraft = { title: '', category: '' };
 
   private colorMap = new Map<number, string>();
   private readonly colors = ['#0d9488','#0891b2','#f59e0b','#6366f1','#ec4899','#14b8a6','#8b5cf6','#f97316','#06b6d4','#84cc16'];
@@ -981,6 +1057,60 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   canImportCalendar() {
     const r = this.auth.user()?.role;
     return r === 'admin' || r === 'secretary';
+  }
+
+  openEventDetail(event: CalendarEvent) {
+    this.selectedEvent.set(event);
+    this.editingEvent.set(false);
+    this.dialogError.set('');
+    this.eventDetailOpen.set(true);
+  }
+
+  closeEventDetail() {
+    this.eventDetailOpen.set(false);
+    this.editingEvent.set(false);
+    this.dialogError.set('');
+  }
+
+  startEditEvent() {
+    const ev = this.selectedEvent();
+    if (!ev) return;
+    this.editEventDraft = { title: ev.title, category: ev.category };
+    this.editingEvent.set(true);
+  }
+
+  saveEditEvent() {
+    const ev = this.selectedEvent();
+    if (!ev || !this.editEventDraft.title.trim()) return;
+    // מחיקת הישן והוספת החדש (פשוט יותר מ-PUT)
+    this.api.deleteCalendarEvent(ev.id).subscribe({
+      next: () => {
+        this.api.createCalendarEvent({
+          title: this.editEventDraft.title.trim(),
+          event_date: ev.event_date,
+          category: this.editEventDraft.category.trim() || 'כללי',
+          source_sheet: 'ידני'
+        }).subscribe({
+          next: () => {
+            this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
+            this.closeEventDetail();
+          },
+          error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
+        });
+      },
+      error: e => this.dialogError.set(e.error?.error || 'מחיקה נכשלה')
+    });
+  }
+
+  deleteEvent(event: CalendarEvent) {
+    if (!confirm(`למחוק את האירוע "${event.title}"?`)) return;
+    this.api.deleteCalendarEvent(event.id).subscribe({
+      next: () => {
+        this.calendarEvents.update(evs => evs.filter(e => e.id !== event.id));
+        this.closeEventDetail();
+      },
+      error: e => this.loadError = e.error?.error || 'מחיקה נכשלה'
+    });
   }
 
   onCalendarFileSelected(ev: Event) {
