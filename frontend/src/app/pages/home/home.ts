@@ -258,8 +258,7 @@ interface DashboardStats {
     }
 
     .hero-content {
-      max-width: 1200px;
-      margin: 0 auto;
+      width: 100%;
       padding: 44px 44px 40px;
       display: flex;
       align-items: center;
@@ -383,9 +382,7 @@ interface DashboardStats {
       display: grid;
       grid-template-columns: 420px 1fr;
       gap: 28px;
-      max-width: 1200px;
       width: 100%;
-      margin: 0 auto;
       padding: 36px 44px 56px;
       align-items: start;
     }
