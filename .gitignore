@@ -7,3 +7,8 @@
 !.env.example
 /backend/requirement-files/
 /backend/certs/
+backend/studio.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
