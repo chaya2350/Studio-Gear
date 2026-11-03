@@ -33,8 +33,8 @@ import { ApiService } from '../../services/api.service';
     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
     </svg>
-    <input [(ngModel)]="query" (ngModelChange)="onSearch()" placeholder="חיפוש לפי שם או מקצוע..." autocomplete="off">
-    <button *ngIf="query" class="clear-btn" (click)="query=''; onSearch()">✕</button>
+    <input [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="חיפוש לפי שם או מקצוע..." autocomplete="off">
+    <button *ngIf="query()" class="clear-btn" (click)="query.set('')">✕</button>
   </div>
 
   <!-- Loading -->
@@ -42,7 +42,7 @@ import { ApiService } from '../../services/api.service';
 
   <!-- Empty -->
   <div *ngIf="!loading() && !filtered().length" class="empty-state">
-    {{ query ? 'לא נמצאו מורות התואמות לחיפוש' : 'אין מורות במערכת' }}
+    {{ query() ? 'לא נמצאו מורות התואמות לחיפוש' : 'אין מורות במערכת' }}
   </div>
 
   <!-- List -->
@@ -132,13 +132,13 @@ import { ApiService } from '../../services/api.service';
   `]
 })
 export class TeacherSearchComponent implements OnInit {
-  query = '';
+  query = signal('');
   allTeachers = signal<any[]>([]);
   loading = signal(true);
   exporting = signal(false);
 
   filtered = computed(() => {
-    const q = this.query.trim().toLowerCase();
+    const q = this.query().trim().toLowerCase();
     if (!q) return this.allTeachers();
     return this.allTeachers().filter(t =>
       (t.name || '').toLowerCase().includes(q) ||
@@ -155,8 +155,6 @@ export class TeacherSearchComponent implements OnInit {
       error: () => this.loading.set(false),
     });
   }
-
-  onSearch() { /* filtered is computed — nothing extra needed */ }
 
   exportExcel() {
     this.exporting.set(true);

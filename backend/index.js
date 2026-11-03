@@ -2695,12 +2695,17 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     subject TEXT,
+    specialization TEXT,
     phone TEXT,
     email TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+const teacherColumnNames = db.prepare('PRAGMA table_info(teachers)').all().map(column => column.name);
+if (!teacherColumnNames.includes('specialization')) {
+  db.exec('ALTER TABLE teachers ADD COLUMN specialization TEXT');
+}
 
 // Schedule slots: one row per scheduled class lesson
 // day_of_week: 0=ראשון, 1=שני, 2=שלישי, 3=רביעי, 4=חמישי
@@ -2896,12 +2901,13 @@ app.post('/api/teachers', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
   const subject = String(req.body?.subject || '').trim() || null;
+  const specialization = String(req.body?.specialization || '').trim() || null;
   const phone = String(req.body?.phone || '').trim() || null;
   const email = String(req.body?.email || '').trim() || null;
   try {
-    const result = db.prepare('INSERT INTO teachers (name, subject, phone, email) VALUES (?, ?, ?, ?)')
-      .run(name, subject, phone, email);
-    res.json({ id: result.lastInsertRowid, name, subject, phone, email });
+    const result = db.prepare('INSERT INTO teachers (name, subject, specialization, phone, email) VALUES (?, ?, ?, ?, ?)')
+      .run(name, subject, specialization, phone, email);
+    res.json({ id: result.lastInsertRowid, name, subject, specialization, phone, email });
   } catch {
     res.status(400).json({ error: 'מורה עם שם זה כבר קיימת' });
   }
@@ -2911,10 +2917,11 @@ app.put('/api/teachers/:id', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המורה הוא שדה חובה' });
   const subject = String(req.body?.subject || '').trim() || null;
+  const specialization = String(req.body?.specialization || '').trim() || null;
   const phone = String(req.body?.phone || '').trim() || null;
   const email = String(req.body?.email || '').trim() || null;
-  const result = db.prepare('UPDATE teachers SET name=?, subject=?, phone=?, email=?, active=? WHERE id=?')
-    .run(name, subject, phone, email, req.body?.active ?? 1, req.params.id);
+  const result = db.prepare('UPDATE teachers SET name=?, subject=?, specialization=?, phone=?, email=?, active=? WHERE id=?')
+    .run(name, subject, specialization, phone, email, req.body?.active ?? 1, req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'מורה לא נמצאה' });
   res.json({ success: true });
 });

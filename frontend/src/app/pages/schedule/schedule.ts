@@ -140,7 +140,7 @@ function formatHebDate(dateStr: string): string {
                       <div *ngFor="let slot of periodSlots" class="day-lesson">
                         <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
                           <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
-                          המורה {{ slot.teacher_name }}
+                          <span class="day-teacher-name">המורה {{ slot.teacher_name }}</span>
                         </a>
                         <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
                           {{ slot.subject || slot.teacher_subject }}
@@ -234,6 +234,12 @@ function formatHebDate(dateStr: string): string {
     <button class="btn btn-primary" (click)="showAddTeacher=true">+ הוסף מורה</button>
   </div>
 
+  <label class="teacher-search">
+    <input type="search" aria-label="חיפוש מורה לפי שם, מקצוע או התמחות"
+           [ngModel]="teacherSearch()" (ngModelChange)="teacherSearch.set($event)"
+           placeholder="חיפוש לפי שם, מקצוע או התמחות">
+  </label>
+
   <div *ngIf="showAddTeacher" class="add-form card">
     <h4>מורה חדשה</h4>
     <div class="form-row">
@@ -251,7 +257,7 @@ function formatHebDate(dateStr: string): string {
   </div>
 
   <div class="teachers-list">
-    <div *ngFor="let t of teachers()" class="teacher-row card">
+    <div *ngFor="let t of filteredTeachers()" class="teacher-row card">
       <div class="teacher-info" *ngIf="editingTeacherId() !== t.id">
         <div class="teacher-color" [style.background]="teacherColor(t.id)"></div>
         <div>
@@ -275,6 +281,9 @@ function formatHebDate(dateStr: string): string {
         <button class="btn btn-secondary" (click)="editingTeacherId.set(0)">ביטול</button>
       </div>
     </div>
+    <p *ngIf="!filteredTeachers().length" class="empty-state card">
+      {{ teacherSearch().trim() ? 'לא נמצאו מורות התואמות לחיפוש' : 'אין מורות להצגה' }}
+    </p>
   </div>
 </div>
 
@@ -558,24 +567,25 @@ function formatHebDate(dateStr: string): string {
   color: #277347; font: inherit; font-size: 0.7rem; font-weight: 700; cursor: pointer;
   &:hover { background: white; }
 }
+.class-slot, .day-lesson {
+  display: flex; align-items: center; overflow: hidden; white-space: nowrap;
+}
 .class-slot {
-  display: grid; gap: 8px; min-width: 0; margin-bottom: 2px; padding: 10px;
-  border: 1px solid #dce8e1; border-inline-start: 4px solid var(--primary);
-  border-radius: 11px; background: linear-gradient(145deg, #fff, #f8fbf9);
-  box-shadow: 0 2px 7px rgba(34, 75, 52, 0.08); font-size: 0.8rem;
-  transition: box-shadow 0.16s ease, transform 0.16s ease;
-  &:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(34, 75, 52, 0.12); }
+  gap: 6px; min-width: 0;
+  margin-bottom: 2px; padding: 5px 7px; border: 1px solid #dce8e1;
+  border-inline-start: 3px solid var(--primary); border-radius: 8px; background: #fff;
+  font-size: 0.72rem;
 }
-.class-slot-teacher { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.class-slot-teacher-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(0,0,0,0.04); }
+.class-slot-teacher { display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; }
+.class-slot-teacher-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
 .class-slot-teacher .teacher-profile-link { overflow: hidden; color: #263b32; font-weight: 700; text-overflow: ellipsis; }
-.class-slot-subject { width: fit-content; max-width: 100%; padding: 4px 8px; border-radius: 7px; background: #eef4f0; color: #5b6d63; font-size: 0.72rem; }
-.class-slot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.slot-del {
-  padding: 4px 9px; border: 1px solid #f1d6d6; border-radius: 7px;
-  background: #fff7f7; color: #a34646; font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer;
-  &:hover { border-color: #e7bcbc; background: #fff0f0; }
+.class-slot-subject {
+  overflow: hidden; flex: 0 1 auto; max-width: 25%; color: #5b6d63;
+  font-size: 0.66rem; text-overflow: ellipsis;
 }
+.class-slot-actions { display: flex; flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
+.slot-del, .slot-edit-btn { padding: 2px 5px; border-radius: 6px; font: inherit; font-size: 0.62rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.slot-del { border: 1px solid #f1d6d6; background: #fff7f7; color: #a34646; }
 .add-slot-btn {
   width: 26px; height: 26px; border: 1px dashed var(--primary); border-radius: 50%;
   background: transparent; color: var(--primary); font-size: 1rem; cursor: pointer;
@@ -584,10 +594,19 @@ function formatHebDate(dateStr: string): string {
 .schedule-time { white-space: nowrap; font-weight: 700; color: var(--primary); }
 .day-lessons-cell { display: grid; gap: 7px; }
 .day-lesson {
-  display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 6px 10px;
+  gap: 8px; min-width: 0; min-height: 32px; padding: 4px 8px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
 }
-.day-lesson-subject { color: var(--text-muted); font-size: 0.82rem; }
+.day-lesson .schedule-teacher {
+  overflow: hidden; flex: 1 1 auto; min-width: 0;
+}
+.day-lesson .schedule-teacher .teacher-color { flex: 0 0 10px; }
+.day-teacher-name { overflow: hidden; text-overflow: ellipsis; }
+.day-lesson-subject {
+  overflow: hidden; flex: 0 1 25%; min-width: 0; color: var(--text-muted);
+  font-size: 0.72rem; text-overflow: ellipsis;
+}
+.day-lesson button { flex: 0 0 auto; padding: 3px 6px; font-size: 0.68rem; }
 .availability-hint { color: var(--text-muted); font-size: 0.8rem; }
 .quick-class-picker {
   display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 10px 12px;
@@ -601,11 +620,7 @@ function formatHebDate(dateStr: string): string {
 .teacher-profile-link:hover { color: var(--primary); text-decoration: underline; }
 .schedule-delete { padding: 5px 10px; font-size: 0.78rem; }
 .schedule-edit { padding: 5px 10px; font-size: 0.78rem; }
-.slot-edit-btn {
-  padding: 4px 9px; border: 1px solid #cfe4d6; border-radius: 7px;
-  background: #f1f8f3; color: #277347; font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer;
-  &:hover { border-color: #a9d2b6; background: #e7f4eb; }
-}
+.slot-edit-btn { border: 1px solid #cfe4d6; background: #f1f8f3; color: #277347; }
 .edit-slot-modal { width: 420px; }
 .edit-slot-modal .locked-class { margin: -8px 0 0; color: var(--text-muted); font-size: 0.85rem; }
 .edit-time-fields { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -615,11 +630,16 @@ function formatHebDate(dateStr: string): string {
 @media (max-width: 640px) {
   .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
   .view-toggle button { flex: 1; }
-  .day-lesson { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .day-lesson { gap: 5px; padding-inline: 5px; }
 }
 
 /* Teachers */
 .teachers-list { display: flex; flex-direction: column; gap: 8px; }
+.teacher-search { display: block; margin-bottom: 12px; }
+.teacher-search input {
+  width: 100%; max-width: 420px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface); color: var(--text); font: inherit;
+}
 .teacher-row { padding: 12px 16px; }
 .teacher-info { display: flex; align-items: center; gap: 12px; }
 .teacher-color { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
@@ -695,6 +715,7 @@ export class ScheduleComponent implements OnInit {
 
   loading = signal(false);
   teachers = signal<any[]>([]);
+  teacherSearch = signal('');
   slots = signal<any[]>([]);
   activeTab = signal<'grid' | 'teachers' | 'manage'>('grid');
   scheduleView = signal<'days' | 'classes'>('classes');
@@ -881,8 +902,21 @@ export class ScheduleComponent implements OnInit {
 
   // Teachers and coordinators who may teach Kodesh lessons
   kodeshTeachers = computed(() => {
-    const kodeshSpecializations = new Set(['קודש', 'רכזת קודש', 'רכזת חינוכית']);
-    return this.teachers().filter(t => kodeshSpecializations.has(String(t.specialization || '').trim()));
+    return this.teachers().filter(t => {
+      const specialization = String(t.specialization || '').replace(/\s+/g, '').trim();
+      return specialization === 'קודש' ||
+        specialization === 'רכזתקודש' ||
+        specialization === 'רכזתחינוכית' ||
+        specialization === 'רכזתחנוכית';
+    });
+  });
+  filteredTeachers = computed(() => {
+    const query = this.teacherSearch().trim().toLocaleLowerCase('he');
+    if (!query) return this.teachers();
+    return this.teachers().filter(teacher =>
+      [teacher.name, teacher.subject, teacher.specialization]
+        .some(value => String(value || '').toLocaleLowerCase('he').includes(query))
+    );
   });
 
   loadSchedule() {
