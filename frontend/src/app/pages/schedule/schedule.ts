@@ -130,34 +130,36 @@ function formatHebDate(dateStr: string): string {
             <tr *ngFor="let boardRow of dayScheduleRows()">
               <td class="schedule-time">{{ boardRow.start_time }} – {{ boardRow.end_time }}</td>
               <td class="day-lessons-cell">
-                <div *ngFor="let entry of boardRow.classes" class="day-class-availability"
-                     [ngClass]="'period-' + entry.availability"
-                     [attr.aria-disabled]="entry.availability !== 'kodesh'">
-                  <span class="class-badge">{{ entry.row.className }}</span>
-                  <ng-container *ngIf="entry.availability === 'kodesh' &&
-                                      slotsForPeriod(entry.row.byDay[selectedDay()], entry.period) as periodSlots">
-                    <ng-container *ngIf="periodSlots.length; else emptyDayPeriod">
-                      <div *ngFor="let slot of periodSlots" class="day-lesson">
-                        <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                          <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
-                          <span class="day-teacher-name">המורה {{ slot.teacher_name }}</span>
-                        </a>
-                        <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
-                          {{ slot.subject || slot.teacher_subject }}
-                        </span>
-                        <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
-                        <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
-                      </div>
+                <div class="day-classes-grid">
+                  <div *ngFor="let entry of boardRow.classes" class="day-class-availability"
+                       [ngClass]="'period-' + entry.availability"
+                       [attr.aria-disabled]="entry.availability !== 'kodesh'">
+                    <span class="class-badge">{{ entry.row.className }}</span>
+                    <ng-container *ngIf="entry.availability === 'kodesh' &&
+                                        slotsForPeriod(entry.row.byDay[selectedDay()], entry.period) as periodSlots">
+                      <ng-container *ngIf="periodSlots.length; else emptyDayPeriod">
+                        <div *ngFor="let slot of periodSlots" class="day-lesson">
+                          <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                            <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
+                            <span class="day-teacher-name">המורה {{ slot.teacher_name }}</span>
+                          </a>
+                          <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
+                            {{ slot.subject || slot.teacher_subject }}
+                          </span>
+                          <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
+                          <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
+                        </div>
+                      </ng-container>
+                      <ng-template #emptyDayPeriod>
+                        <button class="add-period-btn"
+                                (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
+                                aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
+                      </ng-template>
                     </ng-container>
-                    <ng-template #emptyDayPeriod>
-                      <button class="add-period-btn"
-                              (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
-                              aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
-                    </ng-template>
-                  </ng-container>
-                  <span *ngIf="entry.availability !== 'kodesh'" class="period-status-label">
-                    {{ periodAvailabilityLabel(entry.availability) }}
-                  </span>
+                    <span *ngIf="entry.availability !== 'kodesh'" class="period-status-label">
+                      {{ periodAvailabilityLabel(entry.availability) }}
+                    </span>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -517,14 +519,6 @@ function formatHebDate(dateStr: string): string {
     &.active { color: var(--primary); background: var(--surface); box-shadow: var(--shadow-xs); }
   }
 }
-.day-selector { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0; }
-.day-selector button {
-  display: grid; gap: 3px; min-width: 104px; padding: 9px 14px; border: 1px solid var(--border);
-  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit;
-  text-align: center; cursor: pointer; transition: all var(--transition);
-  small { color: var(--text-muted); font-size: 0.72rem; }
-  &.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); font-weight: 700; }
-}
 .schedule-table-wrap { box-shadow: var(--shadow-sm); background: var(--surface); }
 .schedule-table { min-width: 100%; }
 .schedule-table th small { display: block; margin-top: 3px; font-size: 0.72rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
@@ -552,24 +546,13 @@ function formatHebDate(dateStr: string): string {
 .class-period.period-instruction .period-status-label { background: #ffebbd; }
 .class-period.period-kodesh { border-color: #b8dfc7; background: linear-gradient(140deg, #f2fbf5, #e8f6ed); }
 .class-period.period-kodesh .period-status-label { background: #dff1e5; }
-.day-class-availability {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 36px;
-  padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
-}
-.day-class-availability + .day-class-availability { margin-top: 5px; }
-.day-class-availability.period-track { border-color: #d1d5db; background: #f1f3f5; color: #707780; }
-.day-class-availability.period-instruction { border-color: #f2d293; background: #fff5df; color: #815b18; }
-.day-class-availability.period-kodesh { border-color: #a9d8bd; background: #edf8f1; }
-.day-class-availability .day-lesson { flex: 1 1 100%; }
 .add-period-btn {
   justify-self: start; width: auto; height: auto; margin: 0; padding: 4px 8px;
   border: 1px dashed #6ba982; border-radius: 6px; background: rgba(255,255,255,0.65);
   color: #277347; font: inherit; font-size: 0.7rem; font-weight: 700; cursor: pointer;
   &:hover { background: white; }
 }
-.class-slot, .day-lesson {
-  display: flex; align-items: center; overflow: hidden; white-space: nowrap;
-}
+.class-slot { display: flex; align-items: center; overflow: hidden; white-space: nowrap; }
 .class-slot {
   gap: 6px; min-width: 0;
   margin-bottom: 2px; padding: 5px 7px; border: 1px solid #dce8e1;
@@ -592,21 +575,6 @@ function formatHebDate(dateStr: string): string {
   &:hover { background: var(--primary-light); }
 }
 .schedule-time { white-space: nowrap; font-weight: 700; color: var(--primary); }
-.day-lessons-cell { display: grid; gap: 7px; }
-.day-lesson {
-  gap: 8px; min-width: 0; min-height: 32px; padding: 4px 8px;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
-}
-.day-lesson .schedule-teacher {
-  overflow: hidden; flex: 1 1 auto; min-width: 0;
-}
-.day-lesson .schedule-teacher .teacher-color { flex: 0 0 10px; }
-.day-teacher-name { overflow: hidden; text-overflow: ellipsis; }
-.day-lesson-subject {
-  overflow: hidden; flex: 0 1 25%; min-width: 0; color: var(--text-muted);
-  font-size: 0.72rem; text-overflow: ellipsis;
-}
-.day-lesson button { flex: 0 0 auto; padding: 3px 6px; font-size: 0.68rem; }
 .availability-hint { color: var(--text-muted); font-size: 0.8rem; }
 .quick-class-picker {
   display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 10px 12px;
@@ -630,7 +598,6 @@ function formatHebDate(dateStr: string): string {
 @media (max-width: 640px) {
   .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
   .view-toggle button { flex: 1; }
-  .day-lesson { gap: 5px; padding-inline: 5px; }
 }
 
 /* Teachers */

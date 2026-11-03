@@ -6,12 +6,14 @@ const Database = require('better-sqlite3');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const cron = require('node-cron');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
+const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
@@ -3249,6 +3251,47 @@ app.delete('/api/schedule/week/:week_start', (req, res) => {
 
 // ── Weekly Sheets – PDF Data ───────────────────────────────────
 // Returns JSON with all data needed to render the printable sheets
+function copyPreviousWeekSchedule() {
+  const dateParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date()).reduce((parts, part) => {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+    return parts;
+  }, {});
+  const currentDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  const toWeek = getWeekStart(currentDate);
+  const fromWeek = addDays(toWeek, -7);
+  const result = copyScheduleWeekIfEmpty(db, {
+    fromWeek,
+    toWeek,
+    validateSlot: slot => validateConfiguredKodeshSlot(slot).valid
+  });
+
+  if (result.reason === 'copied') {
+    console.info(`Copied ${result.copied} schedule lessons from ${fromWeek} to ${toWeek}` +
+      (result.skipped ? `; skipped ${result.skipped} unavailable lessons` : ''));
+  } else if (result.reason === 'no_valid_slots') {
+    console.warn(`No valid schedule lessons to copy from ${fromWeek} to ${toWeek}; skipped ${result.skipped}`);
+  }
+}
+
+cron.schedule('5 0 * * 0', () => {
+  try {
+    copyPreviousWeekSchedule();
+  } catch (error) {
+    console.error('Automatic weekly schedule copy failed:', error);
+  }
+}, { timezone: 'Asia/Jerusalem' });
+
+try {
+  copyPreviousWeekSchedule();
+} catch (error) {
+  console.error('Initial weekly schedule copy check failed:', error);
+}
+
 app.get('/api/attendance/weekly-sheets', (req, res) => {
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);

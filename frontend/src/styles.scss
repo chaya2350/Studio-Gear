@@ -491,3 +491,95 @@ table {
     display: none !important;
   }
 }
+
+.day-selector {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.day-selector button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.day-selector button span { font-size: 0.86rem; font-weight: 700; }
+.day-selector button small { color: var(--text-muted); font-size: 0.7rem; }
+.day-selector button.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.day-schedule-table { border-collapse: separate; border-spacing: 0 6px; }
+.day-schedule-table .schedule-time {
+  width: 104px;
+  padding: 12px 10px !important;
+  vertical-align: top;
+}
+.day-lessons-cell { display: grid; gap: 7px; }
+.day-classes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 7px;
+}
+.day-class-availability {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.day-class-availability.period-track { border-color: #d1d5db; background: #f1f3f5; color: #707780; }
+.day-class-availability.period-instruction { border-color: #f2d293; background: #fff5df; color: #815b18; }
+.day-class-availability.period-kodesh { border-color: #a9d8bd; background: #edf8f1; }
+.day-lesson {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  flex: 1 1 100%;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.day-lesson .schedule-teacher { overflow: hidden; flex: 1 1 auto; min-width: 0; }
+.day-lesson .schedule-teacher .teacher-color { flex: 0 0 10px; }
+.day-teacher-name { overflow: hidden; text-overflow: ellipsis; }
+.day-lesson-subject {
+  overflow: hidden;
+  flex: 0 1 25%;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+.day-lesson button { flex: 0 0 auto; padding: 3px 6px; font-size: 0.68rem; }
+
+@media (max-width: 640px) {
+  .day-selector { gap: 4px; }
+  .day-selector button { padding: 8px 3px; }
+  .day-schedule-table .schedule-time { width: 76px; padding-inline: 5px !important; }
+  .day-classes-grid { grid-template-columns: 1fr; }
+  .day-lesson { gap: 5px; padding-inline: 5px; }
+}
