@@ -146,8 +146,14 @@ function formatHebDate(dateStr: string): string {
                           <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
                             {{ slot.subject || slot.teacher_subject }}
                           </span>
-                          <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
-                          <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
+                          <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
+                                  title="עריכת שיעור" aria-label="עריכת שיעור">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+                          </button>
+                          <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
+                                  title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                          </button>
                         </div>
                       </ng-container>
                       <ng-template #emptyDayPeriod>
@@ -210,8 +216,14 @@ function formatHebDate(dateStr: string): string {
                       {{ slot.subject || slot.teacher_subject }}
                     </small>
                     <div class="class-slot-actions">
-                      <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
-                      <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">מחיקה</button>
+                      <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
+                              title="עריכת שיעור" aria-label="עריכת שיעור">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+                      </button>
+                      <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
+                              title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                      </button>
                     </div>
                   </div>
                   <button *ngIf="segment.availability === 'kodesh' &&
@@ -398,7 +410,12 @@ function formatHebDate(dateStr: string): string {
             <td>יום {{ DAYS[s.day_of_week] }}</td>
             <td>{{ s.start_time }}{{ s.end_time ? ' – ' + s.end_time : '' }}</td>
             <td>{{ s.subject || s.teacher_subject || '—' }}</td>
-            <td><button class="btn btn-danger" style="padding:4px 10px;font-size:0.8rem" (click)="deleteSlot(s.id)">מחק</button></td>
+            <td>
+              <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(s.id)"
+                      title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>

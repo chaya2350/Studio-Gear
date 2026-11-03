@@ -532,7 +532,7 @@ table {
 .day-lessons-cell { display: grid; gap: 7px; }
 .day-classes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 7px;
 }
 .day-class-availability {
@@ -583,3 +583,23 @@ table {
   .day-classes-grid { grid-template-columns: 1fr; }
   .day-lesson { gap: 5px; padding-inline: 5px; }
 }
+
+.slot-icon-btn {
+  display: inline-flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.slot-icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.slot-icon-edit { color: #277347; }
+.slot-icon-edit:hover { border-color: #a9d2b6; background: #e7f4eb; }
+.slot-icon-delete { color: #a34646; }
+.slot-icon-delete:hover { border-color: #e7bcbc; background: #fff0f0; }
