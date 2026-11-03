@@ -2005,7 +2005,7 @@ function equipmentQuery(whereClause = '', date = null) {
       CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
     FROM equipment e
     LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL
-      AND active.loan_date <= ${d} AND active.expected_return >= ${d}
+      AND active.loan_date <= ${d}
     LEFT JOIN (SELECT equipment_id, COUNT(*) as cnt FROM loans WHERE actual_return IS NULL AND loan_date > ${d} GROUP BY equipment_id) future
       ON future.equipment_id = e.id
     ${whereClause}
