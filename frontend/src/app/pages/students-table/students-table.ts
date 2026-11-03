@@ -151,7 +151,7 @@ interface TableStudent {
             <a [routerLink]="['/students', s.id_number]" class="name-link">{{ s.name }}</a>
           </td>
           <td class="col-id mono">{{ s.id_number }}</td>
-          <td class="col-class">{{ s.class_name || '' }}{{ s.parallel && s.parallel !== '0' ? s.parallel : '' }}</td>
+          <td class="col-class">{{ s.class_name || '' }}</td>
           <td class="col-track">{{ s.track || '' }}</td>
           <td class="col-year">{{ toStudyYear(s.year) }}</td>
           <td class="col-phone mono">{{ s.phone || '' }}</td>

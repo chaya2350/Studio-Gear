@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { Observable } from 'rxjs';
 
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 const YEARS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו'];
@@ -59,15 +60,22 @@ function formatHebDate(dateStr: string): string {
   <button [class.active]="activeTab() === 'manage'" (click)="activeTab.set('manage')">ניהול</button>
 </div>
 
+<p *ngIf="kodeshAvailabilityError()" class="error-msg" role="alert">{{ kodeshAvailabilityError() }}</p>
+
 <!-- GRID VIEW -->
 <div *ngIf="activeTab() === 'grid'" class="grid-view">
   <div *ngIf="loading()" class="loading-state">טוען...</div>
 
-  <div *ngIf="!loading() && !slots().length" class="empty-state">
+  <div *ngIf="!loading() && !slots().length && !classOptions().length" class="empty-state">
     <div class="empty-icon">📅</div>
     <p>אין שיעורים לשבוע זה</p>
     <button class="btn btn-primary" (click)="activeTab.set('manage')">הוסף שיעורים</button>
     <button class="btn btn-secondary" (click)="showCopyWeek=true" style="margin-top:8px;">העתק משבוע קודם</button>
+  </div>
+
+  <div *ngIf="!loading() && !slots().length && classOptions().length" class="empty-state card no-week-slots">
+    <p>עדיין לא שובצו שיעורי קודש לשבוע זה. השעות מסומנות לפי סוגן.</p>
+    <button class="btn btn-secondary" (click)="showCopyWeek=true">העתק משבוע קודם</button>
   </div>
 
   <!-- Copy week prompt -->
@@ -85,7 +93,7 @@ function formatHebDate(dateStr: string): string {
     <p *ngIf="copyError()" class="error-msg">{{ copyError() }}</p>
   </div>
 
-  <div *ngIf="!loading() && slots().length" class="schedule-display">
+  <div *ngIf="!loading() && (slots().length || classOptions().length)" class="schedule-display">
     <div class="schedule-view-toolbar card">
       <div class="schedule-view-copy">
         <strong>תצוגת המערכת</strong>
@@ -116,27 +124,44 @@ function formatHebDate(dateStr: string): string {
       <div class="table-wrap schedule-table-wrap">
         <table class="schedule-table day-schedule-table">
           <thead>
-            <tr><th>שעה</th><th>שיעורים לפי כיתות</th></tr>
+            <tr><th>שעה</th><th>כיתות</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let group of dayTimeGroups()">
-              <td class="schedule-time">{{ group.start_time }}{{ group.end_time ? ' – ' + group.end_time : '' }}</td>
+            <tr *ngFor="let boardRow of dayScheduleRows()">
+              <td class="schedule-time">{{ boardRow.start_time }} – {{ boardRow.end_time }}</td>
               <td class="day-lessons-cell">
-                <div *ngFor="let slot of group.slots" class="day-lesson">
-                  <span class="class-badge">{{ slot.class_year }}{{ slot.class_parallel }}</span>
-                  <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                    <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
-                    המורה {{ slot.teacher_name }}
-                  </a>
-                  <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
-                    {{ slot.subject || slot.teacher_subject }}
+                <div *ngFor="let entry of boardRow.classes" class="day-class-availability"
+                     [ngClass]="'period-' + entry.availability"
+                     [attr.aria-disabled]="entry.availability !== 'kodesh'">
+                  <span class="class-badge">{{ entry.row.className }}</span>
+                  <ng-container *ngIf="entry.availability === 'kodesh' &&
+                                      slotsForPeriod(entry.row.byDay[selectedDay()], entry.period) as periodSlots">
+                    <ng-container *ngIf="periodSlots.length; else emptyDayPeriod">
+                      <div *ngFor="let slot of periodSlots" class="day-lesson">
+                        <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                          <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
+                          המורה {{ slot.teacher_name }}
+                        </a>
+                        <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
+                          {{ slot.subject || slot.teacher_subject }}
+                        </span>
+                        <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
+                        <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
+                      </div>
+                    </ng-container>
+                    <ng-template #emptyDayPeriod>
+                      <button class="add-period-btn"
+                              (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
+                              aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
+                    </ng-template>
+                  </ng-container>
+                  <span *ngIf="entry.availability !== 'kodesh'" class="period-status-label">
+                    {{ periodAvailabilityLabel(entry.availability) }}
                   </span>
-                  <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
-                  <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
                 </div>
               </td>
             </tr>
-            <tr *ngIf="!dayTimeGroups().length">
+            <tr *ngIf="!dayScheduleRows().length">
               <td colspan="2" class="schedule-empty">אין שיעורים ביום זה</td>
             </tr>
           </tbody>
@@ -162,18 +187,30 @@ function formatHebDate(dateStr: string): string {
                 <span class="class-badge">{{ row.className }}</span>
               </th>
               <td *ngFor="let day of [0,1,2,3,4]" class="class-schedule-cell">
-                <div *ngFor="let slot of row.byDay[day]" class="class-slot"
-                     [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
-                  <strong>{{ slot.start_time }}{{ slot.end_time ? ' – ' + slot.end_time : '' }}</strong>
-                  <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                    {{ slot.teacher_name }}
-                  </a>
-                  <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
-                  <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
-                  <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
+                <div *ngFor="let segment of scheduleSegments(row.classYear, day)" class="class-period"
+                     [ngClass]="'period-' + segment.availability"
+                     [attr.aria-disabled]="segment.availability !== 'kodesh'">
+                  <div class="period-heading">
+                    <strong>{{ segment.start_time }} – {{ segment.end_time }}</strong>
+                    <span class="period-status-label">
+                      {{ periodAvailabilityLabel(segment.availability) }}
+                    </span>
+                  </div>
+                  <div *ngFor="let slot of segment.availability === 'kodesh' ? slotsForPeriod(row.byDay[day], segment.period) : []" class="class-slot"
+                       [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
+                    <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                      {{ slot.teacher_name }}
+                    </a>
+                    <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
+                    <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
+                    <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
+                  </div>
+                  <button *ngIf="segment.availability === 'kodesh' &&
+                                  !slotsForPeriod(row.byDay[day], segment.period).length"
+                          class="add-period-btn"
+                          (click)="openAddSlot(day, row.classYear, row.classParallel, segment.period)"
+                          aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
                 </div>
-                <button class="add-slot-btn" (click)="openAddSlot(day, row.classYear, row.classParallel)"
-                        title="הוספת שיעור" aria-label="הוספת שיעור">+</button>
               </td>
             </tr>
           </tbody>
@@ -262,14 +299,14 @@ function formatHebDate(dateStr: string): string {
       </label>
       <label class="field">
         <span>כיתה</span>
-        <select [(ngModel)]="newSlot.class_key">
+        <select [(ngModel)]="newSlot.class_key" (ngModelChange)="onNewSlotScheduleChanged()">
           <option value="">בחר כיתה</option>
           <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }})</option>
         </select>
       </label>
       <label class="field">
         <span>יום</span>
-        <select [(ngModel)]="newSlot.day_of_week">
+        <select [(ngModel)]="newSlot.day_of_week" (ngModelChange)="onNewSlotScheduleChanged()">
           <option value="">יום</option>
           <option *ngFor="let d of DAYS; let i=index" [value]="i">יום {{ d }} – {{ formatHebDate(addDays(weekStart(), i)) }}</option>
         </select>
@@ -278,8 +315,15 @@ function formatHebDate(dateStr: string): string {
         <span>שיעור</span>
         <select [ngModel]="newSlot.period_id" (ngModelChange)="pickPeriod(newSlot, $event)">
           <option value="">בחר שיעור</option>
-          <option *ngFor="let p of lessonPeriods()" [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
+          <option *ngFor="let p of kodeshPeriodsForClass(newSlot.class_key, newSlot.day_of_week)" [value]="p.id">
+            {{ p.name }} ({{ p.start_time }}–{{ p.end_time }})
+          </option>
         </select>
+        <small *ngIf="newSlot.class_key && newSlot.day_of_week !== '' && !kodeshAvailabilityLoading() &&
+                      !kodeshPeriodsForClass(newSlot.class_key, newSlot.day_of_week).length" class="availability-hint">
+          אין שעות קודש זמינות לכיתה ביום זה
+        </small>
+        <small *ngIf="kodeshAvailabilityLoading()" class="availability-hint">טוען זמני קודש...</small>
       </label>
       <label class="field">
         <span>מקצוע (אופציונלי)</span>
@@ -347,7 +391,16 @@ function formatHebDate(dateStr: string): string {
 <!-- Add slot modal (from grid click) -->
 <div *ngIf="quickAddSlot" class="modal-overlay" (click)="quickAddSlot=null">
   <div class="modal-card" (click)="$event.stopPropagation()">
-    <h3>הוספת שיעור – יום {{ DAYS[quickAddSlot.day] }}, כיתה {{ quickAddSlot.year }}{{ quickAddSlot.parallel }}</h3>
+    <h3>הוספת שיעור – יום {{ DAYS[quickAddSlot.day] }}</h3>
+    <fieldset class="quick-class-picker">
+      <legend>כיתות (אפשר לבחור כמה)</legend>
+      <label *ngFor="let row of quickAvailableClasses()">
+        <input type="checkbox"
+               [checked]="quickAddSlot.classKeys.includes(quickClassKey(row))"
+               (change)="toggleQuickClass(row, $any($event.target).checked)">
+        {{ row.className }}
+      </label>
+    </fieldset>
     <label>מורה:
       <select [(ngModel)]="quickAddSlot.teacher_id">
         <option value="">בחר מורה</option>
@@ -357,12 +410,20 @@ function formatHebDate(dateStr: string): string {
     <label>שיעור:
       <select [ngModel]="quickAddSlot.period_id" (ngModelChange)="pickPeriod(quickAddSlot, $event)">
         <option value="">בחר שיעור</option>
-        <option *ngFor="let p of lessonPeriods()" [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
+        <option *ngFor="let p of quickKodeshPeriods()" [value]="p.id">
+          {{ p.name }} ({{ p.start_time }}–{{ p.end_time }})
+        </option>
       </select>
     </label>
+    <p *ngIf="!kodeshAvailabilityLoading() &&
+              !quickKodeshPeriods().length" class="availability-hint">
+      אין שעה זמינה שמתאימה לכל הכיתות שנבחרו ביום זה
+    </p>
     <label>מקצוע: <input [(ngModel)]="quickAddSlot.subject" placeholder="מקצוע"></label>
     <div class="form-actions">
-      <button class="btn btn-primary" (click)="saveQuickSlot()">הוסף</button>
+      <button class="btn btn-primary" [disabled]="savingQuickSlot()" (click)="saveQuickSlot()">
+        {{ savingQuickSlot() ? 'שומר...' : 'הוסף' }}
+      </button>
       <button class="btn btn-secondary" (click)="quickAddSlot=null">ביטול</button>
     </div>
     <p *ngIf="quickSlotError()" class="error-msg">{{ quickSlotError() }}</p>
@@ -380,11 +441,12 @@ function formatHebDate(dateStr: string): string {
       </select>
     </label>
     <div class="edit-time-fields">
-      <label>משעה:
-        <input type="time" [(ngModel)]="editSlotDraft.start_time">
-      </label>
-      <label>עד שעה:
-        <input type="time" [(ngModel)]="editSlotDraft.end_time">
+      <label>שעה:
+        <select [ngModel]="editSlotDraft.period_id" (ngModelChange)="pickPeriod(editSlotDraft, $event)">
+          <option value="">בחרי שעה</option>
+          <option *ngFor="let p of kodeshPeriodsForYear(editingSlot()!.class_year, editingSlot()!.day_of_week)"
+                  [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
+        </select>
       </label>
     </div>
     <label>שם השיעור / מקצוע:
@@ -453,6 +515,35 @@ function formatHebDate(dateStr: string): string {
 .class-schedule-table { min-width: 900px; }
 .class-schedule-table .class-heading { width: 90px; text-align: center; }
 .class-schedule-cell { min-width: 145px; vertical-align: top !important; padding: 8px !important; }
+.class-period {
+  display: grid; gap: 5px; margin-bottom: 7px; padding: 7px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface-2);
+}
+.class-period:last-child { margin-bottom: 0; }
+.period-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
+.period-heading strong { font-size: 0.72rem; color: var(--text); white-space: nowrap; }
+.period-status-label { color: var(--text-muted); font-size: 0.68rem; font-weight: 700; }
+.period-track { border-color: #d1d5db; background: #f1f3f5; color: #707780; }
+.period-track .period-status-label { color: #707780; }
+.period-instruction { border-color: #f2d293; background: #fff5df; color: #815b18; }
+.period-instruction .period-status-label { color: #815b18; }
+.period-kodesh { border-color: #a9d8bd; background: #edf8f1; }
+.period-kodesh .period-status-label { color: #277347; }
+.day-class-availability {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 36px;
+  padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
+}
+.day-class-availability + .day-class-availability { margin-top: 5px; }
+.day-class-availability.period-track { border-color: #d1d5db; background: #f1f3f5; color: #707780; }
+.day-class-availability.period-instruction { border-color: #f2d293; background: #fff5df; color: #815b18; }
+.day-class-availability.period-kodesh { border-color: #a9d8bd; background: #edf8f1; }
+.day-class-availability .day-lesson { flex: 1 1 100%; }
+.add-period-btn {
+  justify-self: start; width: auto; height: auto; margin: 0; padding: 4px 8px;
+  border: 1px dashed #6ba982; border-radius: 6px; background: rgba(255,255,255,0.65);
+  color: #277347; font: inherit; font-size: 0.7rem; font-weight: 700; cursor: pointer;
+  &:hover { background: white; }
+}
 .class-slot {
   position: relative; display: grid; gap: 3px; margin-bottom: 6px; padding: 8px 10px 8px 26px;
   border: 1px solid var(--border); border-inline-start: 3px solid var(--primary);
@@ -477,6 +568,13 @@ function formatHebDate(dateStr: string): string {
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
 }
 .day-lesson-subject { color: var(--text-muted); font-size: 0.82rem; }
+.availability-hint { color: var(--text-muted); font-size: 0.8rem; }
+.quick-class-picker {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.quick-class-picker legend { padding: 0 5px; font-size: 0.82rem; font-weight: 700; }
+.quick-class-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: 0.85rem; }
 .schedule-teacher { display: inline-flex; align-items: center; gap: 8px; }
 .schedule-teacher .teacher-color { width: 10px; height: 10px; }
 .teacher-profile-link { color: inherit; text-decoration: none; }
@@ -489,9 +587,9 @@ function formatHebDate(dateStr: string): string {
 }
 .edit-slot-modal { width: 420px; }
 .edit-slot-modal .locked-class { margin: -8px 0 0; color: var(--text-muted); font-size: 0.85rem; }
-.edit-time-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-time-fields { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .edit-time-fields label { display: grid; gap: 5px; font-size: 0.85rem; font-weight: 600; }
-.edit-time-fields input { min-width: 0; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
+.edit-time-fields select { min-width: 0; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
 .schedule-empty { padding: 28px !important; text-align: center !important; color: var(--text-muted); }
 @media (max-width: 640px) {
   .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
@@ -613,10 +711,17 @@ export class ScheduleComponent implements OnInit {
   // Quick add from grid
   quickAddSlot: any = null;
   quickSlotError = signal('');
+  savingQuickSlot = signal(false);
   editingSlot = signal<any | null>(null);
-  editSlotDraft = { teacher_id: 0, start_time: '', end_time: '', subject: '' };
+  editSlotDraft = { teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '' };
   savingEditSlot = signal(false);
   editSlotError = signal('');
+  kodeshAvailability = signal<{
+    kodesh: Record<string, Record<string, string>>;
+    instruction: Record<string, Record<string, { start: string; end: string }>>;
+  }>({ kodesh: {}, instruction: {} });
+  kodeshAvailabilityLoading = signal(true);
+  kodeshAvailabilityError = signal('');
 
   // Teacher colors
   private colors = ['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#ede9fe','#ffedd5','#e0f2fe','#f0fdf4'];
@@ -625,6 +730,16 @@ export class ScheduleComponent implements OnInit {
 
   ngOnInit() {
     this.loadTeachers();
+    this.api.getKodeshAvailability().subscribe({
+      next: availability => {
+        this.kodeshAvailability.set(availability);
+        this.kodeshAvailabilityLoading.set(false);
+      },
+      error: e => {
+        this.kodeshAvailabilityLoading.set(false);
+        this.kodeshAvailabilityError.set(e.error?.error || 'טעינת שעות הקודש נכשלה');
+      }
+    });
     this.loadSchedule();
   }
 
@@ -638,6 +753,103 @@ export class ScheduleComponent implements OnInit {
 
   periods = signal<any[]>([]);
   lessonPeriods = computed(() => this.periods().filter(p => !p.is_break));
+
+  kodeshPeriodsForClass(classKey: string, day: string | number) {
+    const classYear = String(classKey || '').split('_')[0]
+      .replace(/^שנה\s*/, '')
+      .replace(/[\u05f3\u05f4'"]/g, '');
+    return this.kodeshPeriodsForYear(classYear, day);
+  }
+
+  kodeshPeriodsForYear(classYear: string, day: string | number) {
+    if (day === '' || day == null || this.kodeshAvailabilityLoading()) return [];
+    const year = String(classYear || '').trim()
+      .replace(/^שנה\s*/, '')
+      .replace(/[\u05f3\u05f4'"]/g, '');
+    const cutoff = this.kodeshAvailability().kodesh[year]?.[String(Number(day))];
+    if (!cutoff) return [];
+    return this.lessonPeriods().filter(period =>
+      period.start_time < period.end_time && period.end_time <= cutoff
+    );
+  }
+
+  onNewSlotScheduleChanged() {
+    this.newSlot.period_id = '';
+    this.newSlot.start_time = '';
+    this.newSlot.end_time = '';
+  }
+
+  periodAvailability(classYear: string, day: number, period: any): 'kodesh' | 'instruction' | 'track' {
+    const year = String(classYear || '').trim().replace(/^שנה\s*/, '').replace(/[\u05f3\u05f4'"]/g, '');
+    const normalizedDay = String(Number(day));
+    const start = String(period?.start_time || '');
+    const end = String(period?.end_time || '');
+    if (!start || !end || end <= start) return 'track';
+
+    const kodeshCutoff = this.kodeshAvailability().kodesh[year]?.[normalizedDay];
+    if (kodeshCutoff && end <= kodeshCutoff) return 'kodesh';
+
+    const instruction = this.kodeshAvailability().instruction[year]?.[normalizedDay];
+    if (instruction && start >= instruction.start && end <= instruction.end) return 'instruction';
+
+    return 'track';
+  }
+
+  periodAvailabilityLabel(availability: 'kodesh' | 'instruction' | 'track') {
+    return availability === 'kodesh' ? 'קודש' : availability === 'instruction' ? 'הוראה' : 'מסלול';
+  }
+
+  scheduleSegments(classYear: string, day: number) {
+    const segments: { start_time: string; end_time: string; availability: 'kodesh' | 'instruction' | 'track'; period?: any }[] = [];
+    const periods = [...this.lessonPeriods()].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+    for (const period of periods) {
+      const availability = this.periodAvailability(classYear, day, period);
+      const previous = segments[segments.length - 1];
+      if (availability !== 'kodesh' && previous?.availability === availability &&
+          previous.end_time === period.start_time && !previous.period) {
+        previous.end_time = period.end_time;
+        continue;
+      }
+
+      segments.push({
+        start_time: period.start_time,
+        end_time: period.end_time,
+        availability,
+        ...(availability === 'kodesh' ? { period } : {})
+      });
+    }
+
+    return segments;
+  }
+
+  dayScheduleRows() {
+    const rows = new Map<string, {
+      start_time: string;
+      end_time: string;
+      classes: { row: any; availability: 'kodesh' | 'instruction' | 'track'; period?: any }[];
+    }>();
+
+    for (const row of this.gridRows()) {
+      for (const segment of this.scheduleSegments(row.classYear, this.selectedDay())) {
+        const key = `${segment.start_time}-${segment.end_time}`;
+        if (!rows.has(key)) {
+          rows.set(key, { start_time: segment.start_time, end_time: segment.end_time, classes: [] });
+        }
+        rows.get(key)!.classes.push({ row, availability: segment.availability, period: segment.period });
+      }
+    }
+
+    return Array.from(rows.values()).sort((a, b) =>
+      a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)
+    );
+  }
+
+  slotsForPeriod(slots: any[], period: any) {
+    return (slots || []).filter(slot =>
+      slot.start_time === period.start_time && slot.end_time === period.end_time
+    );
+  }
 
   pickPeriod(target: any, id: string) {
     const p = this.periods().find(x => String(x.id) === String(id));
@@ -683,6 +895,19 @@ export class ScheduleComponent implements OnInit {
   // Grid rows: collect unique classes
   gridRows() {
     const classMap = new Map<string, { className: string; classYear: string; classParallel: string; byDay: Record<number, any[]> }>();
+    for (const c of this.classOptions()) {
+      const [classYear, classParallel] = String(c.parallel).split('_');
+      if (!classYear || !classParallel) continue;
+      const key = `${classYear}${classParallel}`;
+      if (!classMap.has(key)) {
+        classMap.set(key, {
+          className: key,
+          classYear,
+          classParallel,
+          byDay: { 0: [], 1: [], 2: [], 3: [], 4: [] }
+        });
+      }
+    }
     for (const s of this.slots()) {
       const key = `${s.class_year}${s.class_parallel}`;
       if (!classMap.has(key)) {
@@ -698,27 +923,62 @@ export class ScheduleComponent implements OnInit {
       .sort((a, b) => a.className.localeCompare(b.className, 'he'));
   }
 
-  dayTimeGroups = computed(() => {
-    const groups = new Map<string, { start_time: string; end_time: string; slots: any[] }>();
-    for (const slot of this.slots().filter(item => Number(item.day_of_week) === this.selectedDay())) {
-      const key = `${slot.start_time}-${slot.end_time || ''}`;
-      if (!groups.has(key)) {
-        groups.set(key, { start_time: slot.start_time, end_time: slot.end_time || '', slots: [] });
-      }
-      groups.get(key)!.slots.push(slot);
-    }
-    return Array.from(groups.values()).sort((a, b) => a.start_time.localeCompare(b.start_time));
-  });
-
-  openAddSlot(day: number, year: string, parallel: string) {
-    this.quickAddSlot = { day, year, parallel, teacher_id: '', start_time: '', end_time: '', subject: '' };
+  openAddSlot(day: number, year: string, parallel: string, period?: any) {
+    this.quickAddSlot = {
+      day, classKeys: [`${year}_${parallel}`], teacher_id: '',
+      period_id: period ? String(period.id) : '',
+      start_time: period?.start_time || '',
+      end_time: period?.end_time || '',
+      subject: ''
+    };
     this.quickSlotError.set('');
+  }
+
+  quickClassKey(row: { classYear: string; classParallel: string }) {
+    return `${row.classYear}_${row.classParallel}`;
+  }
+
+  quickAvailableClasses() {
+    if (!this.quickAddSlot) return [];
+    return this.gridRows().filter(row =>
+      this.kodeshPeriodsForYear(row.classYear, this.quickAddSlot.day).length > 0
+    );
+  }
+
+  quickKodeshPeriods() {
+    const selectedRows = this.gridRows().filter(row =>
+      this.quickAddSlot?.classKeys.includes(this.quickClassKey(row))
+    );
+    if (!selectedRows.length) return [];
+    return this.lessonPeriods().filter(period =>
+      selectedRows.every(row => this.kodeshPeriodsForYear(row.classYear, this.quickAddSlot.day).some(available =>
+        available.start_time === period.start_time && available.end_time === period.end_time
+      ))
+    );
+  }
+
+  toggleQuickClass(row: { classYear: string; classParallel: string }, selected: boolean) {
+    const q = this.quickAddSlot;
+    if (!q) return;
+    const key = this.quickClassKey(row);
+    const classKeys = new Set<string>(q.classKeys);
+    if (selected) classKeys.add(key);
+    else classKeys.delete(key);
+    q.classKeys = Array.from(classKeys);
+    if (!this.quickKodeshPeriods().some(period => String(period.id) === q.period_id)) {
+      q.period_id = '';
+      q.start_time = '';
+      q.end_time = '';
+    }
   }
 
   startEditSlot(slot: any) {
     this.editingSlot.set(slot);
+    const matchingPeriod = this.kodeshPeriodsForYear(slot.class_year, slot.day_of_week)
+      .find(period => period.start_time === slot.start_time && period.end_time === slot.end_time);
     this.editSlotDraft = {
       teacher_id: Number(slot.teacher_id),
+      period_id: matchingPeriod ? String(matchingPeriod.id) : '',
       start_time: slot.start_time,
       end_time: slot.end_time || '',
       subject: slot.subject || ''
@@ -732,52 +992,105 @@ export class ScheduleComponent implements OnInit {
     this.editSlotError.set('');
   }
 
+  private submitScheduleWithConfirmation(
+    request: (allowConflicts: boolean) => Observable<unknown>,
+    onSuccess: () => void,
+    onError: (error: any) => void,
+    onCancel: () => void
+  ) {
+    const submit = (allowConflicts: boolean) => request(allowConflicts).subscribe({
+      next: () => onSuccess(),
+      error: error => {
+        if (!allowConflicts && error.status === 409 && error.error?.confirmationRequired) {
+          if (confirm(error.error.message)) submit(true);
+          else onCancel();
+          return;
+        }
+        onError(error);
+      }
+    });
+    submit(false);
+  }
+
   saveEditedSlot() {
     const slot = this.editingSlot();
     if (!slot) return;
     if (!this.editSlotDraft.teacher_id || !this.editSlotDraft.start_time) {
-      this.editSlotError.set('יש לבחור מורה ושעת התחלה');
+      this.editSlotError.set('יש לבחור מורה ושעה מתוך זמני הקודש של הכיתה');
       return;
     }
-    if (this.editSlotDraft.end_time && this.editSlotDraft.end_time <= this.editSlotDraft.start_time) {
-      this.editSlotError.set('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+    if (!this.kodeshPeriodsForYear(slot.class_year, slot.day_of_week).some(period =>
+      period.start_time === this.editSlotDraft.start_time && period.end_time === this.editSlotDraft.end_time
+    )) {
+      this.editSlotError.set('השעה שבחרת אינה זמינה לשיעור קודש בכיתה זו');
       return;
     }
 
     this.savingEditSlot.set(true);
     this.editSlotError.set('');
-    this.api.updateScheduleSlot(slot.id, {
+    const data = {
       teacher_id: this.editSlotDraft.teacher_id,
-      class_year: slot.class_year,
-      class_parallel: slot.class_parallel,
-      day_of_week: Number(slot.day_of_week),
       start_time: this.editSlotDraft.start_time,
       end_time: this.editSlotDraft.end_time || null,
       subject: this.editSlotDraft.subject.trim() || null
-    }).subscribe({
-      next: () => {
+    };
+    this.submitScheduleWithConfirmation(
+      allowConflicts => this.api.updateScheduleSlot(slot.id, {
+        ...data,
+        ...(allowConflicts ? { allow_conflicts: true } : {})
+      }),
+      () => {
         this.savingEditSlot.set(false);
         this.editingSlot.set(null);
         this.loadSchedule();
       },
-      error: e => {
+      e => {
         this.savingEditSlot.set(false);
         this.editSlotError.set(e.error?.error || 'שמירת השינויים נכשלה');
-      }
-    });
+      },
+      () => this.savingEditSlot.set(false)
+    );
   }
 
   saveQuickSlot() {
     const q = this.quickAddSlot;
-    if (!q.teacher_id || !q.start_time) { this.quickSlotError.set('בחרי מורה ושעה'); return; }
-    this.api.createScheduleSlot({
-      teacher_id: Number(q.teacher_id), class_year: q.year, class_parallel: q.parallel,
-      day_of_week: q.day, start_time: q.start_time, end_time: q.end_time || null,
-      subject: q.subject || null, week_start: this._weekStart()
-    }).subscribe({
-      next: () => { this.quickAddSlot = null; this.loadSchedule(); },
-      error: e => this.quickSlotError.set(e.error?.error || 'שגיאה')
-    });
+    const selectedRows = this.gridRows().filter(row => q?.classKeys.includes(this.quickClassKey(row)));
+    if (!q?.teacher_id || !selectedRows.length || !q.start_time) {
+      this.quickSlotError.set('בחרי מורה, כיתה אחת לפחות ושעה'); return;
+    }
+    if (!this.quickKodeshPeriods().some(period =>
+      period.start_time === q.start_time && period.end_time === q.end_time
+    )) {
+      this.quickSlotError.set('השעה שבחרת אינה זמינה לשיעור קודש בכיתה זו');
+      return;
+    }
+    const data = {
+      teacher_id: Number(q.teacher_id),
+      classes: selectedRows.map(row => ({ class_year: row.classYear, class_parallel: row.classParallel })),
+      day_of_week: q.day,
+      start_time: q.start_time,
+      end_time: q.end_time || null,
+      subject: q.subject || null,
+      week_start: this._weekStart()
+    };
+    this.savingQuickSlot.set(true);
+    this.quickSlotError.set('');
+    this.submitScheduleWithConfirmation(
+      allowConflicts => this.api.createScheduleSlot({
+        ...data,
+        ...(allowConflicts ? { allow_conflicts: true } : {})
+      }),
+      () => {
+        this.savingQuickSlot.set(false);
+        this.quickAddSlot = null;
+        this.loadSchedule();
+      },
+      e => {
+        this.savingQuickSlot.set(false);
+        this.quickSlotError.set(e.error?.error || 'שמירת השיעור נכשלה');
+      },
+      () => this.savingQuickSlot.set(false)
+    );
   }
 
   createSlot() {
@@ -786,16 +1099,28 @@ export class ScheduleComponent implements OnInit {
       this.slotError.set('יש למלא: מורה, כיתה, יום, שיעור'); return;
     }
     const [class_year, class_parallel] = String(s.class_key).split('_');
+    if (!this.kodeshPeriodsForYear(class_year, s.day_of_week).some(period =>
+      period.start_time === s.start_time && period.end_time === s.end_time
+    )) {
+      this.slotError.set('השעה שבחרת אינה זמינה לשיעור קודש בכיתה זו');
+      return;
+    }
     this.savingSlot.set(true); this.slotError.set(''); this.slotSuccess.set('');
-    this.api.createScheduleSlot({ ...s, class_year, class_parallel, teacher_id: Number(s.teacher_id), day_of_week: Number(s.day_of_week), week_start: this._weekStart() }).subscribe({
-      next: () => {
+    const data = { ...s, class_year, class_parallel, teacher_id: Number(s.teacher_id), day_of_week: Number(s.day_of_week), week_start: this._weekStart() };
+    this.submitScheduleWithConfirmation(
+      allowConflicts => this.api.createScheduleSlot({
+        ...data,
+        ...(allowConflicts ? { allow_conflicts: true } : {})
+      }),
+      () => {
         this.savingSlot.set(false);
         this.slotSuccess.set('שיעור נוסף בהצלחה');
         this.newSlot = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
         this.loadSchedule();
       },
-      error: e => { this.savingSlot.set(false); this.slotError.set(e.error?.error || 'שגיאה'); }
-    });
+      e => { this.savingSlot.set(false); this.slotError.set(e.error?.error || 'שגיאה'); },
+      () => this.savingSlot.set(false)
+    );
   }
 
   deleteSlot(id: number) {
@@ -814,7 +1139,13 @@ export class ScheduleComponent implements OnInit {
     const from = getWeekStart(new Date(this.copyFromWeek));
     this.copyLoading.set(true); this.copyError.set(''); this.copySuccess.set('');
     this.api.copyWeekSchedule(from, this._weekStart()).subscribe({
-      next: r => { this.copyLoading.set(false); this.copySuccess.set(`הועתקו ${r.copied} שיעורים`); this.showCopyWeek = false; this.loadSchedule(); },
+      next: r => {
+        this.copyLoading.set(false);
+        const skipped = r.skipped ? `; ${r.skipped} שיעורים לא הועתקו כי אינם בשעות הקודש של הכיתה` : '';
+        this.copySuccess.set(`הועתקו ${r.copied} שיעורים${skipped}`);
+        this.showCopyWeek = false;
+        this.loadSchedule();
+      },
       error: e => { this.copyLoading.set(false); this.copyError.set(e.error?.error || 'שגיאה'); }
     });
   }

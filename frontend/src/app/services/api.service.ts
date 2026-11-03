@@ -262,9 +262,15 @@ export class ApiService {
   deleteAllTeachers() { return this.http.delete<{ success: boolean; deleted: number }>(`${this.base}/teachers`); }
 
   // ── Schedule ──
+  getKodeshAvailability() {
+    return this.http.get<{
+      kodesh: Record<string, Record<string, string>>;
+      instruction: Record<string, Record<string, { start: string; end: string }>>;
+    }>(`${this.base}/schedule/kodesh-availability`);
+  }
   getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
-  createScheduleSlot(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule`, data); }
-  updateScheduleSlot(id: number, data: { teacher_id: number; class_year: string; class_parallel: string; day_of_week: number; start_time: string; end_time: string | null; subject: string | null }) {
+  createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number }>(`${this.base}/schedule`, data); }
+  updateScheduleSlot(id: number, data: { teacher_id: number; start_time: string; end_time: string | null; subject: string | null; allow_conflicts?: boolean }) {
     return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);
   }
   deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
@@ -272,7 +278,9 @@ export class ApiService {
   createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
   updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
   deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
-  copyWeekSchedule(from: string, to: string) { return this.http.post<{copied:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to }); }
+  copyWeekSchedule(from: string, to: string) {
+    return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to });
+  }
   deleteWeekSchedule(week: string) { return this.http.delete<{deleted:number}>(`${this.base}/schedule/week/${week}`); }
 
   // ── Attendance Sheets ──
