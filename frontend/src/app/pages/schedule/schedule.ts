@@ -131,6 +131,7 @@ function formatHebDate(dateStr: string): string {
                   <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
                     {{ slot.subject || slot.teacher_subject }}
                   </span>
+                  <button class="btn btn-secondary schedule-edit" (click)="startEditSlot(slot)">עריכה</button>
                   <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
                 </div>
               </td>
@@ -168,6 +169,7 @@ function formatHebDate(dateStr: string): string {
                     {{ slot.teacher_name }}
                   </a>
                   <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
+                  <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
                   <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
                 </div>
                 <button class="add-slot-btn" (click)="openAddSlot(day, row.classYear, row.classParallel)"
@@ -366,6 +368,37 @@ function formatHebDate(dateStr: string): string {
     <p *ngIf="quickSlotError()" class="error-msg">{{ quickSlotError() }}</p>
   </div>
 </div>
+
+<div *ngIf="editingSlot()" class="modal-overlay" (click)="cancelEditSlot()">
+  <div class="modal-card edit-slot-modal" role="dialog" aria-modal="true" aria-labelledby="edit-slot-title"
+       (click)="$event.stopPropagation()">
+    <h3 id="edit-slot-title">עריכת שיעור</h3>
+    <p class="locked-class">כיתה {{ editingSlot()!.class_year }}{{ editingSlot()!.class_parallel }} — לא ניתן לשינוי</p>
+    <label>מורה:
+      <select [(ngModel)]="editSlotDraft.teacher_id">
+      <option *ngFor="let t of kodeshTeachers()" [ngValue]="t.id">{{ t.name }}</option>
+      </select>
+    </label>
+    <div class="edit-time-fields">
+      <label>משעה:
+        <input type="time" [(ngModel)]="editSlotDraft.start_time">
+      </label>
+      <label>עד שעה:
+        <input type="time" [(ngModel)]="editSlotDraft.end_time">
+      </label>
+    </div>
+    <label>שם השיעור / מקצוע:
+      <input [(ngModel)]="editSlotDraft.subject" placeholder="שם השיעור">
+    </label>
+    <p *ngIf="editSlotError()" class="error-msg" role="alert">{{ editSlotError() }}</p>
+    <div class="form-actions">
+      <button class="btn btn-primary" [disabled]="savingEditSlot()" (click)="saveEditedSlot()">
+        {{ savingEditSlot() ? 'שומרת...' : 'שמירה' }}
+      </button>
+      <button class="btn btn-secondary" [disabled]="savingEditSlot()" (click)="cancelEditSlot()">ביטול</button>
+    </div>
+  </div>
+</div>
 `,
   styles: [`
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -449,6 +482,16 @@ function formatHebDate(dateStr: string): string {
 .teacher-profile-link { color: inherit; text-decoration: none; }
 .teacher-profile-link:hover { color: var(--primary); text-decoration: underline; }
 .schedule-delete { padding: 5px 10px; font-size: 0.78rem; }
+.schedule-edit { padding: 5px 10px; font-size: 0.78rem; }
+.slot-edit-btn {
+  justify-self: start; padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--primary); font: inherit; font-size: 0.7rem; cursor: pointer;
+}
+.edit-slot-modal { width: 420px; }
+.edit-slot-modal .locked-class { margin: -8px 0 0; color: var(--text-muted); font-size: 0.85rem; }
+.edit-time-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-time-fields label { display: grid; gap: 5px; font-size: 0.85rem; font-weight: 600; }
+.edit-time-fields input { min-width: 0; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
 .schedule-empty { padding: 28px !important; text-align: center !important; color: var(--text-muted); }
 @media (max-width: 640px) {
   .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
@@ -570,6 +613,10 @@ export class ScheduleComponent implements OnInit {
   // Quick add from grid
   quickAddSlot: any = null;
   quickSlotError = signal('');
+  editingSlot = signal<any | null>(null);
+  editSlotDraft = { teacher_id: 0, start_time: '', end_time: '', subject: '' };
+  savingEditSlot = signal(false);
+  editSlotError = signal('');
 
   // Teacher colors
   private colors = ['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#ede9fe','#ffedd5','#e0f2fe','#f0fdf4'];
@@ -666,6 +713,58 @@ export class ScheduleComponent implements OnInit {
   openAddSlot(day: number, year: string, parallel: string) {
     this.quickAddSlot = { day, year, parallel, teacher_id: '', start_time: '', end_time: '', subject: '' };
     this.quickSlotError.set('');
+  }
+
+  startEditSlot(slot: any) {
+    this.editingSlot.set(slot);
+    this.editSlotDraft = {
+      teacher_id: Number(slot.teacher_id),
+      start_time: slot.start_time,
+      end_time: slot.end_time || '',
+      subject: slot.subject || ''
+    };
+    this.editSlotError.set('');
+  }
+
+  cancelEditSlot() {
+    if (this.savingEditSlot()) return;
+    this.editingSlot.set(null);
+    this.editSlotError.set('');
+  }
+
+  saveEditedSlot() {
+    const slot = this.editingSlot();
+    if (!slot) return;
+    if (!this.editSlotDraft.teacher_id || !this.editSlotDraft.start_time) {
+      this.editSlotError.set('יש לבחור מורה ושעת התחלה');
+      return;
+    }
+    if (this.editSlotDraft.end_time && this.editSlotDraft.end_time <= this.editSlotDraft.start_time) {
+      this.editSlotError.set('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+      return;
+    }
+
+    this.savingEditSlot.set(true);
+    this.editSlotError.set('');
+    this.api.updateScheduleSlot(slot.id, {
+      teacher_id: this.editSlotDraft.teacher_id,
+      class_year: slot.class_year,
+      class_parallel: slot.class_parallel,
+      day_of_week: Number(slot.day_of_week),
+      start_time: this.editSlotDraft.start_time,
+      end_time: this.editSlotDraft.end_time || null,
+      subject: this.editSlotDraft.subject.trim() || null
+    }).subscribe({
+      next: () => {
+        this.savingEditSlot.set(false);
+        this.editingSlot.set(null);
+        this.loadSchedule();
+      },
+      error: e => {
+        this.savingEditSlot.set(false);
+        this.editSlotError.set(e.error?.error || 'שמירת השינויים נכשלה');
+      }
+    });
   }
 
   saveQuickSlot() {

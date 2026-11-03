@@ -264,7 +264,9 @@ export class ApiService {
   // ── Schedule ──
   getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
   createScheduleSlot(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule`, data); }
-  updateScheduleSlot(id: number, data: any) { return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data); }
+  updateScheduleSlot(id: number, data: { teacher_id: number; class_year: string; class_parallel: string; day_of_week: number; start_time: string; end_time: string | null; subject: string | null }) {
+    return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);
+  }
   deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
   getLessonPeriods() { return this.http.get<any[]>(`${this.base}/schedule/periods`); }
   createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }

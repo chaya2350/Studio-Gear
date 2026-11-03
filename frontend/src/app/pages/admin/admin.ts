@@ -682,10 +682,10 @@ this.loadPeriods();
 sections(): { id: AdminSection; icon: string; label: string }[] {
 const role = this.auth.user()?.role;
 const all: { id: AdminSection; icon: string; label: string; roles: UserRole[] }[] = [
-{ id: 'tracks', icon: '', label: 'מסלולים', roles: ['admin', 'laborant'] },
+{ id: 'tracks', icon: '', label: 'מסלולים', roles: ['admin', 'laborant', 'secretary'] },
 { id: 'students', icon: '', label: 'תלמידות', roles: ['admin', 'laborant', 'secretary'] },
 { id: 'approvals', icon: '', label: 'סוגי אישורים', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'teachers', icon: '', label: 'מורות ומערכת', roles: ['admin', 'secretary'] },
+{ id: 'teachers', icon: '', label: 'מורות ומערכת', roles: ['admin', 'laborant', 'secretary'] },
 { id: 'users', icon: '', label: 'משתמשות והרשאות', roles: ['admin'] },
 ];
 return all.filter(s => role && s.roles.includes(role));
