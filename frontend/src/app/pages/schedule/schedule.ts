@@ -26,6 +26,41 @@ function formatHebDate(dateStr: string): string {
   return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
 }
 
+function toHebrewNumeral(value: number): string {
+  if (value === 15) return 'ט״ו';
+  if (value === 16) return 'ט״ז';
+  let remainder = value;
+  let result = '';
+  const numerals: [number, string][] = [
+    [400, 'ת'], [300, 'ש'], [200, 'ר'], [100, 'ק'], [90, 'צ'], [80, 'פ'],
+    [70, 'ע'], [60, 'ס'], [50, 'נ'], [40, 'מ'], [30, 'ל'], [20, 'כ'],
+    [10, 'י'], [9, 'ט'], [8, 'ח'], [7, 'ז'], [6, 'ו'], [5, 'ה'],
+    [4, 'ד'], [3, 'ג'], [2, 'ב'], [1, 'א']
+  ];
+  for (const [amount, letter] of numerals) {
+    while (remainder >= amount) {
+      result += letter;
+      remainder -= amount;
+    }
+  }
+  if (result.length === 1) return `${result}׳`;
+  return `${result.slice(0, -1)}״${result.slice(-1)}`;
+}
+
+function formatHebrewDayHeading(dateStr: string): string {
+  const date = new Date(`${dateStr}T12:00:00`);
+  const parts = new Intl.DateTimeFormat('he-IL-u-ca-hebrew', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || '';
+  const weekday = part('weekday').replace(/^יום\s*/, '');
+  const month = part('month');
+  return `${weekday} - ${toHebrewNumeral(Number(part('day')))} ${month} ${toHebrewNumeral(Number(part('year')) % 1000)}`;
+}
+
 @Component({
   selector: 'app-schedule',
   imports: [CommonModule, FormsModule, RouterLink],
@@ -121,101 +156,35 @@ function formatHebDate(dateStr: string): string {
         </button>
       </div>
 
+      <h2 class="day-table-title">{{ formatHebrewDayHeading(addDays(weekStart(), selectedDay())) }}</h2>
       <div class="table-wrap schedule-table-wrap">
         <table class="schedule-table day-schedule-table">
           <thead>
-            <tr><th>שעה</th><th>כיתות</th></tr>
+            <tr>
+              <th class="day-time-heading">שעה</th>
+              <th *ngFor="let row of gridRows()">{{ row.className }}</th>
+            </tr>
           </thead>
           <tbody>
             <tr *ngFor="let boardRow of dayScheduleRows()">
-              <td class="schedule-time">{{ boardRow.start_time }} – {{ boardRow.end_time }}</td>
-              <td class="day-lessons-cell">
-                <div class="day-classes-grid">
-                  <div *ngFor="let entry of boardRow.classes" class="day-class-availability"
-                       [ngClass]="'period-' + entry.availability"
-                       [attr.aria-disabled]="entry.availability !== 'kodesh'">
-                    <span class="class-badge">{{ entry.row.className }}</span>
-                    <ng-container *ngIf="entry.availability === 'kodesh' &&
-                                        slotsForPeriod(entry.row.byDay[selectedDay()], entry.period) as periodSlots">
-                      <ng-container *ngIf="periodSlots.length; else emptyDayPeriod">
-                        <div *ngFor="let slot of periodSlots" class="day-lesson">
-                          <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                            <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
-                            <span class="day-teacher-name">המורה {{ slot.teacher_name }}</span>
-                          </a>
-                          <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
-                            {{ slot.subject || slot.teacher_subject }}
-                          </span>
-                          <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
-                                  title="עריכת שיעור" aria-label="עריכת שיעור">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
-                          </button>
-                          <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
-                                  title="מחיקת שיעור" aria-label="מחיקת שיעור">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
-                          </button>
-                        </div>
-                      </ng-container>
-                      <ng-template #emptyDayPeriod>
-                        <button class="add-period-btn"
-                                (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
-                                aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
-                      </ng-template>
-                    </ng-container>
-                    <span *ngIf="entry.availability !== 'kodesh'" class="period-status-label">
-                      {{ periodAvailabilityLabel(entry.availability) }}
-                    </span>
-                  </div>
-                </div>
+              <td class="schedule-time day-time-cell">
+                <strong>{{ boardRow.start_time }}</strong>
+                <small>{{ boardRow.end_time }}</small>
               </td>
-            </tr>
-            <tr *ngIf="!dayScheduleRows().length">
-              <td colspan="2" class="schedule-empty">אין שיעורים ביום זה</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </ng-container>
-
-    <ng-template #classSchedule>
-      <div class="table-wrap schedule-table-wrap">
-        <table class="schedule-table class-schedule-table">
-          <thead>
-            <tr>
-              <th class="class-heading">כיתה</th>
-              <th *ngFor="let d of DAYS; let i = index">
-                <span>יום {{ d }}</span>
-                <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let row of gridRows()">
-              <th scope="row" class="class-heading">
-                <span class="class-badge">{{ row.className }}</span>
-              </th>
-              <td *ngFor="let day of [0,1,2,3,4]" class="class-schedule-cell">
-                <div *ngFor="let segment of scheduleSegments(row.classYear, day)" class="class-period"
-                     [ngClass]="'period-' + segment.availability"
-                     [attr.aria-disabled]="segment.availability !== 'kodesh'">
-                  <div class="period-heading">
-                    <strong>{{ segment.start_time }} – {{ segment.end_time }}</strong>
-                    <span class="period-status-label">
-                      {{ periodAvailabilityLabel(segment.availability) }}
-                    </span>
-                  </div>
-                  <div *ngFor="let slot of segment.availability === 'kodesh' ? slotsForPeriod(row.byDay[day], segment.period) : []"
-                       class="class-slot" [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
-                    <div class="class-slot-teacher">
-                      <span class="class-slot-teacher-dot" [style.background]="teacherColor(slot.teacher_id)"></span>
-                      <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                        {{ slot.teacher_name }}
-                      </a>
-                    </div>
-                    <small *ngIf="slot.subject || slot.teacher_subject" class="class-slot-subject">
+              <td *ngFor="let entry of boardRow.classes" class="day-class-cell"
+                  [ngClass]="'period-' + entry.availability"
+                  [attr.aria-disabled]="entry.availability !== 'kodesh'">
+                <ng-container *ngIf="entry.availability === 'kodesh'; else unavailablePeriod">
+                  <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)"
+                       class="day-lesson">
+                    <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
+                       [style.--teacher-color]="teacherColor(slot.teacher_id)">
+                      {{ slot.teacher_name }}
+                    </a>
+                    <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
                       {{ slot.subject || slot.teacher_subject }}
-                    </small>
-                    <div class="class-slot-actions">
+                    </span>
+                    <div class="day-lesson-actions">
                       <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
                               title="עריכת שיעור" aria-label="עריכת שיעור">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
@@ -226,17 +195,98 @@ function formatHebDate(dateStr: string): string {
                       </button>
                     </div>
                   </div>
-                  <button *ngIf="segment.availability === 'kodesh' &&
-                                  !slotsForPeriod(row.byDay[day], segment.period).length"
-                          class="add-period-btn"
-                          (click)="openAddSlot(day, row.classYear, row.classParallel, segment.period)"
-                          aria-label="הוספת שיעור קודש">+ הוספת שיעור</button>
-                </div>
+                  <button *ngIf="!slotsForPeriod(entry.row.byDay[selectedDay()], entry.period).length"
+                          class="day-add-lesson"
+                          (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
+                          aria-label="הוספת שיעור קודש">+</button>
+                </ng-container>
+                <ng-template #unavailablePeriod>
+                  <span class="day-period-label">{{ periodAvailabilityLabel(entry.availability) }}</span>
+                </ng-template>
               </td>
+            </tr>
+            <tr *ngIf="!dayScheduleRows().length">
+              <td [attr.colspan]="gridRows().length + 1" class="schedule-empty">אין שעות להצגה ביום זה</td>
             </tr>
           </tbody>
         </table>
       </div>
+    </ng-container>
+
+    <ng-template #classSchedule>
+      <label class="class-picker">
+        <span>בחירת כיתה</span>
+        <select [ngModel]="selectedClassKey() || gridRows()[0]?.className || ''"
+                (ngModelChange)="selectedClassKey.set($event)">
+          <option *ngFor="let row of gridRows()" [value]="row.className">{{ row.className }}</option>
+        </select>
+      </label>
+
+      <ng-container *ngIf="selectedClassRow() as selectedClass; else noScheduleClasses">
+        <h2 class="day-table-title">מערכת שעות — כיתה {{ selectedClass.className }}</h2>
+        <div class="table-wrap schedule-table-wrap">
+          <table class="schedule-table day-schedule-table class-day-table">
+            <thead>
+              <tr>
+                <th class="day-time-heading">שעה</th>
+                <th *ngFor="let d of DAYS; let i = index">
+                  <span>יום {{ d }}</span>
+                  <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let scheduleRow of selectedClassScheduleRows()">
+                <td class="schedule-time day-time-cell">
+                  <strong>{{ scheduleRow.start_time }}</strong>
+                  <small>{{ scheduleRow.end_time }}</small>
+                </td>
+                <td *ngFor="let cell of scheduleRow.days" class="day-class-cell"
+                    [ngClass]="'period-' + (cell?.availability || 'empty')"
+                    [attr.aria-disabled]="cell?.availability !== 'kodesh'">
+                  <ng-container *ngIf="cell as periodCell">
+                    <ng-container *ngIf="periodCell.availability === 'kodesh'; else unavailableClassPeriod">
+                      <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)"
+                           class="day-lesson">
+                        <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
+                           [style.--teacher-color]="teacherColor(slot.teacher_id)">
+                          {{ slot.teacher_name }}
+                        </a>
+                        <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
+                          {{ slot.subject || slot.teacher_subject }}
+                        </span>
+                        <div class="day-lesson-actions">
+                          <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
+                                  title="עריכת שיעור" aria-label="עריכת שיעור">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+                          </button>
+                          <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
+                                  title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                      <button *ngIf="!slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period).length"
+                              class="day-add-lesson"
+                              (click)="openAddSlot(periodCell.day, selectedClass.classYear, selectedClass.classParallel, periodCell.period)"
+                              aria-label="הוספת שיעור קודש">+</button>
+                    </ng-container>
+                    <ng-template #unavailableClassPeriod>
+                      <span class="day-period-label">{{ periodAvailabilityLabel(periodCell.availability) }}</span>
+                    </ng-template>
+                  </ng-container>
+                </td>
+              </tr>
+              <tr *ngIf="!selectedClassScheduleRows().length">
+                <td colspan="6" class="schedule-empty">אין שעות להצגה לכיתה זו</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
+      <ng-template #noScheduleClasses>
+        <div class="schedule-empty">לא נמצאו כיתות להצגה</div>
+      </ng-template>
     </ng-template>
   </div>
 </div>
@@ -704,6 +754,7 @@ export class ScheduleComponent implements OnInit {
   activeTab = signal<'grid' | 'teachers' | 'manage'>('grid');
   scheduleView = signal<'days' | 'classes'>('classes');
   selectedDay = signal(0);
+  selectedClassKey = signal('');
 
   // Week navigation
   private _weekStart = signal(getWeekStart(new Date()));
@@ -929,6 +980,7 @@ export class ScheduleComponent implements OnInit {
   prevWeekStr() { return addDays(this._weekStart(), -7); }
 
   formatHebDate(d: string) { return formatHebDate(d); }
+  formatHebrewDayHeading(d: string) { return formatHebrewDayHeading(d); }
   addDays(d: string, n: number) { return addDays(d, n); }
 
   teacherColor(id: number) { return this.colors[(id - 1) % this.colors.length]; }
@@ -963,6 +1015,44 @@ export class ScheduleComponent implements OnInit {
         return row;
       })
       .sort((a, b) => a.className.localeCompare(b.className, 'he'));
+  }
+
+  selectedClassRow() {
+    const rows = this.gridRows();
+    return rows.find(row => row.className === this.selectedClassKey()) || rows[0] || null;
+  }
+
+  selectedClassScheduleRows() {
+    const selectedClass = this.selectedClassRow();
+    if (!selectedClass) return [];
+
+    const rows = new Map<string, {
+      start_time: string;
+      end_time: string;
+      days: ({ day: number; availability: 'kodesh' | 'instruction' | 'track'; period?: any } | null)[];
+    }>();
+
+    for (let day = 0; day < this.DAYS.length; day++) {
+      for (const period of this.lessonPeriods()) {
+        const key = `${period.start_time}-${period.end_time}`;
+        if (!rows.has(key)) {
+          rows.set(key, {
+            start_time: period.start_time,
+            end_time: period.end_time,
+            days: Array(this.DAYS.length).fill(null)
+          });
+        }
+        rows.get(key)!.days[day] = {
+          day,
+          availability: this.periodAvailability(selectedClass.classYear, day, period),
+          period
+        };
+      }
+    }
+
+    return Array.from(rows.values()).sort((a, b) =>
+      a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)
+    );
   }
 
   openAddSlot(day: number, year: string, parallel: string, period?: any) {

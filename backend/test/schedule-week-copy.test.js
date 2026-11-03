@@ -84,3 +84,27 @@ test('reports when there is no previous-week schedule to copy', () => {
   assert.deepEqual(result, { copied: 0, skipped: 0, reason: 'source_empty' });
   db.close();
 });
+
+test('skips copied lessons that overlap another lesson for the same class', () => {
+  const db = createDatabase();
+  const insert = db.prepare(`
+    INSERT INTO schedule_slots
+      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01');
+  insert.run(2, 'ה', '1', 1, '08:30', '09:10', 'תנ״ך', '2026-11-01');
+
+  const result = copyScheduleWeekIfEmpty(db, {
+    fromWeek: '2026-11-01',
+    toWeek: '2026-11-08',
+    validateSlot: () => true
+  });
+
+  assert.deepEqual(result, { copied: 1, skipped: 1, reason: 'copied' });
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM schedule_slots WHERE week_start = ?').get('2026-11-08').count,
+    1
+  );
+  db.close();
+});

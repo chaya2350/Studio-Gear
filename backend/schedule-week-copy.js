@@ -1,3 +1,5 @@
+const { findClassTimeConflict } = require('./schedule-conflicts');
+
 function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot }) {
   return db.transaction(() => {
     const destination = db.prepare(
@@ -18,7 +20,14 @@ function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot }) {
     let copied = 0;
     let skipped = 0;
     for (const slot of sourceSlots) {
-      if (!validateSlot(slot)) {
+      if (!validateSlot(slot) || findClassTimeConflict(db, {
+        class_year: slot.class_year,
+        class_parallel: slot.class_parallel,
+        day_of_week: slot.day_of_week,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        week_start: toWeek
+      })) {
         skipped++;
         continue;
       }
