@@ -1,5 +1,5 @@
 import { Component, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -15,6 +15,9 @@ template: `
 <h1>חיפוש תלמידות לפי שם / ת.ז.</h1>
 <p class="subtitle">הקלד שם או ת.ז. לחיפוש תלמידה</p>
 </div>
+
+
+<!-- Add student modal removed — add from admin panel only -->
 
 <div class="search-card">
 <div class="search-input-wrap" [class.focused]="focused" style="position:relative;">
@@ -111,7 +114,36 @@ width: 100%; background: var(--surface); border: 1.5px solid var(--border);
 border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
 display: flex; flex-direction: column; gap: 14px;
 }
-.search-input-wrap {
+.search-top-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.search-top-title { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); }
+.add-student-btn {
+  padding: 7px 14px; border: 1.5px solid var(--primary); border-radius: var(--radius-sm);
+  background: var(--primary-light); color: var(--primary); font: inherit; font-size: 0.82rem;
+  font-weight: 700; cursor: pointer; transition: all 0.18s; white-space: nowrap;
+  &:hover { background: var(--primary); color: white; }
+}
+/* Modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,.42);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-card {
+  background: var(--surface); border-radius: var(--radius); padding: 24px;
+  width: min(440px, 100%); box-shadow: 0 16px 40px rgba(0,0,0,.25);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal-title { font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+.form-group { display: flex; flex-direction: column; gap: 4px;
+  label { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); }
+  input { height: 38px; padding: 0 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    font: inherit; font-size: 0.9rem; background: var(--surface); color: var(--text);
+    &:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); } }
+}
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal-actions { display: flex; gap: 8px; }
+.add-error { color: var(--danger); font-size: 0.82rem; margin: 0; }.search-input-wrap {
 display: flex; align-items: center; gap: 10px;
 background: var(--surface-2); border: 1.5px solid var(--border);
 border-radius: var(--radius-sm); padding: 0 14px; height: 52px;
@@ -216,7 +248,7 @@ suggestions = signal<Student[]>([]);
 selected = signal<Student | null>(null);
 today = new Date().toISOString().split('T')[0];
 
-constructor(private api: ApiService, private router: Router) {}
+constructor(private api: ApiService) {}
 
 onInput() {
 this.selected.set(null);

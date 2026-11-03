@@ -78,7 +78,21 @@ import { filter, takeUntil } from 'rxjs/operators';
               {{ p.title }} <span>{{ p.topic_name }}</span>
             </a>
           </div>
-          <p *ngIf="!searchResults.students.length && !searchResults.teachers?.length && !searchResults.equipment.length && !searchResults.examCodes.length && !searchResults.pages?.length" class="search-empty">לא נמצאו תוצאות</p>
+          <div *ngIf="searchResults.calendarEvents?.length" class="search-group">
+            <div class="search-group-title">ארועי לוח שנה</div>
+            <a *ngFor="let ev of searchResults.calendarEvents" [routerLink]="['/calendar/events', ev.id]" (click)="clearSearch()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {{ ev.title }} <span>{{ ev.event_date }} · {{ ev.category }}</span>
+            </a>
+          </div>
+          <div *ngIf="searchResults.exams?.length" class="search-group">
+            <div class="search-group-title">מבחנים</div>
+            <a *ngFor="let ex of searchResults.exams" [routerLink]="['/exams', ex.id, 'edit']" (click)="clearSearch()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+              {{ ex.name }} <span>{{ ex.exam_date }}{{ ex.track ? ' · ' + ex.track : '' }}</span>
+            </a>
+          </div>
+          <p *ngIf="!searchResults.students.length && !searchResults.teachers?.length && !searchResults.equipment.length && !searchResults.examCodes.length && !searchResults.pages?.length && !searchResults.calendarEvents?.length && !searchResults.exams?.length" class="search-empty">לא נמצאו תוצאות</p>
         </div>
       </div>
 
@@ -233,35 +247,14 @@ import { filter, takeUntil } from 'rxjs/operators';
           <!-- ── לוחות שנה ── -->
           <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">לוח שנה</div>
           <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/calendar/personal" [class.active]="currentPath === '/calendar/personal'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה אישי' : ''" (click)="clearSearch()">
+          <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
               <line x1="8" y1="2" x2="8" y2="6"/>
               <line x1="3" y1="10" x2="21" y2="10"/>
             </svg>
-            <span>לוח שנה אישי</span>
-          </a>
-          <a routerLink="/calendar/equipment" [class.active]="currentPath === '/calendar/equipment'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה ציוד' : ''" (click)="clearSearch()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <circle cx="12" cy="16" r="2"/>
-            </svg>
-            <span>לוח שנה ציוד</span>
-          </a>
-          <a routerLink="/calendar/schedule" [class.active]="currentPath === '/calendar/schedule'" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה שיעורים' : ''" (click)="clearSearch()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <line x1="8" y1="15" x2="16" y2="15"/>
-              <line x1="8" y1="19" x2="13" y2="19"/>
-            </svg>
-            <span>לוח שנה שיעורים</span>
+            <span>לוח שנה</span>
           </a>
           <a routerLink="/attendance/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקת נוכחות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -896,7 +889,7 @@ export class App implements OnInit {
   grantedCount = 0;
   private destroy$ = new Subject<void>();
   searchQuery = '';
-  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[] } | null = null;
+  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] } | null = null;
   private searchTimer: any;
 
   toggleSidebar() {
@@ -932,6 +925,8 @@ export class App implements OnInit {
           examCodes: r?.examCodes ?? [],
           teachers: r?.teachers ?? [],
           pages: r?.pages ?? [],
+          calendarEvents: r?.calendarEvents ?? [],
+          exams: r?.exams ?? [],
         };
       });
     }, 250);
@@ -1026,7 +1021,7 @@ export class App implements OnInit {
   }
 
   isEquipmentSection(): boolean {
-    return ['/equipment', '/scan', '/loans', '/calendar', '/checkout'].some(
+    return ['/equipment', '/scan', '/loans', '/checkout'].some(
       (p) =>
         this.currentPath === p ||
         this.currentPath.startsWith(p + '/') ||

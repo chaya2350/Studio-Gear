@@ -70,6 +70,13 @@ export const routes: Routes = [
             loadComponent: () => import('./pages/monthly-calendar/monthly-calendar').then((m) => m.MonthlyCalendarComponent),
             data: { view: 'schedule' },
           },
+          {
+            path: 'events/:id',
+            loadComponent: () =>
+              import('./pages/calendar-event-detail/calendar-event-detail').then(
+                (m) => m.CalendarEventDetailComponent,
+              ),
+          },
         ],
       },
       { path: 'my-calendar', redirectTo: 'calendar/personal' },

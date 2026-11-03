@@ -9,6 +9,7 @@ export interface CalendarEvent {
   hebrew_year: number;
   category: string;
   source_sheet: string;
+  notes: string;
 }
 
 export interface CalendarImportResult {
@@ -109,9 +110,14 @@ export class ApiService {
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
   createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
     return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
   }
+  updateCalendarEvent(id: number, data: { title?: string; event_date?: string; category?: string; notes: string }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/calendar-events/${id}`, data);
+  }
+  deleteCalendarEvent(id: number) { return this.http.delete(`${this.base}/calendar-events/${id}`); }
   importCalendarWorkbook(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -137,6 +143,9 @@ export class ApiService {
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
+    return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
+  }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
   getStudentRequirementsSummary() { return this.http.get<Record<string, { total: number; completed: number; missing: number }>>(`${this.base}/students/requirements-summary`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
@@ -239,13 +248,14 @@ export class ApiService {
     return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
   }
   getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
-  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
+  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 
   // ── Teachers ──
   getTeacher(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}`); }
   getTeacherProfile(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}/profile`); }
   getMyTeacherProfile() { return this.http.get<any>(`${this.base}/teachers/profile`); }
   getTeachers(q?: string) { return this.http.get<any[]>(`${this.base}/teachers${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  exportTeachersExcel() { return this.http.get(`${this.base}/teachers/export`, { responseType: 'blob' }); }
   createTeacher(data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string }) { return this.http.post<any>(`${this.base}/teachers`, data); }
   updateTeacher(id: number, data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string; active?: number }) { return this.http.put<{success:boolean}>(`${this.base}/teachers/${id}`, data); }
   deleteTeacher(id: number) { return this.http.delete(`${this.base}/teachers/${id}`); }

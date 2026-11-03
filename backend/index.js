@@ -97,7 +97,10 @@ function isAllowedOrigin(req) {
     `http://${host}`,
     `https://${host}`,
     'http://localhost:4200',
-    'http://127.0.0.1:4200'
+    'http://localhost:4201',
+    'http://localhost:4202',
+    'http://127.0.0.1:4200',
+    'http://127.0.0.1:4201'
   ].filter(Boolean));
   return allowedOrigins.has(origin);
 }
@@ -121,7 +124,7 @@ function authorizeApi(req, res, next) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
   if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel|photo))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
+    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel|photo))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import|\/)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?)\/?$/.test(req.path);
     if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
   }
   if (req.path.startsWith('/users') && req.user.role !== 'admin') {
@@ -265,6 +268,10 @@ db.exec(`
 const requestCols = db.prepare('PRAGMA table_info(page_access_requests)').all().map((c) => c.name);
 if (!requestCols.includes('seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN seen_at TEXT');
 if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_requests ADD COLUMN granted_seen_at TEXT');
+
+// Migration: calendar_events — הוספת עמודת notes
+const calEventCols = db.prepare('PRAGMA table_info(calendar_events)').all().map(c => c.name);
+if (!calEventCols.includes('notes')) db.exec("ALTER TABLE calendar_events ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
 
 // Migration: personal_tasks — הוספת עמודת visibility וביטול חובת source_message_id
 const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
@@ -486,29 +493,86 @@ const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏
 
 app.get('/api/calendar-events', (req, res) => {
   res.json(db.prepare(`
-    SELECT id, title, event_date, hebrew_year, category, source_sheet
+    SELECT id, title, event_date, hebrew_year, category, source_sheet, notes
     FROM calendar_events
     ORDER BY event_date, category, title
   `).all());
 });
 
+// קבלת ארוע בודד לפי ID
+app.get('/api/calendar-events/:id', (req, res) => {
+  const event = db.prepare(
+    'SELECT id, title, event_date, hebrew_year, category, source_sheet, notes FROM calendar_events WHERE id = ?'
+  ).get(Number(req.params.id));
+  if (!event) return res.status(404).json({ error: 'הארוע לא נמצא' });
+  res.json(event);
+});
+
+// עדכון ארוע
+app.put('/api/calendar-events/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const event = db.prepare('SELECT id, source_sheet FROM calendar_events WHERE id = ?').get(id);
+    if (!event) return res.status(404).json({ error: 'הארוע לא נמצא' });
+
+    const notes = String(req.body?.notes ?? '');
+    // כותרת, תאריך וקטגוריה ניתנים לעדכון רק לארועים ידניים
+    if (event.source_sheet === 'ידני') {
+      const title = String(req.body?.title || '').trim();
+      const event_date = req.body?.event_date;
+      const category = String(req.body?.category || 'כללי').trim();
+      if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
+        return res.status(400).json({ error: 'תאריך לא תקין' });
+      let hebrewYear = 0;
+      try {
+        const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+        hebrewYear = hd.getFullYear();
+      } catch (_) {}
+      db.prepare(`UPDATE calendar_events SET title=?, event_date=?, category=?, hebrew_year=?, notes=? WHERE id=?`)
+        .run(title, event_date, category, hebrewYear, notes, id);
+    } else {
+      // ארועים שיובאו — רק הערות ניתנות לעדכון
+      db.prepare('UPDATE calendar_events SET notes=? WHERE id=?').run(notes, id);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('calendar-events PUT error:', err);
+    res.status(500).json({ error: 'שגיאה בעדכון האירוע: ' + (err.message || err) });
+  }
+});
+
 // יצירת אירוע ידני מלוח השנה
 app.post('/api/calendar-events', (req, res) => {
-  const title = String(req.body?.title || '').trim();
-  const event_date = req.body?.event_date;
-  const category = String(req.body?.category || 'כללי').trim();
-  const source_sheet = String(req.body?.source_sheet || 'ידני').trim();
-  if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
-    return res.status(400).json({ error: 'תאריך לא תקין' });
-  const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
-  const hebrewYear = hd.getFullYear();
-  const result = db.prepare(`
-    INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
-  `).run(title, event_date, hebrewYear, category, source_sheet);
-  res.status(201).json({ id: result.lastInsertRowid });
+  try {
+    const title = String(req.body?.title || '').trim();
+    const event_date = req.body?.event_date;
+    const category = String(req.body?.category || 'כללי').trim();
+    const source_sheet = 'ידני';
+    if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
+      return res.status(400).json({ error: 'תאריך לא תקין' });
+
+    let hebrewYear = 0;
+    try {
+      const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
+      hebrewYear = hd.getFullYear();
+    } catch (_) { /* fallback — hebrew year not critical */ }
+
+    const existing = db.prepare(`
+      SELECT id FROM calendar_events WHERE event_date = ? AND title = ? AND category = ? AND source_sheet = 'ידני'
+    `).get(event_date, title, category);
+    if (existing) return res.status(409).json({ error: 'אירוע עם אותה כותרת כבר קיים בתאריך זה' });
+
+    const result = db.prepare(`
+      INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(title, event_date, hebrewYear, category, source_sheet);
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (err) {
+    console.error('calendar-events POST error:', err);
+    res.status(500).json({ error: 'שגיאה בשמירת האירוע: ' + (err.message || err) });
+  }
 });
 
 // מחיקת אירוע ידני
@@ -1135,10 +1199,10 @@ app.get('/api/students', (req, res) => {
   res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
 });
 
-// חיפוש גלובלי: תלמידות, ציוד וקודי מבחן בקריאה אחת
+// חיפוש גלובלי: תלמידות, ציוד, קודי מבחן, מורות, דפים, ארועים ומבחנים
 app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [] });
+  if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] });
   const like = `%${q}%`;
   const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
   const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
@@ -1160,7 +1224,21 @@ app.get('/api/search', (req, res) => {
       ))
     LIMIT 5
   `).all(like, like, req.user.id, req.user.id);
-  res.json({ students, equipment, examCodes, teachers, pages });
+  // חיפוש ארועי לוח שנה
+  const calendarEvents = db.prepare(`
+    SELECT id, title, event_date, category, source_sheet
+    FROM calendar_events
+    WHERE title LIKE ? OR category LIKE ? OR notes LIKE ?
+    ORDER BY event_date DESC LIMIT 5
+  `).all(like, like, like);
+  // חיפוש מבחנים לפי שם
+  const exams = db.prepare(`
+    SELECT id, name, exam_date, track
+    FROM exams
+    WHERE name LIKE ? OR track LIKE ?
+    ORDER BY exam_date DESC LIMIT 5
+  `).all(like, like);
+  res.json({ students, equipment, examCodes, teachers, pages, calendarEvents, exams });
 });
 
 // סיכום דרישות לכל התלמידות בקריאה אחת — לטבלת Excel
@@ -1188,8 +1266,30 @@ app.get('/api/students/requirements-summary', (req, res) => {
 });
 
 // רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
-app.get('/api/students/classes', (req, res) => {
-  const rows = db.prepare(`
+// יצירת תלמידה חדשה ידנית
+app.post('/api/students', (req, res) => {
+  const id_number = String(req.body?.id_number || '').trim();
+  const name      = String(req.body?.name      || '').trim();
+  const phone     = String(req.body?.phone     || '').trim() || null;
+  const track     = String(req.body?.track     || '').trim() || null;
+  const year      = String(req.body?.year      || '').trim() || null;
+  const parallel  = String(req.body?.parallel  || '').trim() || null;
+  const address   = String(req.body?.address   || '').trim() || null;
+  const birth_date= String(req.body?.birth_date|| '').trim() || null;
+  if (!id_number) return res.status(400).json({ error: 'מספר תעודת זהות הוא שדה חובה' });
+  if (!name)      return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
+  if (!/^\d{7,9}$/.test(id_number)) return res.status(400).json({ error: 'מספר תעודת זהות צריך להכיל 7–9 ספרות' });
+  const existing = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(id_number);
+  if (existing) return res.status(409).json({ error: 'תלמידה עם מספר תעודת זהות זה כבר קיימת במערכת' });
+  const className = buildClassName(year, parallel);
+  db.prepare(`
+    INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, extra_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
+  `).run(id_number, name, phone, track, year, parallel, className, address, birth_date);
+  res.status(201).json({ id_number, name });
+});
+
+app.get('/api/students/classes', (req, res) => {  const rows = db.prepare(`
     SELECT class_name, parallel, COUNT(*) as count
     FROM students
     WHERE class_name IS NOT NULL AND class_name != ''
@@ -2690,6 +2790,27 @@ app.get('/api/teachers', (req, res) => {
   const params = q ? [`%${q}%`, `%${q}%`] : [];
   const teachers = db.prepare(sql).all(...params);
   res.json(teachers);
+});
+
+// ייצוא רשימת מורות לאקסל — חייב להיות לפני /:id
+app.get('/api/teachers/export', (req, res) => {
+  const XLSX = require('xlsx');
+  const teachers = db.prepare('SELECT name, subject, phone, email, active FROM teachers ORDER BY name').all();
+  const rows = teachers.map(t => ({
+    'שם': t.name,
+    'מקצוע': t.subject || '',
+    'טלפון': t.phone || '',
+    'אימייל': t.email || '',
+    'פעיל': t.active ? 'כן' : 'לא',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 26 }, { wch: 8 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'מורות');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="teachers.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
 });
 
 app.get('/api/teachers/:id', (req, res) => {
