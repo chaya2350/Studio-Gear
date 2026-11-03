@@ -116,23 +116,27 @@ function formatHebDate(dateStr: string): string {
       <div class="table-wrap schedule-table-wrap">
         <table class="schedule-table day-schedule-table">
           <thead>
-            <tr><th>שעה</th><th>כיתה</th><th>מורה</th><th>מקצוע</th><th>פעולות</th></tr>
+            <tr><th>שעה</th><th>שיעורים לפי כיתות</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let slot of daySlots()">
-              <td class="schedule-time">{{ slot.start_time }}{{ slot.end_time ? ' – ' + slot.end_time : '' }}</td>
-              <td><span class="class-badge">{{ slot.class_year }}{{ slot.class_parallel }}</span></td>
-              <td>
-                <span class="schedule-teacher">
-                  <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
-                  {{ slot.teacher_name }}
-                </span>
+            <tr *ngFor="let group of dayTimeGroups()">
+              <td class="schedule-time">{{ group.start_time }}{{ group.end_time ? ' – ' + group.end_time : '' }}</td>
+              <td class="day-lessons-cell">
+                <div *ngFor="let slot of group.slots" class="day-lesson">
+                  <span class="class-badge">{{ slot.class_year }}{{ slot.class_parallel }}</span>
+                  <a class="schedule-teacher teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                    <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
+                    המורה {{ slot.teacher_name }}
+                  </a>
+                  <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
+                    {{ slot.subject || slot.teacher_subject }}
+                  </span>
+                  <button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button>
+                </div>
               </td>
-              <td>{{ slot.subject || slot.teacher_subject || '—' }}</td>
-              <td><button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button></td>
             </tr>
-            <tr *ngIf="!daySlots().length">
-              <td colspan="5" class="schedule-empty">אין שיעורים ביום זה</td>
+            <tr *ngIf="!dayTimeGroups().length">
+              <td colspan="2" class="schedule-empty">אין שיעורים ביום זה</td>
             </tr>
           </tbody>
         </table>
@@ -160,7 +164,9 @@ function formatHebDate(dateStr: string): string {
                 <div *ngFor="let slot of row.byDay[day]" class="class-slot"
                      [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
                   <strong>{{ slot.start_time }}{{ slot.end_time ? ' – ' + slot.end_time : '' }}</strong>
-                  <span>{{ slot.teacher_name }}</span>
+                  <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                    {{ slot.teacher_name }}
+                  </a>
                   <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
                   <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
                 </div>
@@ -432,13 +438,22 @@ function formatHebDate(dateStr: string): string {
   &:hover { background: var(--primary-light); }
 }
 .schedule-time { white-space: nowrap; font-weight: 700; color: var(--primary); }
+.day-lessons-cell { display: grid; gap: 7px; }
+.day-lesson {
+  display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+}
+.day-lesson-subject { color: var(--text-muted); font-size: 0.82rem; }
 .schedule-teacher { display: inline-flex; align-items: center; gap: 8px; }
 .schedule-teacher .teacher-color { width: 10px; height: 10px; }
+.teacher-profile-link { color: inherit; text-decoration: none; }
+.teacher-profile-link:hover { color: var(--primary); text-decoration: underline; }
 .schedule-delete { padding: 5px 10px; font-size: 0.78rem; }
 .schedule-empty { padding: 28px !important; text-align: center !important; color: var(--text-muted); }
 @media (max-width: 640px) {
   .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
   .view-toggle button { flex: 1; }
+  .day-lesson { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
 }
 
 /* Teachers */
@@ -636,9 +651,17 @@ export class ScheduleComponent implements OnInit {
       .sort((a, b) => a.className.localeCompare(b.className, 'he'));
   }
 
-  daySlots = computed(() => this.slots()
-    .filter(slot => Number(slot.day_of_week) === this.selectedDay())
-    .sort((a, b) => a.start_time.localeCompare(b.start_time)));
+  dayTimeGroups = computed(() => {
+    const groups = new Map<string, { start_time: string; end_time: string; slots: any[] }>();
+    for (const slot of this.slots().filter(item => Number(item.day_of_week) === this.selectedDay())) {
+      const key = `${slot.start_time}-${slot.end_time || ''}`;
+      if (!groups.has(key)) {
+        groups.set(key, { start_time: slot.start_time, end_time: slot.end_time || '', slots: [] });
+      }
+      groups.get(key)!.slots.push(slot);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  });
 
   openAddSlot(day: number, year: string, parallel: string) {
     this.quickAddSlot = { day, year, parallel, teacher_id: '', start_time: '', end_time: '', subject: '' };
