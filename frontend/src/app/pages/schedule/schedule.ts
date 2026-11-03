@@ -85,29 +85,93 @@ function formatHebDate(dateStr: string): string {
     <p *ngIf="copyError()" class="error-msg">{{ copyError() }}</p>
   </div>
 
-  <div *ngIf="!loading() && slots().length" class="schedule-grid">
-    <div class="grid-header">
-      <div class="cell corner"></div>
-      <div class="cell day-header" *ngFor="let d of DAYS; let i = index">
-        <span class="day-name">יום {{ d }}</span>
-        <span class="day-date">{{ formatHebDate(addDays(weekStart(), i)) }}</span>
+  <div *ngIf="!loading() && slots().length" class="schedule-display">
+    <div class="schedule-view-toolbar card">
+      <div class="schedule-view-copy">
+        <strong>תצוגת המערכת</strong>
+        <span>בחרי איך נוח לך לראות את השיעורים</span>
+      </div>
+      <div class="view-toggle" role="group" aria-label="סוג תצוגת מערכת השעות">
+        <button type="button" [class.active]="scheduleView() === 'days'"
+                [attr.aria-pressed]="scheduleView() === 'days'" (click)="scheduleView.set('days')">
+          לפי ימים
+        </button>
+        <button type="button" [class.active]="scheduleView() === 'classes'"
+                [attr.aria-pressed]="scheduleView() === 'classes'" (click)="scheduleView.set('classes')">
+          לפי כיתות
+        </button>
       </div>
     </div>
-    <div class="grid-body">
-      <div *ngFor="let row of gridRows()" class="grid-row">
-        <div class="cell class-label">{{ row.className }}</div>
-        <div class="cell day-cell" *ngFor="let day of [0,1,2,3,4]">
-          <div *ngFor="let slot of row.byDay[day]" class="slot-chip"
-               [style.background]="teacherColor(slot.teacher_id)">
-            <span class="slot-teacher">{{ slot.teacher_name }}</span>
-            <span class="slot-time">{{ slot.start_time }}</span>
-            <span *ngIf="slot.subject" class="slot-subject">{{ slot.subject }}</span>
-            <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקה">✕</button>
-          </div>
-          <button class="add-slot-btn" (click)="openAddSlot(day, row.classYear, row.classParallel)" title="הוסף שיעור">+</button>
-        </div>
+
+    <ng-container *ngIf="scheduleView() === 'days'; else classSchedule">
+      <div class="day-selector" role="group" aria-label="בחירת יום">
+        <button *ngFor="let d of DAYS; let i = index" type="button"
+                [class.active]="selectedDay() === i" [attr.aria-pressed]="selectedDay() === i"
+                (click)="selectedDay.set(i)">
+          <span>יום {{ d }}</span>
+          <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
+        </button>
       </div>
-    </div>
+
+      <div class="table-wrap schedule-table-wrap">
+        <table class="schedule-table day-schedule-table">
+          <thead>
+            <tr><th>שעה</th><th>כיתה</th><th>מורה</th><th>מקצוע</th><th>פעולות</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let slot of daySlots()">
+              <td class="schedule-time">{{ slot.start_time }}{{ slot.end_time ? ' – ' + slot.end_time : '' }}</td>
+              <td><span class="class-badge">{{ slot.class_year }}{{ slot.class_parallel }}</span></td>
+              <td>
+                <span class="schedule-teacher">
+                  <span class="teacher-color" [style.background]="teacherColor(slot.teacher_id)"></span>
+                  {{ slot.teacher_name }}
+                </span>
+              </td>
+              <td>{{ slot.subject || slot.teacher_subject || '—' }}</td>
+              <td><button class="btn btn-danger schedule-delete" (click)="deleteSlot(slot.id)">מחקי</button></td>
+            </tr>
+            <tr *ngIf="!daySlots().length">
+              <td colspan="5" class="schedule-empty">אין שיעורים ביום זה</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-container>
+
+    <ng-template #classSchedule>
+      <div class="table-wrap schedule-table-wrap">
+        <table class="schedule-table class-schedule-table">
+          <thead>
+            <tr>
+              <th class="class-heading">כיתה</th>
+              <th *ngFor="let d of DAYS; let i = index">
+                <span>יום {{ d }}</span>
+                <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of gridRows()">
+              <th scope="row" class="class-heading">
+                <span class="class-badge">{{ row.className }}</span>
+              </th>
+              <td *ngFor="let day of [0,1,2,3,4]" class="class-schedule-cell">
+                <div *ngFor="let slot of row.byDay[day]" class="class-slot"
+                     [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
+                  <strong>{{ slot.start_time }}{{ slot.end_time ? ' – ' + slot.end_time : '' }}</strong>
+                  <span>{{ slot.teacher_name }}</span>
+                  <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
+                  <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
+                </div>
+                <button class="add-slot-btn" (click)="openAddSlot(day, row.classYear, row.classParallel)"
+                        title="הוספת שיעור" aria-label="הוספת שיעור">+</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-template>
   </div>
 </div>
 
@@ -319,34 +383,63 @@ function formatHebDate(dateStr: string): string {
       box-shadow: var(--shadow-xs); } }
 }
 
-/* Grid */
-.schedule-grid { overflow-x: auto; }
-.grid-header { display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 4px; margin-bottom: 4px; }
-.grid-body { display: flex; flex-direction: column; gap: 4px; }
-.grid-row { display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 4px; }
-.cell { padding: 6px; }
-.day-header { text-align: center; background: var(--surface-2); border-radius: var(--radius-sm);
-  border: 1px solid var(--border); }
-.day-name { display: block; font-weight: 700; font-size: 0.85rem; }
-.day-date { display: block; font-size: 0.75rem; color: var(--text-muted); }
-.class-label { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center;
-  justify-content: center; background: var(--surface-2); border-radius: var(--radius-sm);
-  border: 1px solid var(--border); }
-.day-cell { background: var(--bg); border: 1px dashed var(--border); border-radius: var(--radius-sm);
-  min-height: 60px; padding: 4px; display: flex; flex-direction: column; gap: 4px; position: relative; }
-.slot-chip { background: #e0edff; border-radius: 6px; padding: 5px 8px; font-size: 0.78rem;
-  display: flex; flex-direction: column; gap: 2px; position: relative;
-  border: 1px solid rgba(0,0,0,0.08); }
-.slot-teacher { font-weight: 700; font-size: 0.78rem; }
-.slot-time { color: rgba(0,0,0,0.5); font-size: 0.72rem; }
-.slot-subject { color: rgba(0,0,0,0.6); font-size: 0.72rem; }
-.slot-del { position: absolute; top: 2px; left: 2px; background: rgba(255,0,0,0.15);
-  border: none; border-radius: 50%; width: 16px; height: 16px; font-size: 0.6rem;
-  cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
-.add-slot-btn { align-self: flex-end; margin-top: auto; background: none; border: 1px dashed var(--primary);
-  color: var(--primary); border-radius: 50%; width: 22px; height: 22px; cursor: pointer;
-  font-size: 1rem; display: flex; align-items: center; justify-content: center; padding: 0;
-  opacity: 0.5; &:hover { opacity: 1; } }
+.schedule-display { display: grid; gap: 14px; }
+.schedule-view-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 18px; margin: 0;
+}
+.schedule-view-copy { display: grid; gap: 3px; }
+.schedule-view-copy strong { font-size: 0.95rem; }
+.schedule-view-copy span { color: var(--text-muted); font-size: 0.8rem; }
+.view-toggle {
+  display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2);
+  button {
+    padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    &.active { color: var(--primary); background: var(--surface); box-shadow: var(--shadow-xs); }
+  }
+}
+.day-selector { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0; }
+.day-selector button {
+  display: grid; gap: 3px; min-width: 104px; padding: 9px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit;
+  text-align: center; cursor: pointer; transition: all var(--transition);
+  small { color: var(--text-muted); font-size: 0.72rem; }
+  &.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); font-weight: 700; }
+}
+.schedule-table-wrap { box-shadow: var(--shadow-sm); background: var(--surface); }
+.schedule-table { min-width: 100%; }
+.schedule-table th small { display: block; margin-top: 3px; font-size: 0.72rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.class-schedule-table { min-width: 900px; }
+.class-schedule-table .class-heading { width: 90px; text-align: center; }
+.class-schedule-cell { min-width: 145px; vertical-align: top !important; padding: 8px !important; }
+.class-slot {
+  position: relative; display: grid; gap: 3px; margin-bottom: 6px; padding: 8px 10px 8px 26px;
+  border: 1px solid var(--border); border-inline-start: 3px solid var(--primary);
+  border-radius: 8px; background: var(--surface-2); font-size: 0.78rem;
+  strong { font-size: 0.76rem; color: var(--primary); }
+  small { color: var(--text-muted); }
+}
+.slot-del {
+  position: absolute; top: 5px; inset-inline-start: 5px; width: 18px; height: 18px; padding: 0;
+  display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
+  background: rgba(255,0,0,0.12); color: var(--danger); font-size: 0.62rem; cursor: pointer;
+}
+.add-slot-btn {
+  width: 26px; height: 26px; border: 1px dashed var(--primary); border-radius: 50%;
+  background: transparent; color: var(--primary); font-size: 1rem; cursor: pointer;
+  &:hover { background: var(--primary-light); }
+}
+.schedule-time { white-space: nowrap; font-weight: 700; color: var(--primary); }
+.schedule-teacher { display: inline-flex; align-items: center; gap: 8px; }
+.schedule-teacher .teacher-color { width: 10px; height: 10px; }
+.schedule-delete { padding: 5px 10px; font-size: 0.78rem; }
+.schedule-empty { padding: 28px !important; text-align: center !important; color: var(--text-muted); }
+@media (max-width: 640px) {
+  .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
+  .view-toggle button { flex: 1; }
+}
 
 /* Teachers */
 .teachers-list { display: flex; flex-direction: column; gap: 8px; }
@@ -426,6 +519,8 @@ export class ScheduleComponent implements OnInit {
   teachers = signal<any[]>([]);
   slots = signal<any[]>([]);
   activeTab = signal<'grid' | 'teachers' | 'manage'>('grid');
+  scheduleView = signal<'days' | 'classes'>('classes');
+  selectedDay = signal(0);
 
   // Week navigation
   private _weekStart = signal(getWeekStart(new Date()));
@@ -532,8 +627,17 @@ export class ScheduleComponent implements OnInit {
       }
       classMap.get(key)!.byDay[s.day_of_week].push(s);
     }
-    return Array.from(classMap.values()).sort((a, b) => a.className.localeCompare(b.className, 'he'));
+    return Array.from(classMap.values())
+      .map(row => {
+        Object.values(row.byDay).forEach(daySlots => daySlots.sort((a, b) => a.start_time.localeCompare(b.start_time)));
+        return row;
+      })
+      .sort((a, b) => a.className.localeCompare(b.className, 'he'));
   }
+
+  daySlots = computed(() => this.slots()
+    .filter(slot => Number(slot.day_of_week) === this.selectedDay())
+    .sort((a, b) => a.start_time.localeCompare(b.start_time)));
 
   openAddSlot(day: number, year: string, parallel: string) {
     this.quickAddSlot = { day, year, parallel, teacher_id: '', start_time: '', end_time: '', subject: '' };

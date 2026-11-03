@@ -2819,6 +2819,28 @@ db.exec(`
   );
 `);
 
+// Seed default lesson periods if the table is empty
+{
+  const count = db.prepare('SELECT COUNT(*) AS c FROM lesson_periods').get();
+  if (count.c === 0) {
+    const insertPeriod = db.prepare('INSERT INTO lesson_periods (name, start_time, end_time, is_break) VALUES (?, ?, ?, ?)');
+    const seedPeriods = db.transaction(() => {
+      insertPeriod.run('שיעור ראשון',     '08:30', '09:50', 0);
+      insertPeriod.run('שיעור שני',       '09:45', '10:35', 0);
+      insertPeriod.run('הפסקת אוכל',      '10:35', '10:55', 1);
+      insertPeriod.run('שיעור שלישי',     '10:55', '11:40', 0);
+      insertPeriod.run('שיעור רביעי',     '11:40', '12:20', 0);
+      insertPeriod.run('הפסקה',           '12:20', '12:30', 1);
+      insertPeriod.run('שיעור חמישי',     '12:30', '13:15', 0);
+      insertPeriod.run('הפסקת מנחה',      '13:15', '13:30', 1);
+      insertPeriod.run('שיעור שישי',      '13:30', '14:10', 0);
+      insertPeriod.run('שיעור שביעי',     '14:10', '14:50', 0);
+      insertPeriod.run('שיעור שמיני',     '14:50', '15:30', 0);
+    });
+    seedPeriods();
+  }
+}
+
 function readPeriodBody(body = {}) {
   const name = String(body.name || '').trim();
   const start = String(body.start_time || '').trim();
