@@ -3956,19 +3956,21 @@ const port = process.env.PORT || 3000;
 const keyFile = path.join(certDirForCheck, 'key.pem');
 const certFile = path.join(certDirForCheck, 'cert.pem');
 if (useHttps) {
-  require('https')
-    .createServer({ key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) }, app)
-    .listen(port, () => console.log(`Backend running securely (HTTPS) on port ${port}`));
-  // Plain-HTTP port that only redirects to HTTPS, so no data is ever served unencrypted
-  const redirectPort = process.env.HTTP_REDIRECT_PORT || 3080;
-  require('http')
-    .createServer((req, res) => {
-      const host = (req.headers.host || 'localhost').replace(/:\d+$/, '');
-      res.writeHead(301, { Location: `https://${host}:${port}${req.url}` });
-      res.end();
-    })
-    .on('error', (e) => console.log(`HTTP redirect disabled: ${e.message}`))
-    .listen(redirectPort);
+  const httpsServer = require('https')
+    .createServer({ key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) }, app);
+  // A plain-HTTP request on the HTTPS port is answered with a redirect to the same address over HTTPS
+  httpsServer.on('tlsClientError', (err, tlsSocket) => {
+    if (err.code !== 'ERR_SSL_HTTP_REQUEST') return;
+    const socket = tlsSocket._parent || tlsSocket;
+    if (socket.destroyed || !socket.writable) return;
+    const address = String(socket.localAddress || 'localhost').replace(/^::ffff:/, '');
+    const host = address.includes(':') ? `[${address}]` : address;
+    socket.end(
+      `HTTP/1.1 301 Moved Permanently\r\nLocation: https://${host}:${port}/\r\n` +
+      'Content-Length: 0\r\nConnection: close\r\n\r\n'
+    );
+  });
+  httpsServer.listen(port, () => console.log(`Backend running securely (HTTPS) on port ${port}; HTTP requests are redirected to HTTPS`));
 } else {
   app.listen(port, () => console.log(`Backend running on port ${port} (HTTP, not encrypted)`));
 }
