@@ -196,14 +196,21 @@ function formatHebDate(dateStr: string): string {
                       {{ periodAvailabilityLabel(segment.availability) }}
                     </span>
                   </div>
-                  <div *ngFor="let slot of segment.availability === 'kodesh' ? slotsForPeriod(row.byDay[day], segment.period) : []" class="class-slot"
-                       [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
-                    <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
-                      {{ slot.teacher_name }}
-                    </a>
-                    <small *ngIf="slot.subject || slot.teacher_subject">{{ slot.subject || slot.teacher_subject }}</small>
-                    <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
-                    <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">✕</button>
+                  <div *ngFor="let slot of segment.availability === 'kodesh' ? slotsForPeriod(row.byDay[day], segment.period) : []"
+                       class="class-slot" [style.border-inline-start-color]="teacherColor(slot.teacher_id)">
+                    <div class="class-slot-teacher">
+                      <span class="class-slot-teacher-dot" [style.background]="teacherColor(slot.teacher_id)"></span>
+                      <a class="teacher-profile-link" [routerLink]="['/teachers', slot.teacher_id]">
+                        {{ slot.teacher_name }}
+                      </a>
+                    </div>
+                    <small *ngIf="slot.subject || slot.teacher_subject" class="class-slot-subject">
+                      {{ slot.subject || slot.teacher_subject }}
+                    </small>
+                    <div class="class-slot-actions">
+                      <button class="slot-edit-btn" (click)="startEditSlot(slot)">עריכה</button>
+                      <button class="slot-del" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">מחיקה</button>
+                    </div>
                   </div>
                   <button *ngIf="segment.availability === 'kodesh' &&
                                   !slotsForPeriod(row.byDay[day], segment.period).length"
@@ -516,19 +523,26 @@ function formatHebDate(dateStr: string): string {
 .class-schedule-table .class-heading { width: 90px; text-align: center; }
 .class-schedule-cell { min-width: 145px; vertical-align: top !important; padding: 8px !important; }
 .class-period {
-  display: grid; gap: 5px; margin-bottom: 7px; padding: 7px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--surface-2);
+  display: grid; align-content: start; gap: 8px; margin-bottom: 8px; padding: 9px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+  transition: box-shadow 0.16s ease, transform 0.16s ease;
 }
 .class-period:last-child { margin-bottom: 0; }
-.period-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
-.period-heading strong { font-size: 0.72rem; color: var(--text); white-space: nowrap; }
+.period-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.period-heading strong { font-size: 0.76rem; color: var(--text); white-space: nowrap; }
 .period-status-label { color: var(--text-muted); font-size: 0.68rem; font-weight: 700; }
-.period-track { border-color: #d1d5db; background: #f1f3f5; color: #707780; }
+.class-period .period-status-label {
+  padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,0.72);
+}
 .period-track .period-status-label { color: #707780; }
-.period-instruction { border-color: #f2d293; background: #fff5df; color: #815b18; }
 .period-instruction .period-status-label { color: #815b18; }
-.period-kodesh { border-color: #a9d8bd; background: #edf8f1; }
 .period-kodesh .period-status-label { color: #277347; }
+.class-period.period-track { min-height: 64px; align-content: center; padding: 12px; border-color: #d8dee8; background: linear-gradient(140deg, #f7f8fc, #edf1f7); color: #667085; }
+.class-period.period-track .period-status-label { background: #e4e9f1; }
+.class-period.period-instruction { min-height: 64px; align-content: center; padding: 12px; border-color: #f1d89e; background: linear-gradient(140deg, #fffaf0, #fff1d2); color: #815b18; }
+.class-period.period-instruction .period-status-label { background: #ffebbd; }
+.class-period.period-kodesh { border-color: #b8dfc7; background: linear-gradient(140deg, #f2fbf5, #e8f6ed); }
+.class-period.period-kodesh .period-status-label { background: #dff1e5; }
 .day-class-availability {
   display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 36px;
   padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
@@ -545,16 +559,22 @@ function formatHebDate(dateStr: string): string {
   &:hover { background: white; }
 }
 .class-slot {
-  position: relative; display: grid; gap: 3px; margin-bottom: 6px; padding: 8px 10px 8px 26px;
-  border: 1px solid var(--border); border-inline-start: 3px solid var(--primary);
-  border-radius: 8px; background: var(--surface-2); font-size: 0.78rem;
-  strong { font-size: 0.76rem; color: var(--primary); }
-  small { color: var(--text-muted); }
+  display: grid; gap: 8px; min-width: 0; margin-bottom: 2px; padding: 10px;
+  border: 1px solid #dce8e1; border-inline-start: 4px solid var(--primary);
+  border-radius: 11px; background: linear-gradient(145deg, #fff, #f8fbf9);
+  box-shadow: 0 2px 7px rgba(34, 75, 52, 0.08); font-size: 0.8rem;
+  transition: box-shadow 0.16s ease, transform 0.16s ease;
+  &:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(34, 75, 52, 0.12); }
 }
+.class-slot-teacher { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.class-slot-teacher-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(0,0,0,0.04); }
+.class-slot-teacher .teacher-profile-link { overflow: hidden; color: #263b32; font-weight: 700; text-overflow: ellipsis; }
+.class-slot-subject { width: fit-content; max-width: 100%; padding: 4px 8px; border-radius: 7px; background: #eef4f0; color: #5b6d63; font-size: 0.72rem; }
+.class-slot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .slot-del {
-  position: absolute; top: 5px; inset-inline-start: 5px; width: 18px; height: 18px; padding: 0;
-  display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%;
-  background: rgba(255,0,0,0.12); color: var(--danger); font-size: 0.62rem; cursor: pointer;
+  padding: 4px 9px; border: 1px solid #f1d6d6; border-radius: 7px;
+  background: #fff7f7; color: #a34646; font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer;
+  &:hover { border-color: #e7bcbc; background: #fff0f0; }
 }
 .add-slot-btn {
   width: 26px; height: 26px; border: 1px dashed var(--primary); border-radius: 50%;
@@ -582,8 +602,9 @@ function formatHebDate(dateStr: string): string {
 .schedule-delete { padding: 5px 10px; font-size: 0.78rem; }
 .schedule-edit { padding: 5px 10px; font-size: 0.78rem; }
 .slot-edit-btn {
-  justify-self: start; padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface); color: var(--primary); font: inherit; font-size: 0.7rem; cursor: pointer;
+  padding: 4px 9px; border: 1px solid #cfe4d6; border-radius: 7px;
+  background: #f1f8f3; color: #277347; font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer;
+  &:hover { border-color: #a9d2b6; background: #e7f4eb; }
 }
 .edit-slot-modal { width: 420px; }
 .edit-slot-modal .locked-class { margin: -8px 0 0; color: var(--text-muted); font-size: 0.85rem; }
@@ -806,8 +827,7 @@ export class ScheduleComponent implements OnInit {
     for (const period of periods) {
       const availability = this.periodAvailability(classYear, day, period);
       const previous = segments[segments.length - 1];
-      if (availability !== 'kodesh' && previous?.availability === availability &&
-          previous.end_time === period.start_time && !previous.period) {
+      if (availability !== 'kodesh' && previous?.availability === availability && !previous.period) {
         previous.end_time = period.end_time;
         continue;
       }
@@ -831,12 +851,13 @@ export class ScheduleComponent implements OnInit {
     }>();
 
     for (const row of this.gridRows()) {
-      for (const segment of this.scheduleSegments(row.classYear, this.selectedDay())) {
-        const key = `${segment.start_time}-${segment.end_time}`;
+      for (const period of this.lessonPeriods()) {
+        const availability = this.periodAvailability(row.classYear, this.selectedDay(), period);
+        const key = `${period.start_time}-${period.end_time}`;
         if (!rows.has(key)) {
-          rows.set(key, { start_time: segment.start_time, end_time: segment.end_time, classes: [] });
+          rows.set(key, { start_time: period.start_time, end_time: period.end_time, classes: [] });
         }
-        rows.get(key)!.classes.push({ row, availability: segment.availability, period: segment.period });
+        rows.get(key)!.classes.push({ row, availability, period });
       }
     }
 
@@ -858,8 +879,11 @@ export class ScheduleComponent implements OnInit {
     target.end_time = p?.end_time || '';
   }
 
-  // Teachers with specialization = 'קודש' (for שיעור לכיתה)
-  kodeshTeachers = computed(() => this.teachers().filter(t => t.specialization === 'קודש'));
+  // Teachers and coordinators who may teach Kodesh lessons
+  kodeshTeachers = computed(() => {
+    const kodeshSpecializations = new Set(['קודש', 'רכזת קודש', 'רכזת חינוכית']);
+    return this.teachers().filter(t => kodeshSpecializations.has(String(t.specialization || '').trim()));
+  });
 
   loadSchedule() {
     this.loading.set(true);

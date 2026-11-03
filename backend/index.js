@@ -1291,17 +1291,17 @@ app.post('/api/students', (req, res) => {
 });
 
 app.get('/api/students/classes', (req, res) => {  const rows = db.prepare(`
-    SELECT class_name, parallel, COUNT(*) as count
+    SELECT year, parallel, COUNT(*) as count
     FROM students
-    WHERE class_name IS NOT NULL AND class_name != ''
+    WHERE year IS NOT NULL AND year != ''
       AND parallel IS NOT NULL AND parallel != '' AND parallel != '0'
-    GROUP BY class_name, parallel
-    ORDER BY class_name, parallel
+    GROUP BY year, parallel
+    ORDER BY year, parallel
   `).all();
   const list = rows.map(r => ({
-    parallel: `${r.class_name}_${r.parallel}`,
-    label: `כיתה ${r.class_name}${r.parallel}`,
-    class_name: r.class_name,
+    parallel: `${r.year}_${r.parallel}`,
+    label: `כיתה ${buildClassName(r.year, r.parallel)}`,
+    class_name: r.year,
     parallel_num: r.parallel,
     count: r.count
   }));
@@ -3078,6 +3078,14 @@ function findClassTimeConflict({ class_year, class_parallel, day_of_week, start_
   });
 }
 
+function findTeacherClassDayConflict({ teacher_id, class_year, class_parallel, day_of_week, week_start, excludeId = 0 }) {
+  return db.prepare(`
+    SELECT 1 FROM schedule_slots
+    WHERE week_start = ? AND teacher_id = ? AND class_year = ? AND class_parallel = ?
+      AND day_of_week = ? AND id != ?
+  `).get(week_start, Number(teacher_id), String(class_year), String(class_parallel), Number(day_of_week), Number(excludeId));
+}
+
 function overlaps(aStart, aEnd, bStart, bEnd) {
   const ae = aEnd && aEnd > aStart ? aEnd : aStart;
   const be = bEnd && bEnd > bStart ? bEnd : bStart;
@@ -3092,18 +3100,11 @@ function findTeacherTimeConflicts({ teacher_id, day_of_week, start_time, end_tim
   return rows.filter(r => overlaps(start_time, end_time, r.start_time, r.end_time));
 }
 
-function teacherConflictMessage(c) {
-  return `למורה ${c.teacher_name} כבר יש שיעור באותה שעה בכיתה ${c.class_year}${c.class_parallel} (${c.start_time}${c.end_time ? '–' + c.end_time : ''})`;
-}
-
-function conflictMessage(c) {
-  return `בכיתה זו כבר יש שיעור באותה שעה (${c.start_time}${c.end_time ? '–' + c.end_time : ''}, ${c.teacher_name})`;
-}
-
 function scheduleConflictConfirmation(conflicts) {
   const messages = [];
   if (conflicts.has('class')) messages.push('בכיתה זו כבר מופיע שיעור באותה שעה');
-  if (conflicts.has('teacher')) messages.push('למורה כבר מופיע שיעור באותה שעה בכיתה אחרת');
+  if (conflicts.has('sameClassDay')) messages.push('למורה כבר מופיע שיעור בכיתה זו היום');
+  if (conflicts.has('teacher')) messages.push('השיעור כבר מופיע בכיתה אחרת באותה שעה');
   return {
     confirmationRequired: true,
     conflicts: Array.from(conflicts),
@@ -3143,6 +3144,14 @@ app.post('/api/schedule', (req, res) => {
       week_start
     });
     if (conflict) conflicts.add('class');
+    const sameClassDay = findTeacherClassDayConflict({
+      teacher_id,
+      class_year: classInfo.class_year,
+      class_parallel: classInfo.class_parallel,
+      day_of_week,
+      week_start
+    });
+    if (sameClassDay && !conflict) conflicts.add('sameClassDay');
     const teacherConflicts = findTeacherTimeConflicts({ teacher_id, day_of_week, start_time, end_time, week_start });
     if (teacherConflicts.some(teacherConflict =>
       String(teacherConflict.class_year) !== String(classInfo.class_year) ||
@@ -3201,6 +3210,10 @@ app.put('/api/schedule/:id', (req, res) => {
   const conflicts = new Set();
   const conflict = findClassTimeConflict({ class_year, class_parallel, day_of_week, start_time, end_time, week_start: current.week_start, excludeId: req.params.id });
   if (conflict) conflicts.add('class');
+  const sameClassDay = findTeacherClassDayConflict({
+    teacher_id, class_year, class_parallel, day_of_week, week_start: current.week_start, excludeId: req.params.id
+  });
+  if (sameClassDay && !conflict) conflicts.add('sameClassDay');
   const teacherConflicts = findTeacherTimeConflicts({ teacher_id, day_of_week, start_time, end_time, week_start: current.week_start, excludeId: req.params.id });
   if (teacherConflicts.some(teacherConflict =>
     String(teacherConflict.class_year) !== String(class_year) ||
@@ -3676,11 +3689,17 @@ app.post('/api/schedule/import', xlsxUpload.single('file'), (req, res) => {
     let imported = 0, skipped = 0;
     const errors = [];
 
-    const upsert = db.prepare(`
+    const findImportedSlot = db.prepare(`
+      SELECT id FROM schedule_slots
+      WHERE teacher_id = ? AND class_year = ? AND class_parallel = ?
+        AND day_of_week = ? AND start_time = ? AND week_start = ?
+    `);
+    const updateImportedSlot = db.prepare(`
+      UPDATE schedule_slots SET end_time = ?, subject = ? WHERE id = ?
+    `);
+    const insertImportedSlot = db.prepare(`
       INSERT INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(teacher_id, class_year, class_parallel, day_of_week, week_start)
-      DO UPDATE SET start_time=excluded.start_time, end_time=excluded.end_time, subject=excluded.subject
     `);
 
     const tx = db.transaction(() => {
@@ -3723,7 +3742,12 @@ app.post('/api/schedule/import', xlsxUpload.single('file'), (req, res) => {
           teacher = { id: r.lastInsertRowid };
         }
 
-        upsert.run(teacher.id, classYear, classParallel, dayOfWeek, startTime, endTime, subject, weekStart);
+        const existing = findImportedSlot.get(teacher.id, classYear, classParallel, dayOfWeek, startTime, weekStart);
+        if (existing) {
+          updateImportedSlot.run(endTime, subject, existing.id);
+        } else {
+          insertImportedSlot.run(teacher.id, classYear, classParallel, dayOfWeek, startTime, endTime, subject, weekStart);
+        }
         imported++;
       }
     });

@@ -306,10 +306,10 @@ export class StudentsTableComponent implements OnInit {
       if (this.selYear()) list = list.filter(s => s.year === this.selYear());
     }
     if (this.selClass()) {
-      const [cn, pn] = this.selClass().split('_');
+      const [year, parallel] = this.selClass().split('_');
       list = list.filter(s =>
-        String(s.class_name || '').trim() === cn &&
-        String(s.parallel  || '').trim() === pn
+        String(s.year || '').trim() === year &&
+        String(s.parallel || '').trim() === parallel
       );
     }
     if (this.selTrack()) {
