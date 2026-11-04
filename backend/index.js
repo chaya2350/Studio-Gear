@@ -312,6 +312,11 @@ if (srcCol && srcCol.notnull === 1) {
 }
 
 // ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS personal_tasks_user_source_message_unique_idx
+  ON personal_tasks(user_id, source_message_id)
+`);
+
 function pageRow(row, userId) {
   if (!row) return row;
   return { ...row, is_owner: row.created_by === userId };
