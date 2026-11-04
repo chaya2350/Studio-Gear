@@ -1013,6 +1013,45 @@ app.put('/api/users/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// עדכון פרטי משתמשת (שם, אימייל)
+app.patch('/api/users/:id', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'מנהלת מערכת בלבד' });
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+
+  const name  = String(req.body?.name  || '').trim();
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!name)                                          return res.status(400).json({ error: 'שם חובה' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))    return res.status(400).json({ error: 'אימייל לא תקין' });
+
+  try {
+    db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, id);
+    res.json({ success: true });
+  } catch (e) {
+    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'אימייל זה כבר בשימוש' });
+    throw e;
+  }
+});
+
+// מחיקת משתמשת
+app.delete('/api/users/:id', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'מנהלת מערכת בלבד' });
+  const id = Number(req.params.id);
+  if (id === req.user.id) return res.status(400).json({ error: 'לא ניתן למחוק את החשבון המחובר' });
+
+  const user = db.prepare('SELECT role, active FROM users WHERE id = ?').get(id);
+  if (!user) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+
+  if (user.role === 'admin' && user.active) {
+    const activeAdmins = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND active = 1").get().count;
+    if (activeAdmins <= 1) return res.status(400).json({ error: 'חייבת להישאר לפחות מנהלת מערכת פעילה אחת' });
+  }
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  res.json({ success: true });
+});
+
 app.post('/api/users/:id/password', (req, res) => {
   const id = Number(req.params.id);
   const password = req.body?.password;

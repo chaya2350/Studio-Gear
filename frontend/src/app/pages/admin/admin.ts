@@ -46,6 +46,28 @@ class="section-tab"
 <div class="section-title"> ניהול משתמשות והרשאות</div>
 <p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
 
+<!-- modal עריכת פרטים -->
+<div *ngIf="editingUser()" class="modal-backdrop" (click)="editingUser.set(null)">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-title">עריכת פרטי משתמשת</div>
+    <div class="form-group">
+      <label>שם מלא *</label>
+      <input [(ngModel)]="editUserDraft.name" placeholder="שם מלא">
+    </div>
+    <div class="form-group">
+      <label>אימייל *</label>
+      <input [(ngModel)]="editUserDraft.email" type="email" placeholder="כתובת אימייל" dir="ltr">
+    </div>
+    <p *ngIf="userError()" class="alert alert-error" style="margin:0 0 8px;">{{ userError() }}</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" [disabled]="savingEditUser()" (click)="saveEditUser()">
+        {{ savingEditUser() ? 'שומר...' : 'שמור שינויים' }}
+      </button>
+      <button class="btn btn-secondary" (click)="editingUser.set(null); userError.set('')">ביטול</button>
+    </div>
+  </div>
+</div>
+
 <div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
 <div class="danger-title"> איפוס מסד נתונים (תלמידות)</div>
 <p>
@@ -124,17 +146,15 @@ class="section-tab"
 <option value="secretary">מזכירות</option>
 <option value="admin">מנהלת מערכת</option>
 </select>
-<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">
-קביעת סיסמה
-</button>
-<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="resetPassword(user)">
-איפוס סיסמה
-</button>
+<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startEditUser(user)" title="עריכת פרטים">✏️</button>
+<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">קביעת סיסמה</button>
+<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="resetPassword(user)">איפוס סיסמה</button>
 <button class="btn" [class.btn-danger]="user.active" [class.btn-secondary]="!user.active"
 [disabled]="user.id === auth.user()?.id"
 (click)="updateUser(user, user.role, !user.active)">
 {{ user.active ? 'השבתה' : 'הפעלה' }}
 </button>
+<button class="btn btn-danger" [disabled]="user.id === auth.user()?.id" (click)="deleteUser(user)" title="מחיקה לצמיתות">🗑</button>
 </div>
 </div>
 </div>
@@ -599,6 +619,17 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 .inline-input { border: 1.5px solid var(--border); border-radius: 6px; padding: 5px 8px;
   font: inherit; font-size: 0.85rem; flex: 1; min-width: 80px;
   &:focus { outline: none; border-color: var(--primary); } }
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+  background: var(--surface); border-radius: var(--radius); padding: 24px;
+  width: min(420px, 95vw); box-shadow: 0 16px 40px rgba(0,0,0,.25);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal-title { font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+.modal-actions { display: flex; gap: 8px; }
 `]
 })
 export class AdminComponent {
@@ -715,6 +746,48 @@ error: error => this.userError.set(error.error?.error || 'לא ניתן ליצו
 passwordTarget = signal<UserAccount | null>(null);
 newPassword = signal('');
 showNewPassword = signal(false);
+
+// עריכת פרטי משתמשת
+editingUser = signal<UserAccount | null>(null);
+editUserDraft = { name: '', email: '' };
+savingEditUser = signal(false);
+
+startEditUser(user: UserAccount) {
+  this.editUserDraft = { name: user.name, email: user.email };
+  this.userError.set('');
+  this.editingUser.set(user);
+}
+
+saveEditUser() {
+  const user = this.editingUser();
+  if (!user) return;
+  const name  = this.editUserDraft.name.trim();
+  const email = this.editUserDraft.email.trim();
+  if (!name || !email) { this.userError.set('שם ואימייל הם שדות חובה'); return; }
+  this.savingEditUser.set(true);
+  this.userError.set('');
+  this.http.patch(`/api/users/${user.id}`, { name, email }).subscribe({
+    next: () => {
+      this.savingEditUser.set(false);
+      this.editingUser.set(null);
+      this.loadUsers();
+    },
+    error: (e: any) => {
+      this.savingEditUser.set(false);
+      this.userError.set(e.error?.error || 'שגיאה בעדכון הפרטים');
+    }
+  });
+}
+
+// מחיקת משתמשת
+deleteUser(user: UserAccount) {
+  if (!confirm(`למחוק לצמיתות את החשבון של ${user.name}?\nהפעולה בלתי הפיכה.`)) return;
+  this.userError.set('');
+  this.http.delete(`/api/users/${user.id}`).subscribe({
+    next: () => this.loadUsers(),
+    error: (e: any) => this.userError.set(e.error?.error || 'לא ניתן למחוק את החשבון')
+  });
+}
 
 startSetPassword(user: UserAccount) {
 this.userError.set('');
