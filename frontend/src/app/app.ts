@@ -36,7 +36,7 @@ import { filter, takeUntil } from 'rxjs/operators';
       </a>
 
       <!-- Global search -->
-      <div class="global-search" (click)="$event.stopPropagation()">
+      <div *ngIf="auth.hasPermission('search')" class="global-search" (click)="$event.stopPropagation()">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
@@ -66,7 +66,7 @@ import { filter, takeUntil } from 'rxjs/operators';
           </div>
           <div *ngIf="searchResults.examCodes.length" class="search-group">
             <div class="search-group-title">קודי מבחן</div>
-            <a routerLink="/exams/scan" (click)="clearSearch()">
+            <a *ngIf="auth.hasPermission('exams', 'change')" routerLink="/exams/scan" (click)="clearSearch()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
               {{ searchResults.examCodes[0].code }} — {{ searchResults.examCodes[0].student_name }}
             </a>
@@ -156,7 +156,7 @@ import { filter, takeUntil } from 'rxjs/operators';
         [class.collapsed]="sidebarCollapsed"
       >
         <!-- Kiosk shortcut at top -->
-        <a routerLink="/kiosk" class="sidebar-kiosk" [title]="sidebarCollapsed ? 'קיוסק' : ''" (click)="clearSearch()">
+        <a *ngIf="auth.hasPermission('equipment')" routerLink="/kiosk" class="sidebar-kiosk" [title]="sidebarCollapsed ? 'קיוסק' : ''" (click)="clearSearch()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/>
             <path d="M8 21h8M12 17v4"/>
@@ -175,9 +175,9 @@ import { filter, takeUntil } from 'rxjs/operators';
           </a>
 
           <!-- ── תלמידות ── -->
-          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">תלמידות</div>
-          <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/students" [class.active]="currentPath === '/students' || (currentPath.startsWith('/students/') && !currentPath.startsWith('/students-table'))" class="sidebar-item" [title]="sidebarCollapsed ? 'תלמידות' : ''" (click)="clearSearch()">
+          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed && auth.hasPermission('students')">תלמידות</div>
+          <div class="sidebar-divider" *ngIf="sidebarCollapsed && auth.hasPermission('students')"></div>
+          <a *ngIf="auth.hasPermission('students')" routerLink="/students" [class.active]="currentPath === '/students' || (currentPath.startsWith('/students/') && !currentPath.startsWith('/students-table'))" class="sidebar-item" [title]="sidebarCollapsed ? 'תלמידות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
               <circle cx="9" cy="7" r="4"/>
@@ -186,7 +186,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>תלמידות</span>
           </a>
-          <a routerLink="/students-table" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'טבלת תלמידות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('students')" routerLink="/students-table" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'טבלת תלמידות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
               <line x1="3" y1="9" x2="21" y2="9"/>
@@ -195,7 +195,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>טבלת תלמידות</span>
           </a>
-          <a routerLink="/teachers/search" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מורות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('teachers')" routerLink="/teachers/search" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מורות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 14c-4 0-6 2-6 4v1h12v-1c0-2-2-4-6-4z"/>
               <circle cx="12" cy="8" r="4"/>
@@ -204,7 +204,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>מורות</span>
           </a>
-          <a routerLink="/schedule" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מערכת שעות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('schedule')" routerLink="/schedule" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מערכת שעות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
@@ -218,23 +218,23 @@ import { filter, takeUntil } from 'rxjs/operators';
           </a>
 
           <!-- ── ציוד ── -->
-          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">ציוד</div>
-          <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/equipment" [class.active]="isEquipmentSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'השאלת ציוד' : ''" (click)="clearSearch()">
+          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed && auth.hasPermission('equipment')">ציוד</div>
+          <div class="sidebar-divider" *ngIf="sidebarCollapsed && auth.hasPermission('equipment')"></div>
+          <a *ngIf="auth.hasPermission('equipment')" routerLink="/equipment" [class.active]="isEquipmentSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'השאלת ציוד' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 7h16M4 12h16M4 17h7"/>
               <rect x="14" y="13" width="7" height="7" rx="1"/>
             </svg>
             <span>השאלת ציוד</span>
           </a>
-          <a routerLink="/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקה' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('equipment')" routerLink="/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקה' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
               <line x1="7" y1="12" x2="17" y2="12"/>
             </svg>
             <span>סריקה</span>
           </a>
-          <a routerLink="/loans" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'השאלות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('loans')" routerLink="/loans" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'השאלות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
               <polyline points="14 2 14 8 20 8"/>
@@ -245,9 +245,9 @@ import { filter, takeUntil } from 'rxjs/operators';
           </a>
 
           <!-- ── לוחות שנה ── -->
-          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">לוח שנה</div>
-          <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה' : ''" (click)="clearSearch()">
+          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed && (auth.hasPermission('calendar') || auth.hasPermission('attendance'))">לוח שנה</div>
+          <div class="sidebar-divider" *ngIf="sidebarCollapsed && (auth.hasPermission('calendar') || auth.hasPermission('attendance'))"></div>
+          <a *ngIf="auth.hasPermission('calendar')" routerLink="/calendar/personal" [class.active]="currentPath.startsWith('/calendar/')" class="sidebar-item" [title]="sidebarCollapsed ? 'לוח שנה' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
@@ -256,7 +256,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>לוח שנה</span>
           </a>
-          <a routerLink="/attendance/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקת נוכחות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('attendance')" routerLink="/attendance/scan" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'סריקת נוכחות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 11 12 14 22 4"/>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
@@ -265,16 +265,16 @@ import { filter, takeUntil } from 'rxjs/operators';
           </a>
 
           <!-- ── מנהל ── -->
-          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed">ניהול</div>
-          <div class="sidebar-divider" *ngIf="sidebarCollapsed"></div>
-          <a routerLink="/approvals" [class.active]="isApprovalsSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'אישורים' : ''" (click)="clearSearch()">
+          <div class="sidebar-group-label" *ngIf="!sidebarCollapsed && (auth.hasPermission('approvals') || auth.hasPermission('exams') || auth.hasPermission('pages') || auth.hasPermission('messages') || auth.hasPermission('reports') || auth.hasPermission('admin_panel'))">ניהול</div>
+          <div class="sidebar-divider" *ngIf="sidebarCollapsed && (auth.hasPermission('approvals') || auth.hasPermission('exams') || auth.hasPermission('pages') || auth.hasPermission('messages') || auth.hasPermission('reports') || auth.hasPermission('admin_panel'))"></div>
+          <a *ngIf="auth.hasPermission('approvals')" routerLink="/approvals" [class.active]="isApprovalsSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'אישורים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
             <span>אישורים</span>
           </a>
-          <a routerLink="/exams" [class.active]="isExamsSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'מבחנים' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('exams')" routerLink="/exams" [class.active]="isExamsSection()" class="sidebar-item" [title]="sidebarCollapsed ? 'מבחנים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
               <rect x="9" y="3" width="6" height="4" rx="1"/>
@@ -283,7 +283,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>מבחנים</span>
           </a>
-          <a routerLink="/pages" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'דפים' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('pages')" routerLink="/pages" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'דפים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
               <polyline points="13 2 13 9 20 9"/>
@@ -293,13 +293,13 @@ import { filter, takeUntil } from 'rxjs/operators';
               <span class="sidebar-badge" *ngIf="accessRequests().length + grantedCount > 0">{{ accessRequests().length + grantedCount }}</span>
             </span>
           </a>
-          <a routerLink="/messages" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'הודעות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('messages')" routerLink="/messages" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'הודעות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             <span>הודעות</span>
           </a>
-          <a routerLink="/database" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מסד נתונים' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('reports')" routerLink="/database" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מסד נתונים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <ellipse cx="12" cy="5" rx="9" ry="3"/>
               <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
@@ -307,7 +307,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>מסד נתונים</span>
           </a>
-          <a routerLink="/admin" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'ניהול מערכת' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('admin_panel')" routerLink="/admin" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'ניהול מערכת' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-1.42 1.42M5.64 18.36l-1.41 1.41M19.07 19.07A10 10 0 0 0 4.93 4.93M19.07 19.07l-1.42-1.42M5.64 5.64 4.23 4.23"/>
@@ -997,7 +997,8 @@ export class App implements OnInit {
   ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
 
   roleLabel(role: UserRole): string {
-    return role === 'admin' ? 'מנהלת מערכת' : role === 'secretary' ? 'מזכירות' : 'לבורנטית';
+    const user = this.auth.user();
+    return user?.role === role ? user.role_name || role : role;
   }
 
   logout() {

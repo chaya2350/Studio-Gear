@@ -9,8 +9,13 @@ export const routes: Routes = [
   {
     path: '',
     canActivate: [authGuard],
+    canActivateChild: [authGuard],
     children: [
       { path: '', loadComponent: () => import('./pages/home/home').then((m) => m.HomeComponent) },
+      {
+        path: 'permission-denied',
+        loadComponent: () => import('./pages/permission-denied/permission-denied').then((m) => m.PermissionDeniedComponent),
+      },
       {
         path: 'approvals',
         loadComponent: () =>

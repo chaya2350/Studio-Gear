@@ -16,6 +16,13 @@ const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profi
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-conflicts');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
+const {
+  PERMISSION_ACTIONS,
+  PERMISSION_CATALOG,
+  getApiPermission,
+  permissionMapFromRows,
+  initializePermissionSchema
+} = require('./permissions');
 
 const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
 const uploadsDir = process.env.STUDIO_DATA_DIR
@@ -54,6 +61,13 @@ const xlsxUpload = multer({
 const app = express();
 const db = new Database(path.join(dataDir, 'studio.db'));
 initializeAuthSchema(db);
+initializePermissionSchema(db);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS uploaded_file_permissions (
+    filename TEXT PRIMARY KEY,
+    permission_key TEXT NOT NULL
+  );
+`);
 db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
 
 app.use(cors());
@@ -123,16 +137,43 @@ function authenticate(req, res, next) {
   next();
 }
 
+function getUserPermissions(role) {
+  const rows = db.prepare(
+    'SELECT permission_key, action, enabled FROM role_permissions WHERE role_key = ?'
+  ).all(role);
+  return permissionMapFromRows(rows, role);
+}
+
+function getItemFeature(itemType) {
+  return ({ student: 'students', equipment: 'equipment' })[itemType] || null;
+}
+
+function registerUploadedFile(file, feature) {
+  db.prepare('INSERT OR REPLACE INTO uploaded_file_permissions (filename, permission_key) VALUES (?, ?)')
+    .run(file.filename, feature);
+}
+
+function getRoleName(role) {
+  return db.prepare('SELECT name FROM system_roles WHERE role_key = ?').get(role)?.name || role;
+}
+
 function authorizeApi(req, res, next) {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isAllowedOrigin(req)) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   }
-  if (req.user.role === 'secretary' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowed = /^\/(students(?:\/[^/]+(?:\/(?:requirements\/\d+(?:\/file)?|exams|attendance|parallel|photo))?)?|approval-types(?:\/\d+)?|exams(?:\/\d+(?:\/(?:codes|template))?)?|exam-codes\/[^/]+\/grade|calendar-events(?:\/\d+|\/import|\/)?|messages(?:\/\d+\/(?:reactions|tasks))?|tasks(?:(?:\/\d+\/(?:completion|due-date))?)?|pages(?:\/.*)?|attendance(?:\/.*)?|schedule(?:\/.*)?|teachers(?:\/.*)?|tracks(?:\/.*)?|track-requirements(?:\/.*)?)\/?$/.test(req.path);
-    if (!allowed) return res.status(403).json({ error: 'אין הרשאה לבצע פעולה זו' });
-  }
-  if (req.path.startsWith('/users') && req.user.role !== 'admin') {
+  if (/^\/(?:users|roles|permissions)(?:\/|$)/.test(req.path) && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'פעולה זו מיועדת למנהלת מערכת בלבד' });
+  }
+  next();
+}
+
+function authorizePermission(req, res, next) {
+  if (req.user.role === 'admin' || ['HEAD', 'OPTIONS'].includes(req.method) || req.path === '/auth/me' || req.path === '/stats') return next();
+  const required = getApiPermission(req.path, req.method);
+  if (!required) return res.status(403).json({ error: 'לא הוגדרה הרשאה לפעולה זו' });
+  const permissions = getUserPermissions(req.user.role);
+  if (!permissions[required.feature]?.[required.action]) {
+    return res.status(403).json({ error: 'אין לך הרשאה לבצע פעולה זו' });
   }
   next();
 }
@@ -155,7 +196,7 @@ app.post('/api/auth/login', (req, res) => {
   db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
     .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
   appendSessionCookie(res, token, sessionDurationSeconds);
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, role_name: getRoleName(user.role), permissions: getUserPermissions(user.role) });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -169,8 +210,85 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.use('/api', authenticate, authorizeApi);
-app.use('/uploads', authenticate, express.static(uploadsDir));
+app.use('/api', authenticate, authorizeApi, authorizePermission);
+app.use('/uploads', authenticate, (req, res, next) => {
+  const filename = path.basename(req.path);
+  const fileUrl = `/uploads/${filename}`;
+  const registered = db.prepare('SELECT permission_key FROM uploaded_file_permissions WHERE filename = ?').get(filename);
+  const feature = registered?.permission_key
+    || (db.prepare('SELECT 1 FROM students WHERE photo_url = ?').get(fileUrl) ? 'students' : null)
+    || (db.prepare('SELECT 1 FROM equipment WHERE image_url = ?').get(fileUrl) ? 'equipment' : null);
+  if (!feature) return res.sendStatus(404);
+  if (!getUserPermissions(req.user.role)[feature]?.view) {
+    return res.status(403).json({ error: 'אין לך הרשאת צפייה בקובץ זה' });
+  }
+  next();
+}, express.static(uploadsDir));
+
+app.get('/api/permissions', (req, res) => {
+  const roles = db.prepare('SELECT role_key, name, is_system FROM system_roles ORDER BY is_system DESC, name COLLATE NOCASE').all();
+  const permissions = db.prepare('SELECT role_key, permission_key, action, enabled FROM role_permissions').all();
+  res.json({
+    actions: PERMISSION_ACTIONS,
+    catalog: PERMISSION_CATALOG,
+    roles: roles.map(role => ({
+      ...role,
+      permissions: permissionMapFromRows(permissions.filter(item => item.role_key === role.role_key), role.role_key)
+    }))
+  });
+});
+
+app.post('/api/roles', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name || name.length > 60) return res.status(400).json({ error: 'שם התפקיד חייב להכיל 1 עד 60 תווים' });
+  try {
+    const roleKey = `custom_${randomBytes(8).toString('hex')}`;
+    const insertRole = db.prepare('INSERT INTO system_roles (role_key, name, is_system) VALUES (?, ?, 0)');
+    const insert = db.prepare(
+      'INSERT INTO role_permissions (role_key, permission_key, action, enabled) VALUES (?, ?, ?, 1)'
+    );
+    const createRole = db.transaction(() => {
+      insertRole.run(roleKey, name);
+      for (const { key } of PERMISSION_CATALOG) {
+        for (const action of PERMISSION_ACTIONS) insert.run(roleKey, key, action);
+      }
+    });
+    createRole();
+    res.status(201).json({ role_key: roleKey, name, is_system: 0, permissions: getUserPermissions(roleKey) });
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'כבר קיים תפקיד בשם זה' });
+    throw error;
+  }
+});
+
+app.put('/api/roles/:roleKey/permissions', (req, res) => {
+  const role = db.prepare('SELECT role_key, is_system FROM system_roles WHERE role_key = ?').get(req.params.roleKey);
+  if (!role) return res.status(404).json({ error: 'התפקיד לא נמצא' });
+  if (role.role_key === 'admin') return res.status(400).json({ error: 'הרשאות מנהלת המערכת קבועות ומלאות' });
+  const permissions = req.body?.permissions;
+  if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {
+    return res.status(400).json({ error: 'מבנה ההרשאות אינו תקין' });
+  }
+  for (const { key } of PERMISSION_CATALOG) {
+    for (const action of PERMISSION_ACTIONS) {
+      if (typeof permissions[key]?.[action] !== 'boolean') {
+        return res.status(400).json({ error: `חסרה הרשאה תקינה עבור ${key}.${action}` });
+      }
+    }
+  }
+  const update = db.prepare(
+    'UPDATE role_permissions SET enabled = ? WHERE role_key = ? AND permission_key = ? AND action = ?'
+  );
+  const save = db.transaction(() => {
+    for (const { key } of PERMISSION_CATALOG) {
+      for (const action of PERMISSION_ACTIONS) {
+        update.run(permissions[key][action] ? 1 : 0, role.role_key, key, action);
+      }
+    }
+  });
+  save();
+  res.json({ success: true, permissions: getUserPermissions(role.role_key) });
+});
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
@@ -592,9 +710,6 @@ app.delete('/api/calendar-events/:id', (req, res) => {
 });
 
 app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, res) => {
-  if (!['admin', 'secretary'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'ייבוא נתונים ללוח השנה מיועד למנהלת או למזכירות' });
-  }
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ אקסל' });
   if (path.extname(req.file.originalname).toLowerCase() !== '.xlsx') {
     return res.status(400).json({ error: 'יש לבחור קובץ Excel מסוג xlsx' });
@@ -648,17 +763,35 @@ function logActivity(userId, action, itemType, itemId, details = '') {
 }
 
 app.get('/api/activity', (req, res) => {
+  const permissions = getUserPermissions(req.user.role);
   const rows = db.prepare(`
     SELECT a.id, a.action, a.item_type, a.item_id, a.details, a.created_at, u.name AS user_name
     FROM activity_log a LEFT JOIN users u ON u.id = a.user_id
     ORDER BY a.created_at DESC, a.id DESC LIMIT 50
   `).all();
-  res.json(rows);
+  const itemPermissions = {
+    student: 'students',
+    teacher: 'teachers',
+    equipment: 'loans',
+    loan: 'loans',
+    exam: 'exams',
+    schedule: 'schedule',
+    calendar: 'calendar',
+    page: 'pages',
+    message: 'messages'
+  };
+  res.json(rows.filter(row => {
+    const feature = itemPermissions[row.item_type];
+    return feature && permissions[feature]?.view;
+  }));
 });
 
 app.get('/api/favorites', (req, res) => {
-  res.json(db.prepare('SELECT item_type, item_id, created_at FROM user_favorites WHERE user_id = ? ORDER BY created_at DESC')
-    .all(req.user.id));
+  const permissions = getUserPermissions(req.user.role);
+  const favorites = db.prepare('SELECT item_type, item_id, created_at FROM user_favorites WHERE user_id = ? ORDER BY created_at DESC')
+    .all(req.user.id)
+    .filter(item => permissions[getItemFeature(item.item_type)]?.view);
+  res.json(favorites);
 });
 
 app.post('/api/favorites', (req, res) => {
@@ -666,6 +799,9 @@ app.post('/api/favorites', (req, res) => {
   const itemId = String(req.body?.item_id ?? '').trim();
   if (!['student', 'equipment'].includes(itemType) || !itemId || itemId.length > 100) {
     return res.status(400).json({ error: 'פרטי המועדף אינם תקינים' });
+  }
+  if (!getUserPermissions(req.user.role)[getItemFeature(itemType)]?.view) {
+    return res.status(403).json({ error: 'אין לך הרשאת צפייה בפריט זה' });
   }
   const exists = itemType === 'student'
     ? db.prepare('SELECT 1 FROM students WHERE id_number = ?').get(itemId)
@@ -686,6 +822,9 @@ app.get('/api/notes', (req, res) => {
   const itemType = String(req.query.item_type || '');
   const itemId = String(req.query.item_id || '').trim();
   if (!['student', 'equipment'].includes(itemType) || !itemId) return res.status(400).json({ error: 'יש לבחור פריט' });
+  if (!getUserPermissions(req.user.role)[getItemFeature(itemType)]?.view) {
+    return res.status(403).json({ error: 'אין לך הרשאת צפייה בפריט זה' });
+  }
   res.json(db.prepare(`
     SELECT n.id, n.item_type, n.item_id, n.body, n.created_at, u.name AS author_name
     FROM staff_notes n JOIN users u ON u.id = n.user_id
@@ -699,6 +838,9 @@ app.post('/api/notes', (req, res) => {
   const body = String(req.body?.body ?? '').trim();
   if (!['student', 'equipment'].includes(itemType) || !itemId || itemId.length > 100 || !body || body.length > 2000) {
     return res.status(400).json({ error: 'הערה חייבת לכלול תוכן עד 2000 תווים ולהיות משויכת לפריט' });
+  }
+  if (!getUserPermissions(req.user.role)[getItemFeature(itemType)]?.view) {
+    return res.status(403).json({ error: 'אין לך הרשאת צפייה בפריט זה' });
   }
   const exists = itemType === 'student'
     ? db.prepare('SELECT 1 FROM students WHERE id_number = ?').get(itemId)
@@ -734,24 +876,30 @@ app.get('/api/messages/users', (req, res) => {
 
 // ── Dashboard stats — endpoint ייעודי לדשבורד (קריאה אחת במקום 4) ──
 app.get('/api/stats', (req, res) => {
+  const permissions = getUserPermissions(req.user.role);
   const today = new Date().toISOString().split('T')[0];
-  const activeLoans = db.prepare(`
+  const stats = {};
+  if (permissions.loans?.view) {
+    stats.activeLoans = db.prepare(`
     SELECT COUNT(*) AS c FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
     WHERE l.actual_return IS NULL AND l.loan_date <= ?
       AND NOT (e.category = 'מצלמות אישיות' OR (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות'))
-  `).get(today).c;
-  const overdueLoans = db.prepare(`
+    `).get(today).c;
+    stats.overdueLoans = db.prepare(`
     SELECT COUNT(*) AS c FROM loans l
     JOIN equipment e ON e.id = l.equipment_id
     WHERE l.actual_return IS NULL AND l.loan_date <= ? AND l.expected_return < ?
       AND NOT (e.category = 'מצלמות אישיות' OR (e.category = 'ציוד צילום' AND e.subcategory = 'מצלמות אישיות'))
-  `).get(today, today).c;
-  const unreadMessages = db.prepare(
-    'SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL'
-  ).get(req.user.id).c;
-  const totalStudents = db.prepare('SELECT COUNT(*) AS c FROM students').get().c;
-  res.json({ activeLoans, overdueLoans, unreadMessages, totalStudents });
+    `).get(today, today).c;
+  }
+  if (permissions.messages?.view) {
+    stats.unreadMessages = db.prepare(
+      'SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL'
+    ).get(req.user.id).c;
+  }
+  if (permissions.students?.view) stats.totalStudents = db.prepare('SELECT COUNT(*) AS c FROM students').get().c;
+  res.json(stats);
 });
 
 app.get('/api/messages/unread-count', (req, res) => {
@@ -958,11 +1106,18 @@ app.patch('/api/tasks/:id/completion', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  res.json(req.user);
+  res.json({ ...req.user, role_name: getRoleName(req.user.role), permissions: getUserPermissions(req.user.role) });
 });
 
 app.get('/api/users', (req, res) => {
-  res.json(db.prepare('SELECT id, name, email, role, active, created_at FROM users ORDER BY name').all());
+  res.json(db.prepare(`
+    SELECT u.id, u.name, u.email, u.role, r.name AS role_name, u.active, u.created_at
+    FROM users u LEFT JOIN system_roles r ON r.role_key = u.role ORDER BY u.name
+  `).all());
+});
+
+app.get('/api/roles', (req, res) => {
+  res.json(db.prepare('SELECT role_key, name, is_system FROM system_roles ORDER BY is_system DESC, name COLLATE NOCASE').all());
 });
 
 app.post('/api/users', (req, res) => {
@@ -973,7 +1128,7 @@ app.post('/api/users', (req, res) => {
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'נא להזין שם ואימייל תקין' });
   }
-  if (!['admin', 'laborant', 'secretary'].includes(role)) {
+  if (typeof role !== 'string' || !db.prepare('SELECT 1 FROM system_roles WHERE role_key = ?').get(role)) {
     return res.status(400).json({ error: 'תפקיד לא תקין' });
   }
   if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
@@ -1001,7 +1156,7 @@ app.put('/api/users/:id', (req, res) => {
 
   const role = req.body?.role;
   const active = req.body?.active;
-  if (!['admin', 'laborant', 'secretary'].includes(role) || typeof active !== 'boolean') {
+  if (typeof role !== 'string' || !db.prepare('SELECT 1 FROM system_roles WHERE role_key = ?').get(role) || typeof active !== 'boolean') {
     return res.status(400).json({ error: 'נתוני החשבון אינם תקינים' });
   }
   if (id === req.user.id && (!active || role !== 'admin')) {
@@ -1093,6 +1248,7 @@ app.post('/api/users/:id/reset-password', (req, res) => {
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
+  registerUploadedFile(req.file, 'equipment');
   res.json({ url: `/uploads/${req.file.filename}` });
 });
 
@@ -1249,19 +1405,26 @@ app.get('/api/students', (req, res) => {
 
 // חיפוש גלובלי: תלמידות, ציוד, קודי מבחן, מורות, דפים, ארועים ומבחנים
 app.get('/api/search', (req, res) => {
+  const permissions = getUserPermissions(req.user.role);
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] });
   const like = `%${q}%`;
-  const students = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
-  const equipment = db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like);
-  const examCodes = db.prepare(`
+  const students = permissions.students?.view
+    ? db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow)
+    : [];
+  const equipment = permissions.equipment?.view
+    ? db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like)
+    : [];
+  const examCodes = permissions.exams?.view && permissions.students?.view ? db.prepare(`
     SELECT c.code, e.name AS exam_name, s.name AS student_name
     FROM exam_codes c JOIN exams e ON e.id = c.exam_id JOIN students s ON s.id_number = c.id_number
     WHERE c.code LIKE ? LIMIT 5
-  `).all(like);
-  const teachers = db.prepare('SELECT * FROM teachers WHERE name LIKE ? OR subject LIKE ? ORDER BY name LIMIT 5').all(like, like);
+  `).all(like) : [];
+  const teachers = permissions.teachers?.view
+    ? db.prepare('SELECT * FROM teachers WHERE name LIKE ? OR subject LIKE ? ORDER BY name LIMIT 5').all(like, like)
+    : [];
   // חיפוש בדפים אישיים — רק דפים שהמשתמשת רשאית לראות
-  const pages = db.prepare(`
+  const pages = permissions.pages?.view ? db.prepare(`
     SELECT p.id, p.title, t.name AS topic_name
     FROM personal_pages p
     JOIN page_topics t ON t.id = p.topic_id
@@ -1271,21 +1434,21 @@ app.get('/api/search', (req, res) => {
         WHERE r.page_id = p.id AND r.user_id = ? AND r.status = 'approved'
       ))
     LIMIT 5
-  `).all(like, like, req.user.id, req.user.id);
+  `).all(like, like, req.user.id, req.user.id) : [];
   // חיפוש ארועי לוח שנה
-  const calendarEvents = db.prepare(`
+  const calendarEvents = permissions.calendar?.view ? db.prepare(`
     SELECT id, title, event_date, category, source_sheet
     FROM calendar_events
     WHERE title LIKE ? OR category LIKE ? OR notes LIKE ?
     ORDER BY event_date DESC LIMIT 5
-  `).all(like, like, like);
+  `).all(like, like, like) : [];
   // חיפוש מבחנים לפי שם
-  const exams = db.prepare(`
+  const exams = permissions.exams?.view ? db.prepare(`
     SELECT id, name, exam_date, track
     FROM exams
     WHERE name LIKE ? OR track LIKE ?
     ORDER BY exam_date DESC LIMIT 5
-  `).all(like, like);
+  `).all(like, like) : [];
   res.json({ students, equipment, examCodes, teachers, pages, calendarEvents, exams });
 });
 
@@ -1413,6 +1576,7 @@ app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) =>
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   const photoUrl = `/uploads/${req.file.filename}`;
   db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
+  registerUploadedFile(req.file, 'students');
   res.json({ url: photoUrl });
 });
 
@@ -1457,10 +1621,10 @@ app.delete('/api/students/:id_number', (req, res) => {
 });
 
 app.post('/api/admin/reset-database', (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'פעולה זו מיועדת למנהלת מערכת בלבד' });
+  const permissions = getUserPermissions(req.user.role);
+  if (['students', 'tracks', 'exams'].some(feature => !permissions[feature]?.change)) {
+    return res.status(403).json({ error: 'נדרשת הרשאת שינוי בכל התחומים שיימחקו' });
   }
-
   const count = (table) => db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get().c;
   const before = {
     students: count('students'),
@@ -2339,8 +2503,6 @@ app.put('/api/loans/:id/charge', (req, res) => {
 app.delete('/api/loans/:id', (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
-  // רק admin יכול למחוק השאלה
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'רק מנהלת מערכת רשאית למחוק השאלה' });
   const loan = db.prepare(`
     SELECT l.*, e.name AS equipment_name FROM loans l
     JOIN equipment e ON e.id = l.equipment_id WHERE l.id = ?
@@ -3962,8 +4124,9 @@ app.get('/api/notifications', (req, res) => {
     });
   }
 
-  // 6. תלמידות שיש להן דרישות חובה שלא הושלמו (admin/secretary only)
-  if (req.user.role === 'admin' || req.user.role === 'secretary') {
+  // 6. Students with incomplete mandatory requirements are shown only when both areas are accessible
+  const permissions = getUserPermissions(req.user.role);
+  if (permissions.students?.view && permissions.tracks?.view) {
     const incompleteMandatory = db.prepare(`
       SELECT COUNT(DISTINCT s.id_number) AS c
       FROM students s
@@ -3993,7 +4156,17 @@ app.get('/api/notifications', (req, res) => {
   const order = { danger: 0, warning: 1, info: 2 };
   notifications.sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
 
-  res.json(notifications);
+  const notificationPermissions = {
+    overdue: ['loans'],
+    exam: ['exams'],
+    pages: ['pages'],
+    messages: ['messages'],
+    tasks: ['messages'],
+    requirements: ['students', 'tracks']
+  };
+  res.json(notifications.filter(notification =>
+    notificationPermissions[notification.type]?.every(feature => permissions[feature]?.view)
+  ));
 });
 
 const port = process.env.PORT || 3000;

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
-import { AuthService, UserRole } from '../../services/auth.service';
+import { AuthService, PermissionAction, PermissionsConfiguration, RolePermissionSet, SystemRole, UserRole } from '../../services/auth.service';
 import { TracksComponent } from '../tracks/tracks';
 type AdminSection = 'tracks' | 'students' | 'approvals' | 'users' | 'teachers';
 
@@ -12,6 +12,7 @@ id: number;
 name: string;
 email: string;
 role: UserRole;
+role_name?: string;
 active: number;
 created_at: string;
 }
@@ -46,6 +47,65 @@ class="section-tab"
 <div class="section-title"> ניהול משתמשות והרשאות</div>
 <p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
 
+<section class="role-permissions" *ngIf="auth.user()?.role === 'admin'">
+  <div class="section-title">ניהול תפקידים והרשאות</div>
+  <p class="user-help">מנהלת המערכת מקבלת את כל ההרשאות. כל הרשאה חדשה מתחילה כמאושרת וניתן לשנות אותה כאן.</p>
+  <div class="permission-key">
+    <p><strong>צפייה</strong> — פתיחת האזור וצפייה במידע שבו.</p>
+    <p><strong>שינוי</strong> — כל פעולה שמשנה מידע: הוספה, עריכה או מחיקה, לפי מה שקיים באותו אזור.</p>
+    <p>במקום שבו מופיע מקף, אין פעולות שינוי באזור הזה. שינוי הרשאה נכנס לתוקף גם בבדיקת השרת.</p>
+  </div>
+  <div class="role-create-row">
+    <input class="admin-input" [value]="newRoleName()" (input)="newRoleName.set($any($event.target).value)"
+           placeholder="שם תפקיד חדש" aria-label="שם תפקיד חדש" maxlength="60"
+           (keyup.enter)="createRole()">
+    <button class="btn btn-primary" type="button" [disabled]="!newRoleName().trim() || savingRole()"
+            (click)="createRole()">הוספת תפקיד</button>
+  </div>
+  <div *ngIf="permissionsError()" class="alert alert-error" role="alert">{{ permissionsError() }}</div>
+  <div *ngIf="permissionsMessage()" class="alert alert-success" role="status">{{ permissionsMessage() }}</div>
+  <ng-container *ngIf="permissionConfig() as config">
+    <label class="role-select-label">
+      תפקיד לעריכת הרשאות
+      <select [ngModel]="selectedPermissionRole()" (ngModelChange)="selectPermissionRole($event)">
+        <option *ngFor="let role of config.roles" [value]="role.role_key">{{ role.name }}</option>
+      </select>
+    </label>
+    <div *ngIf="selectedRolePermissions() as selectedRole" class="permissions-table-wrap">
+      <table class="permissions-table">
+        <thead>
+          <tr>
+            <th>אזור במערכת</th>
+            <th>מה נמצא באזור?</th>
+            <th *ngFor="let action of config.actions">{{ permissionActionLabel(action) }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let feature of config.catalog">
+            <th scope="row">{{ feature.label }}</th>
+            <td class="permission-description">{{ feature.description }}</td>
+            <td *ngFor="let action of config.actions">
+              <input *ngIf="action === 'view' || feature.supportsChange !== false"
+                     type="checkbox" [checked]="selectedRole.permissions[feature.key][action]"
+                     [disabled]="selectedRole.role_key === 'admin' || savingRole()"
+                     [attr.aria-label]="feature.label + ' — ' + permissionActionLabel(action)"
+                     (change)="setRolePermission(feature.key, action, $any($event.target).checked)">
+              <span *ngIf="action === 'change' && feature.supportsChange === false" aria-label="אין פעולות שינוי באזור זה">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <button class="btn btn-primary" type="button"
+              *ngIf="selectedRole.role_key !== 'admin'"
+              [disabled]="savingRole() || !permissionsDirty()"
+              (click)="saveRolePermissions()">
+        {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
+      </button>
+      <p *ngIf="selectedRole.role_key === 'admin'" class="user-help">למנהלת המערכת תמיד יש את כל ההרשאות.</p>
+    </div>
+  </ng-container>
+</section>
+
 <!-- modal עריכת פרטים -->
 <div *ngIf="editingUser()" class="modal-backdrop" (click)="editingUser.set(null)">
   <div class="modal-card" (click)="$event.stopPropagation()">
@@ -66,6 +126,29 @@ class="section-tab"
       <button class="btn btn-secondary" (click)="editingUser.set(null); userError.set('')">ביטול</button>
     </div>
   </div>
+</div>
+
+<div *ngIf="typedConfirmation()" class="modal-backdrop confirmation-backdrop"
+     (click)="cancelTypedConfirmation()" (keydown.escape)="cancelTypedConfirmation()">
+  <section class="modal-card confirmation-card" role="dialog" aria-modal="true"
+           aria-labelledby="typed-confirmation-title" (click)="$event.stopPropagation()">
+    <div class="confirmation-icon" aria-hidden="true">!</div>
+    <h2 id="typed-confirmation-title" class="modal-title">אישור פעולה בלתי הפיכה</h2>
+    <p class="confirmation-description">{{ typedConfirmation()!.description }}</p>
+    <p class="confirmation-instruction">כדי להמשיך, הקלידי בדיוק:</p>
+    <strong class="confirmation-phrase" dir="auto">{{ typedConfirmation()!.expected }}</strong>
+    <input class="confirmation-input" type="text" autocomplete="off"
+           [ngModel]="typedConfirmationInput()"
+           (ngModelChange)="typedConfirmationInput.set($event)"
+           [attr.aria-label]="'הקלידי: ' + typedConfirmation()!.expected"
+           (keyup.enter)="confirmTypedAction()">
+    <div class="modal-actions confirmation-actions">
+      <button class="btn btn-danger" type="button"
+              [disabled]="typedConfirmationInput() !== typedConfirmation()!.expected"
+              (click)="confirmTypedAction()">אישור ומחיקה</button>
+      <button class="btn btn-secondary" type="button" (click)="cancelTypedConfirmation()">ביטול</button>
+    </div>
+  </section>
 </div>
 
 <div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
@@ -94,9 +177,7 @@ class="section-tab"
 <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
 <input [(ngModel)]="newUser.password" type="password" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
 <select [(ngModel)]="newUser.role" aria-label="תפקיד">
-<option value="laborant">לבורנטית</option>
-<option value="secretary">מזכירות</option>
-<option value="admin">מנהלת מערכת</option>
+<option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
 </select>
 <button class="btn btn-primary" (click)="createUser()"> יצירת חשבון</button>
 </div>
@@ -142,9 +223,7 @@ class="section-tab"
 </div>
 <select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
 [disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
-<option value="laborant">לבורנטית</option>
-<option value="secretary">מזכירות</option>
-<option value="admin">מנהלת מערכת</option>
+<option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
 </select>
 <button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startEditUser(user)" title="עריכת פרטים">✏️</button>
 <button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">קביעת סיסמה</button>
@@ -630,6 +709,38 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 }
 .modal-title { font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
 .modal-actions { display: flex; gap: 8px; }
+.confirmation-backdrop { z-index: 910; padding: 16px; background: rgba(15, 23, 42, .58); }
+.confirmation-card { align-items: stretch; text-align: center; border: 1px solid #f1c8c8;
+  animation: confirmation-enter 160ms ease-out; }
+.confirmation-icon { align-self: center; display: grid; place-items: center; width: 48px; height: 48px;
+  border-radius: 50%; background: #fff0f0; color: #b42318; font-size: 1.7rem; font-weight: 900; }
+.confirmation-card .modal-title { margin: 0; color: #a32626; font-size: 1.15rem; }
+.confirmation-description, .confirmation-instruction { margin: 0; color: var(--text-muted); line-height: 1.5; }
+.confirmation-phrase { padding: 10px 12px; border: 1px dashed #d88b8b; border-radius: 8px;
+  background: #fff7f7; color: #8f1d1d; font-size: 1rem; }
+.confirmation-input { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border);
+  border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; text-align: center; }
+.confirmation-input:focus { outline: none; border-color: #c44747; box-shadow: 0 0 0 3px rgba(196, 71, 71, .12); }
+.confirmation-actions { justify-content: center; flex-wrap: wrap; }
+.confirmation-actions .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
+.role-permissions { margin: 20px 0; padding: 18px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2); }
+.role-create-row { display: flex; gap: 8px; max-width: 520px; margin-bottom: 14px; }
+.role-create-row .admin-input { flex: 1; min-width: 0; }
+.role-select-label { display: grid; gap: 6px; max-width: 360px; margin: 14px 0; font-weight: 700; }
+.role-select-label select { padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.permissions-table-wrap { overflow-x: auto; margin: 14px 0; }
+.permission-key { margin: 12px 0 18px; padding: 12px 14px; border-inline-start: 4px solid var(--primary);
+  border-radius: 8px; background: var(--surface); color: var(--text); font-size: .88rem; }
+.permission-key p { margin: 4px 0; }
+.permissions-table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--surface); }
+.permissions-table th, .permissions-table td { padding: 9px 12px; border: 1px solid var(--border); text-align: center; }
+.permissions-table thead th { background: var(--surface-2); font-size: .86rem; }
+.permissions-table tbody th { text-align: right; white-space: nowrap; }
+.permissions-table .permission-description { min-width: 300px; text-align: right; line-height: 1.5; }
+.permissions-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+@keyframes confirmation-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 `]
 })
 export class AdminComponent {
@@ -651,6 +762,13 @@ totalImported = signal(0);
 approvalTypes = signal<any[]>([]);
 editingApproval = signal<any | null>(null);
 users = signal<UserAccount[]>([]);
+permissionConfig = signal<PermissionsConfiguration | null>(null);
+selectedPermissionRole = signal('');
+newRoleName = signal('');
+permissionsError = signal('');
+permissionsMessage = signal('');
+savingRole = signal(false);
+permissionsDirty = signal(false);
 userError = signal('');
 resetResult = signal<{ name: string; password: string } | null>(null);
 passwordMessage = signal('');
@@ -663,6 +781,8 @@ savingApproval = signal(false);
 section = signal<AdminSection | null>(null);
 resettingDb = signal(false);
 resetDbMessage = signal('');
+typedConfirmation = signal<{ expected: string; description: string; action: () => void } | null>(null);
+typedConfirmationInput = signal('');
 
 // ── הוספת תלמידה ידנית ──
 addingStudent = signal(false);
@@ -670,8 +790,7 @@ addStudentError = signal('');
 newStudentDraft = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '', birth_date: '' };
 
 canAddStudent() {
-  const role = this.auth.user()?.role;
-  return role === 'admin' || role === 'secretary';
+  return this.auth.hasPermission('students', 'change');
 }
 
 saveNewStudent() {
@@ -705,21 +824,130 @@ saveNewStudent() {
 constructor(private http: HttpClient, private api: ApiService, public auth: AuthService) {
 this.loadTotal();
 this.loadApprovals();
-if (auth.user()?.role === 'admin') this.loadUsers();
+if (auth.user()?.role === 'admin') {
+  this.loadUsers();
+  this.loadPermissionConfig();
+}
 this.loadTeachers();
 this.loadPeriods();
 }
 
+systemRoles(): SystemRole[] {
+  return this.permissionConfig()?.roles.map(({ role_key, name, is_system }) => ({ role_key, name, is_system })) || [
+    { role_key: 'admin', name: 'מנהלת מערכת', is_system: 1 },
+    { role_key: 'secretary', name: 'מזכירות', is_system: 1 },
+    { role_key: 'laborant', name: 'לבורנטית', is_system: 1 }
+  ];
+}
+
+selectedRolePermissions(): RolePermissionSet | null {
+  return this.permissionConfig()?.roles.find(role => role.role_key === this.selectedPermissionRole()) || null;
+}
+
+permissionActionLabel(action: PermissionAction): string {
+  return ({ view: 'צפייה', change: 'שינוי' })[action];
+}
+
+loadPermissionConfig() {
+  this.permissionsError.set('');
+  this.auth.loadPermissions().subscribe({
+    next: config => {
+      this.permissionConfig.set(config);
+      if (!config.roles.some(role => role.role_key === this.selectedPermissionRole())) {
+        this.selectedPermissionRole.set(
+          config.roles.find(role => role.role_key !== 'admin')?.role_key || config.roles[0]?.role_key || ''
+        );
+      }
+      this.permissionsDirty.set(false);
+    },
+    error: error => this.permissionsError.set(error.error?.error || 'טעינת הגדרות ההרשאות נכשלה')
+  });
+}
+
+selectPermissionRole(roleKey: string) {
+  if (this.permissionsDirty()) {
+    this.permissionsError.set('שמרי או בטלי את השינויים לפני מעבר לתפקיד אחר');
+    return;
+  }
+  this.permissionsDirty.set(false);
+  this.selectedPermissionRole.set(roleKey);
+  this.loadPermissionConfig();
+}
+
+setRolePermission(feature: string, action: PermissionAction, enabled: boolean) {
+  const config = this.permissionConfig();
+  const role = this.selectedRolePermissions();
+  if (!config || !role || role.role_key === 'admin') return;
+  const updatedRole: RolePermissionSet = {
+    ...role,
+    permissions: {
+      ...role.permissions,
+      [feature]: { ...role.permissions[feature], [action]: enabled }
+    }
+  };
+  this.permissionConfig.set({
+    ...config,
+    roles: config.roles.map(item => item.role_key === updatedRole.role_key ? updatedRole : item)
+  });
+  this.permissionsDirty.set(true);
+  this.permissionsMessage.set('');
+}
+
+createRole() {
+  const name = this.newRoleName().trim();
+  if (!name || this.savingRole()) return;
+  this.savingRole.set(true);
+  this.permissionsError.set('');
+  this.permissionsMessage.set('');
+  this.http.post<SystemRole>('/api/roles', { name }).subscribe({
+    next: role => {
+      this.savingRole.set(false);
+      this.newRoleName.set('');
+      this.selectedPermissionRole.set(role.role_key);
+      this.loadPermissionConfig();
+      this.loadUsers();
+      this.permissionsMessage.set(`התפקיד "${role.name}" נוסף עם כל ההרשאות פעילות.`);
+    },
+    error: error => {
+      this.savingRole.set(false);
+      this.permissionsError.set(error.error?.error || 'יצירת התפקיד נכשלה');
+    }
+  });
+}
+
+saveRolePermissions() {
+  const role = this.selectedRolePermissions();
+  if (!role || role.role_key === 'admin' || this.savingRole() || !this.permissionsDirty()) return;
+  this.savingRole.set(true);
+  this.permissionsError.set('');
+  this.permissionsMessage.set('');
+  this.http.put<{ success: boolean }>(`/api/roles/${encodeURIComponent(role.role_key)}/permissions`, {
+    permissions: role.permissions
+  }).subscribe({
+    next: () => {
+      this.savingRole.set(false);
+      this.permissionsDirty.set(false);
+      this.permissionsMessage.set(`ההרשאות לתפקיד "${role.name}" נשמרו.`);
+      this.loadPermissionConfig();
+    },
+    error: error => {
+      this.savingRole.set(false);
+      this.permissionsError.set(error.error?.error || 'שמירת ההרשאות נכשלה');
+    }
+  });
+}
+
 sections(): { id: AdminSection; icon: string; label: string }[] {
-const role = this.auth.user()?.role;
-const all: { id: AdminSection; icon: string; label: string; roles: UserRole[] }[] = [
-{ id: 'tracks', icon: '', label: 'מסלולים', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'students', icon: '', label: 'תלמידות', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'approvals', icon: '', label: 'סוגי אישורים', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'teachers', icon: '', label: 'מורות ומערכת', roles: ['admin', 'laborant', 'secretary'] },
-{ id: 'users', icon: '', label: 'משתמשות והרשאות', roles: ['admin'] },
+const all: { id: AdminSection; icon: string; label: string; permission: string }[] = [
+{ id: 'tracks', icon: '', label: 'מסלולים', permission: 'tracks' },
+{ id: 'students', icon: '', label: 'תלמידות', permission: 'students' },
+{ id: 'approvals', icon: '', label: 'סוגי אישורים', permission: 'approvals' },
+{ id: 'teachers', icon: '', label: 'מורות ומערכת', permission: 'teachers' },
+{ id: 'users', icon: '', label: 'משתמשות והרשאות', permission: 'roles' },
 ];
-return all.filter(s => role && s.roles.includes(role));
+return all.filter(s => s.id === 'users'
+  ? this.auth.user()?.role === 'admin'
+  : this.auth.hasPermission(s.permission));
 }
 
 activeSection(): AdminSection | null {
@@ -781,7 +1009,12 @@ saveEditUser() {
 
 // מחיקת משתמשת
 deleteUser(user: UserAccount) {
-  if (!confirm(`למחוק לצמיתות את החשבון של ${user.name}?\nהפעולה בלתי הפיכה.`)) return;
+  this.requestTypedConfirmation(`מחיקת ${user.name}`, `מחיקת המשתמשת ${user.name} לצמיתות`, () => {
+    this.deleteUserConfirmed(user);
+  });
+}
+
+private deleteUserConfirmed(user: UserAccount) {
   this.userError.set('');
   this.http.delete(`/api/users/${user.id}`).subscribe({
     next: () => this.loadUsers(),
@@ -835,11 +1068,12 @@ error: error => this.userError.set(error.error?.error || 'לא ניתן לאפס
 
 resetDatabase() {
 this.resetDbMessage.set('');
-const first = confirm('לאפס את נתוני התלמידות מהמערכת? הפעולה מוחקת נתוני תלמידות/מסלולים/דרישות/מבחנים.');
-if (!first) return;
-const second = confirm('אישור סופי: פעולה זו בלתי הפיכה. להמשיך?');
-if (!second) return;
+this.requestTypedConfirmation('מחיקת כל התלמידות', 'מחיקת נתוני התלמידות, המסלולים, הדרישות והמבחנים', () => {
+  this.resetDatabaseConfirmed();
+});
+}
 
+private resetDatabaseConfirmed() {
 this.resettingDb.set(true);
 this.api.resetDatabase().subscribe({
 next: (result) => {
@@ -852,6 +1086,23 @@ this.resettingDb.set(false);
 this.resetDbMessage.set(error.error?.error || 'איפוס מסד הנתונים נכשל');
 }
 });
+}
+
+private requestTypedConfirmation(expected: string, description: string, action: () => void) {
+  this.typedConfirmationInput.set('');
+  this.typedConfirmation.set({ expected, description, action });
+}
+
+cancelTypedConfirmation() {
+  this.typedConfirmation.set(null);
+  this.typedConfirmationInput.set('');
+}
+
+confirmTypedAction() {
+  const confirmation = this.typedConfirmation();
+  if (!confirmation || this.typedConfirmationInput() !== confirmation.expected) return;
+  this.cancelTypedConfirmation();
+  confirmation.action();
 }
 
 updateUser(user: UserAccount, role: UserRole, active: boolean) {
@@ -961,7 +1212,12 @@ deleteTeacher(id: number) {
 }
 
 deleteAllTeachers() {
-  if (!confirm('למחוק את כל המורות מהמערכת? כל מערכת השעות והנוכחות שלהם תימחק גם כן.')) return;
+  this.requestTypedConfirmation('מחיקת כל המורות', 'מחיקת כל המורות, השיעורים והנוכחות שלהן', () => {
+    this.deleteAllTeachersConfirmed();
+  });
+}
+
+private deleteAllTeachersConfirmed() {
   this.api.deleteAllTeachers().subscribe({
     next: () => this.loadTeachers(),
     error: e => alert(e.error?.error || 'שגיאה במחיקת המורות')

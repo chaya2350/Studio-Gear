@@ -8,7 +8,7 @@ function initializeAuthSchema(db) {
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
       password_salt TEXT NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'laborant', 'secretary')),
+      role TEXT NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
     );
@@ -19,6 +19,34 @@ function initializeAuthSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
   `);
+
+  const usersSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
+  if (/CHECK\s*\(\s*role\s+IN\s*\(/i.test(usersSchema)) {
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE users_role_migration_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+          );
+          INSERT INTO users_role_migration_new
+            (id, name, email, password_salt, password_hash, role, active, created_at)
+          SELECT id, name, email, password_salt, password_hash, role, active, created_at FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_role_migration_new RENAME TO users;
+        `);
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
 }
 
 function hashPassword(password, salt = randomBytes(16).toString('hex')) {
