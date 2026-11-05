@@ -109,3 +109,21 @@ test('skips copied lessons that overlap another lesson for the same class', () =
   );
   db.close();
 });
+
+test('skips copied lessons that land on a school holiday', () => {
+  const db = createDatabase();
+  db.prepare(`
+    INSERT INTO schedule_slots
+      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start, series_id)
+    VALUES (1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01', 'series-1')
+  `).run();
+
+  const result = copyScheduleWeekIfEmpty(db, {
+    fromWeek: '2026-11-01', toWeek: '2026-11-08', validateSlot: () => true,
+    isSchoolHoliday: (week, day) => week === '2026-11-08' && day === 1
+  });
+
+  assert.deepEqual(result, { copied: 0, skipped: 1, reason: 'no_valid_slots' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_slots WHERE week_start = ?').get('2026-11-08').count, 0);
+  db.close();
+});

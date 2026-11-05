@@ -1,6 +1,15 @@
 const { findClassTimeConflict } = require('./schedule-conflicts');
 
-function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot, createSeriesId = () => null, onCopied = () => {} }) {
+function addDays(dateStr, days) {
+  const date = new Date(`${dateStr}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function copyScheduleWeekIfEmpty(db, {
+  fromWeek, toWeek, validateSlot, createSeriesId = () => null, onCopied = () => {},
+  isSchoolHoliday = () => false
+}) {
   return db.transaction(() => {
     const destination = db.prepare(
       'SELECT 1 FROM schedule_slots WHERE week_start = ? LIMIT 1'
@@ -21,7 +30,7 @@ function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot, createSer
     let copied = 0;
     let skipped = 0;
     for (const slot of sourceSlots) {
-      if (!validateSlot(slot) || findClassTimeConflict(db, {
+      if (isSchoolHoliday(toWeek, Number(slot.day_of_week)) || !validateSlot(slot) || findClassTimeConflict(db, {
         class_year: slot.class_year,
         class_parallel: slot.class_parallel,
         day_of_week: slot.day_of_week,
