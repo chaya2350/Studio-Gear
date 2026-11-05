@@ -393,12 +393,9 @@ interface GanttRow {
 <!-- Upload panel (admin/secretary, schedule active) -->
 <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
   <label class="upload-button" [class.uploading]="uploading">
-    <input type="file" accept=".xlsx" [disabled]="uploading || addingHolidays" (change)="onCalendarFileSelected($event)">
+    <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
     {{ uploading ? 'מעלה ומייבאת...' : 'העלאת לוח שנה מאקסל' }}
   </label>
-  <button type="button" class="upload-button" [disabled]="uploading || addingHolidays" (click)="addIsraeliHolidays()">
-    {{ addingHolidays ? 'מוסיפה...' : 'הוספת חגי ישראל לשנת הלימודים' }}
-  </button>
   <span class="upload-help">קובץ Excel ‎.xlsx — אירועים מהגיליונות יישמרו בלוח האירועים</span>
   <p *ngIf="uploadMessage" class="upload-success" role="status">{{ uploadMessage }}</p>
   <p *ngIf="uploadError"   class="upload-error"   role="alert">{{ uploadError }}</p>
@@ -1117,7 +1114,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   uploadError   = '';
   uploadMessage = '';
   uploading     = false;
-  addingHolidays = false;
   updatingTaskId: number | null = null;
 
   // ── Event detail ──
@@ -1150,9 +1146,12 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.route.data.subscribe(data => {
       const view = data['view'];
-      this.layers.set(new Set<CalendarLayer>([
-        view === 'personal' || view === 'schedule' ? view : 'equipment'
-      ]));
+      const activeLayers: CalendarLayer[] = view === 'personal'
+        ? ['personal', 'schedule']
+        : view === 'schedule'
+          ? ['schedule']
+          : ['equipment', 'schedule'];
+      this.layers.set(new Set<CalendarLayer>(activeLayers));
     });
 
     this.route.queryParamMap.subscribe(params => {
@@ -1585,7 +1584,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file || this.addingHolidays) return;
+    if (!file) return;
     this.uploading = true; this.uploadError = ''; this.uploadMessage = '';
     this.api.importCalendarWorkbook(file).subscribe({
       next: r => {
@@ -1595,24 +1594,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
       },
       error: e => { this.uploading = false; this.uploadError = e.error?.error || 'ייבוא נכשל'; }
-    });
-  }
-
-  addIsraeliHolidays() {
-    if (this.uploading || this.addingHolidays) return;
-    this.addingHolidays = true; this.uploadError = ''; this.uploadMessage = '';
-    this.api.addIsraeliHolidays().subscribe({
-      next: result => {
-        this.addingHolidays = false;
-        this.uploadMessage = result.added
-          ? `נוספו ${result.added} חגי ישראל עד ${this.formatShortDate(result.through_date)}.`
-          : 'חגי ישראל כבר קיימים בלוח השנה.';
-        this.api.getCalendarEvents().subscribe(events => this.calendarEvents.set(events));
-      },
-      error: error => {
-        this.addingHolidays = false;
-        this.uploadError = error.error?.error || 'הוספת החגים נכשלה';
-      }
     });
   }
 

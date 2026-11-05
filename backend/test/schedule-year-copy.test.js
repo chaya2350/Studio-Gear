@@ -103,3 +103,20 @@ test('does not copy a lesson that falls after the selected end date within the f
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_slots').get().count, 1);
   db.close();
 });
+
+test('skips occurrences that land on a school holiday', () => {
+  const db = createDatabase();
+  addSlot(db, { teacher: 1, year: 'ה', parallel: '1', day: 1, start: '08:30', end: '09:10', subject: 'הלכה', week: '2026-11-01' });
+
+  const result = copyScheduleAcrossYear(db, {
+    sourceWeek: '2026-11-01', firstWeek: '2026-11-01', throughDate: '2026-11-16',
+    validateSlot: () => true,
+    isSchoolHoliday: (week, day) => week === '2026-11-08' && day === 1,
+    createSeriesId: () => 'series-1'
+  });
+
+  assert.equal(result.inserted, 1);
+  assert.equal(result.skipped, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_slots WHERE week_start = ?').get('2026-11-08').count, 0);
+  db.close();
+});

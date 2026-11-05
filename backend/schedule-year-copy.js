@@ -6,7 +6,9 @@ function addDays(dateStr, days) {
   return date.toISOString().slice(0, 10);
 }
 
-function copyScheduleAcrossYear(db, { sourceWeek, firstWeek, throughDate, validateSlot, createSeriesId }) {
+function copyScheduleAcrossYear(db, {
+  sourceWeek, firstWeek, throughDate, validateSlot, createSeriesId, isSchoolHoliday = () => false
+}) {
   return db.transaction(() => {
     const sourceSlots = db.prepare('SELECT * FROM schedule_slots WHERE week_start = ? ORDER BY id').all(sourceWeek);
     if (!sourceSlots.length) return { inserted: 0, linked: 0, skipped: 0, reason: 'source_empty' };
@@ -41,6 +43,10 @@ function copyScheduleAcrossYear(db, { sourceWeek, firstWeek, throughDate, valida
       const claimed = new Set();
       for (const slot of templates) {
         if (addDays(week, Number(slot.day_of_week)) > throughDate) continue;
+        if (isSchoolHoliday(week, Number(slot.day_of_week))) {
+          skipped++;
+          continue;
+        }
         if (findSeries.get(week, slot.series_id)) continue;
         const candidates = findUnlinkedMatch.all(
           week, slot.class_year, slot.class_parallel, slot.day_of_week

@@ -137,9 +137,6 @@ export class ApiService {
     formData.append('file', file);
     return this.http.post<CalendarImportResult>(`${this.base}/calendar-events/import`, formData);
   }
-  addIsraeliHolidays() {
-    return this.http.post<{ added: number; through_date: string }>(`${this.base}/calendar-events/holidays`, {});
-  }
   importTeachersExcel(file: File) {
     const formData = new FormData();
     formData.append('file', file);

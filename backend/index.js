@@ -9,13 +9,14 @@ const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
-const { generateIsraeliHolidayEvents } = require('./calendar-holidays');
+const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { copyScheduleAcrossYear } = require('./schedule-year-copy');
 const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-conflicts');
+let generatedHolidayRange = '';
 const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
@@ -392,6 +393,7 @@ if (!calEventCols.includes('end_time')) db.exec('ALTER TABLE calendar_events ADD
 if (!calEventCols.includes('class_scope')) db.exec("ALTER TABLE calendar_events ADD COLUMN class_scope TEXT NOT NULL DEFAULT 'none'");
 if (!calEventCols.includes('class_year')) db.exec('ALTER TABLE calendar_events ADD COLUMN class_year TEXT');
 if (!calEventCols.includes('class_parallel')) db.exec('ALTER TABLE calendar_events ADD COLUMN class_parallel TEXT');
+if (!calEventCols.includes('is_school_holiday')) db.exec('ALTER TABLE calendar_events ADD COLUMN is_school_holiday INTEGER NOT NULL DEFAULT 0');
 
 // תיק סרוק — מסמכים של תלמידה
 db.exec(`
@@ -651,7 +653,12 @@ app.get('/api/pages/requests/incoming', (req, res) => {
 
 const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
 
-app.get('/api/calendar-events', (req, res) => {
+app.get('/api/calendar-events', async (req, res) => {
+  try {
+    await ensureSchoolYearHolidays();
+  } catch (error) {
+    console.error('Automatic Israeli holiday generation failed:', error);
+  }
   res.json(db.prepare(`
     SELECT id, title, event_date, hebrew_year, category, source_sheet, notes,
       all_day, start_time, end_time, class_scope, class_year, class_parallel
@@ -814,30 +821,6 @@ app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, r
     sheets: parsed.sheetCount,
     warnings: parsed.warnings
   });
-});
-
-app.post('/api/calendar-events/holidays', async (req, res) => {
-  const throughDate = getSchoolYearEnd();
-  const startDate = `${Number(throughDate.slice(0, 4)) - 1}-09-01`;
-  try {
-    const holidays = await generateIsraeliHolidayEvents(startDate, throughDate);
-    const addHolidays = db.transaction(events => {
-      const insert = db.prepare(`
-        INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at, all_day)
-        VALUES (?, ?, ?, ?, 'חגים אוטומטיים', datetime('now'), 1)
-        ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
-      `);
-      let added = 0;
-      for (const event of events) {
-        added += insert.run(event.title, event.event_date, event.hebrew_year, event.category).changes;
-      }
-      return added;
-    });
-    res.json({ added: addHolidays(holidays), through_date: throughDate });
-  } catch (error) {
-    console.error('Israeli holiday generation failed:', error);
-    res.status(500).json({ error: 'הוספת החגים האוטומטית נכשלה' });
-  }
 });
 
 function logActivity(userId, action, itemType, itemId, details = '') {
@@ -3354,7 +3337,8 @@ app.get('/api/teachers/:id', (req, res) => {
   res.json(teacher);
 });
 
-app.get('/api/teachers/profile', (req, res) => {
+app.get('/api/teachers/profile', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const teacher = db.prepare('SELECT * FROM teachers ORDER BY id LIMIT 1').get();
   if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });
 
@@ -3368,12 +3352,15 @@ app.get('/api/teachers/profile', (req, res) => {
       AND s.week_start >= ?
       AND s.week_start <= ?
     ORDER BY s.week_start, s.day_of_week, s.start_time
-  `).all(teacher.id, weekStart, addDays(weekStart, 7));
+  `).all(teacher.id, weekStart, addDays(weekStart, 7)).filter(slot =>
+    !schoolHolidayForDate(addDays(slot.week_start, Number(slot.day_of_week)))
+  );
 
   res.json({ teacher, lessons: collectTeacherUpcomingLessons(lessons, today), week_start: weekStart });
 });
 
-app.get('/api/teachers/:id/profile', (req, res) => {
+app.get('/api/teachers/:id/profile', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const teacher = db.prepare('SELECT * FROM teachers WHERE id = ?').get(req.params.id);
   if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });
 
@@ -3387,7 +3374,9 @@ app.get('/api/teachers/:id/profile', (req, res) => {
       AND s.week_start >= ?
       AND s.week_start <= ?
     ORDER BY s.week_start, s.day_of_week, s.start_time
-  `).all(teacher.id, weekStart, addDays(weekStart, 7));
+  `).all(teacher.id, weekStart, addDays(weekStart, 7)).filter(slot =>
+    !schoolHolidayForDate(addDays(slot.week_start, Number(slot.day_of_week)))
+  );
 
   res.json({ teacher, lessons: collectTeacherUpcomingLessons(lessons, today), week_start: weekStart });
 });
@@ -3558,7 +3547,8 @@ app.put('/api/schedule/school-year-end', (req, res) => {
   res.json({ through_date: throughDate });
 });
 
-app.get('/api/schedule', (req, res) => {
+app.get('/api/schedule', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
   const slots = db.prepare(`
@@ -3567,9 +3557,12 @@ app.get('/api/schedule', (req, res) => {
     JOIN teachers t ON t.id = s.teacher_id
     WHERE s.week_start = ?
     ORDER BY s.class_year, s.class_parallel, s.day_of_week, s.start_time
-  `).all(weekStart);
+  `).all(weekStart).filter(slot =>
+    !schoolHolidayForDate(addDays(weekStart, Number(slot.day_of_week)))
+  );
   const events = db.prepare(`
-    SELECT id, title, event_date, category, all_day, start_time, end_time, class_scope, class_year, class_parallel
+    SELECT id, title, event_date, category, all_day, start_time, end_time, class_scope, class_year, class_parallel,
+      is_school_holiday
     FROM calendar_events
     WHERE event_date >= ? AND event_date <= ?
   `).all(weekStart, addDays(weekStart, 4));
@@ -3623,6 +3616,15 @@ function getSchoolYearEnd() {
     .get('school_year_end')?.setting_value || '2027-08-31';
 }
 
+async function ensureSchoolYearHolidays() {
+  const throughDate = getSchoolYearEnd();
+  const startDate = `${Number(throughDate.slice(0, 4)) - 1}-09-01`;
+  const range = `${startDate}:${throughDate}`;
+  if (generatedHolidayRange === range) return;
+  await addIsraeliHolidays(db, startDate, throughDate);
+  generatedHolidayRange = range;
+}
+
 function todayInIsrael() {
   const dateParts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -3669,7 +3671,8 @@ function recordScheduleChange({ slot, action, change, fromTeacherId, toTeacherId
   );
 }
 
-app.post('/api/schedule', (req, res) => {
+app.post('/api/schedule', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { teacher_id, day_of_week, start_time, end_time, subject, week_start, allow_conflicts } = req.body || {};
   const classes = Array.isArray(req.body?.classes) ? req.body.classes : [{
     class_year: req.body?.class_year,
@@ -3698,6 +3701,13 @@ app.post('/api/schedule', (req, res) => {
   for (const classInfo of classes) {
     for (const targetWeek of weeks) {
       const lessonDate = addDays(targetWeek, Number(day_of_week));
+      const schoolHoliday = schoolHolidayForDate(lessonDate);
+      if (schoolHoliday) {
+        if (changeScope === 'once') {
+          return res.status(409).json({ error: `אין לימודים בחג ${schoolHoliday.title}` });
+        }
+        continue;
+      }
       const eventConflict = db.prepare(`
         SELECT * FROM calendar_events
         WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
@@ -3758,7 +3768,7 @@ app.post('/api/schedule', (req, res) => {
   }
 });
 
-app.post('/api/schedule/copy-school-year', (req, res) => {
+app.post('/api/schedule/copy-school-year', async (req, res) => {
   const sourceDate = String(req.body?.source_week || '');
   const throughDate = String(req.body?.through_date || getSchoolYearEnd());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceDate)) {
@@ -3781,11 +3791,13 @@ app.post('/api/schedule/copy-school-year', (req, res) => {
   if (firstWeek > throughDate) return res.status(400).json({ error: 'שנת הלימודים כבר הסתיימה' });
 
   try {
+    await ensureSchoolYearHolidays();
     const result = copyScheduleAcrossYear(db, {
       sourceWeek,
       firstWeek,
       throughDate,
       validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+      isSchoolHoliday: (week, day) => Boolean(schoolHolidayForDate(addDays(week, day))),
       createSeriesId: () => randomBytes(12).toString('hex')
     });
     if (result.reason === 'source_empty') return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
@@ -3800,7 +3812,8 @@ app.post('/api/schedule/copy-school-year', (req, res) => {
 });
 
 // Copy previous week's schedule to a new week
-app.post('/api/schedule/copy-week', (req, res) => {
+app.post('/api/schedule/copy-week', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { from_week, to_week } = req.body || {};
   if (!from_week || !to_week) return res.status(400).json({ error: 'חסרים פרמטרים: from_week, to_week' });
   const change = scheduleChangeInput({ ...req.body, change_scope: 'once' });
@@ -3812,6 +3825,7 @@ app.post('/api/schedule/copy-week', (req, res) => {
     fromWeek: from_week,
     toWeek: to_week,
     validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+    isSchoolHoliday: (week, day) => Boolean(schoolHolidayForDate(addDays(week, day))),
     createSeriesId: () => randomBytes(12).toString('hex'),
     onCopied: slot => {
       db.prepare(`UPDATE schedule_slots SET change_scope = 'once', change_category = ?, change_reason = ? WHERE id = ?`)
@@ -3826,13 +3840,16 @@ app.post('/api/schedule/copy-week', (req, res) => {
   res.json({ copied: result.copied, skipped: result.skipped, to_week });
 });
 
-app.put('/api/schedule/:id', (req, res) => {
+app.put('/api/schedule/:id', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { teacher_id, start_time, end_time, subject, allow_conflicts } = req.body || {};
   const change = scheduleChangeInput(req.body);
   const current = db.prepare('SELECT * FROM schedule_slots WHERE id=?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
   if (change.error) return res.status(400).json({ error: change.error });
   const { class_year, class_parallel, day_of_week } = current;
+  const currentHoliday = schoolHolidayForDate(addDays(current.week_start, Number(day_of_week)));
+  if (currentHoliday) return res.status(409).json({ error: `אין לימודים בחג ${currentHoliday.title}` });
   if (change.scope === 'permanent' && current.week_start < currentScheduleWeek()) {
     return res.status(400).json({ error: 'שינוי קבוע מתחיל מהשבוע הנוכחי; בחרי שיעור מהשבוע הנוכחי או משבוע עתידי' });
   }
@@ -3845,7 +3862,9 @@ app.put('/api/schedule/:id', (req, res) => {
       weeks: weeksForScheduleChange(current.week_start, current.day_of_week, change.scope)
     });
     if (planned.error) return res.status(409).json({ error: planned.error });
-    targets = planned.targets;
+    targets = planned.targets.filter(target =>
+      !schoolHolidayForDate(addDays(target.week_start, Number(target.day_of_week)))
+    );
   }
   const conflicts = new Set();
   for (const target of targets) {
@@ -3958,7 +3977,8 @@ app.delete('/api/schedule/week/:week_start', (req, res) => {
 
 // ── Weekly Sheets – PDF Data ───────────────────────────────────
 // Returns JSON with all data needed to render the printable sheets
-app.get('/api/attendance/weekly-sheets', (req, res) => {
+app.get('/api/attendance/weekly-sheets', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
 
@@ -3969,7 +3989,9 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
     JOIN teachers t ON t.id = s.teacher_id
     WHERE s.week_start = ?
     ORDER BY t.name, s.class_year, s.class_parallel, s.day_of_week
-  `).all(weekStart);
+  `).all(weekStart).filter(slot =>
+    !schoolHolidayForDate(addDays(weekStart, Number(slot.day_of_week)))
+  );
 
   if (!slots.length) return res.json({ week_start: weekStart, sheets: [], changes: [] });
 
@@ -4093,7 +4115,8 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
 
 // Resolve or create a session from a scanned attendance barcode
 // barcode format: ATT-T{teacherId}-{year}{parallel}-{date}
-app.post('/api/attendance/scan-session', (req, res) => {
+app.post('/api/attendance/scan-session', async (req, res) => {
+  await ensureSchoolYearHolidays();
   const { barcode } = req.body || {};
   if (!barcode) return res.status(400).json({ error: 'ברקוד חסר' });
 
@@ -4107,6 +4130,9 @@ app.post('/api/attendance/scan-session', (req, res) => {
   const classMatch = classFull.match(/^([\u05d0-\u05ea]+)(\d+)$/);
   if (!classMatch) return res.status(400).json({ error: 'ברקוד לא מוכר — פורמט כיתה שגוי' });
   const [, classYear, classParallel] = classMatch;
+
+  const schoolHoliday = schoolHolidayForDate(lessonDate);
+  if (schoolHoliday) return res.status(409).json({ error: `אין לימודים בחג ${schoolHoliday.title}` });
 
   const teacher = db.prepare('SELECT * FROM teachers WHERE id=?').get(teacherId);
   if (!teacher) return res.status(404).json({ error: 'מורה לא נמצאה' });
@@ -4437,7 +4463,8 @@ if (!teacherCols.includes('email')) db.exec('ALTER TABLE teachers ADD COLUMN ema
 // ── Import schedule from Excel ──────────────────────────────────
 // Expected columns: מורה/teacher, שנה/year, מקבילה/parallel, יום/day, שעה_התחלה/start_time, שעה_סיום/end_time, מקצוע/subject
 // day values: ראשון/1, שני/2 etc. or number 0-4
-app.post('/api/schedule/import', xlsxUpload.single('file'), (req, res) => {
+app.post('/api/schedule/import', xlsxUpload.single('file'), async (req, res) => {
+  await ensureSchoolYearHolidays();
   if (!req.file) return res.status(400).json({ error: 'קובץ חסר' });
   const weekStart = String(req.body?.week_start || '').trim();
   if (!weekStart) return res.status(400).json({ error: 'week_start חסר' });
@@ -4486,6 +4513,13 @@ app.post('/api/schedule/import', xlsxUpload.single('file'), (req, res) => {
         const dayOfWeek = DAY_MAP[dayRaw] ?? DAY_MAP[dayRaw.replace('יום ', '')] ?? null;
         if (dayOfWeek === null || dayOfWeek === undefined) {
           errors.push(`שורה לא מוכרת: יום "${dayRaw}"`);
+          skipped++;
+          continue;
+        }
+
+        const schoolHoliday = schoolHolidayForDate(addDays(weekStart, dayOfWeek));
+        if (schoolHoliday) {
+          errors.push(`${classYear}${classParallel}: אין לימודים בחג ${schoolHoliday.title}`);
           skipped++;
           continue;
         }
