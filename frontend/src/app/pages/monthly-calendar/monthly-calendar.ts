@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+﻿import { CommonModule } from '@angular/common';
 import { Component, computed, OnInit, OnDestroy, signal, HostListener } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -151,13 +151,27 @@ interface GanttRow {
 
 <!-- Add-exam dialog -->
 <div *ngIf="addExamOpen()" class="modal-backdrop" (click)="closeDialogs()">
-  <div class="modal-card" (click)="$event.stopPropagation()">
+  <div class="modal-card" (click)="$event.stopPropagation()" style="width:min(500px,95vw)">
     <div class="modal-title"> מבחן חדש ל-{{ formatShortDate(selectedDate()) }}</div>
     <div class="form-group">
       <label>שם המבחן *</label>
       <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'" (keyup.enter)="saveExam()">
     </div>
-    <div class="form-row">
+    <div style="display:flex;gap:6px;margin:8px 0 10px">
+      <button type="button"
+        (click)="newExam.filterMode='track'; newExam.parallel=''"
+        [style.border-color]="newExam.filterMode==='track' ? 'var(--primary)' : ''"
+        [style.color]="newExam.filterMode==='track' ? 'var(--primary)' : ''"
+        [style.background]="newExam.filterMode==='track' ? 'var(--primary-light)' : ''"
+        style="flex:1;padding:7px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font:inherit;font-size:0.82rem;font-weight:700;cursor:pointer">לפי מסלול ושנה</button>
+      <button type="button"
+        (click)="newExam.filterMode='class'; newExam.track=''; newExam.year=''"
+        [style.border-color]="newExam.filterMode==='class' ? 'var(--primary)' : ''"
+        [style.color]="newExam.filterMode==='class' ? 'var(--primary)' : ''"
+        [style.background]="newExam.filterMode==='class' ? 'var(--primary-light)' : ''"
+        style="flex:1;padding:7px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font:inherit;font-size:0.82rem;font-weight:700;cursor:pointer">לפי כיתה (מקבילה)</button>
+    </div>
+    <div *ngIf="newExam.filterMode==='track'" class="form-row">
       <div class="form-group">
         <label>מסלול</label>
         <select [(ngModel)]="newExam.track">
@@ -173,6 +187,13 @@ interface GanttRow {
         </select>
       </div>
     </div>
+    <div *ngIf="newExam.filterMode==='class'" class="form-group">
+      <label>כיתה</label>
+      <select [(ngModel)]="newExam.parallel">
+        <option value="">כל הכיתות</option>
+        <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }} תלמידות)</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" [disabled]="!newExam.name.trim()" (click)="saveExam()">שמור</button>
       <button class="btn btn-secondary" (click)="closeDialogs()">ביטול</button>
@@ -180,7 +201,6 @@ interface GanttRow {
     <p *ngIf="dialogError()" class="hint" style="color:var(--danger)">{{ dialogError() }}</p>
   </div>
 </div>
-
 <!-- Add-event dialog -->
 <div *ngIf="addEventOpen()" class="modal-backdrop" (click)="closeDialogs()">
   <div class="modal-card" (click)="$event.stopPropagation()">
@@ -1105,7 +1125,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   newTask = { title: '', visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
   taskUsers = signal<MessageUser[]>([]);
   showUserPicker = signal(false);
-  newExam  = { name: '', track: '', year: '' };
+  newExam  = { name: '', track: '', year: '', filterMode: 'track' as 'track' | 'class', parallel: '' };
   newEvent = {
     title: '', category: '', start_date: this.today, end_date: this.today,
     all_day: true, start_time: '08:00', end_time: '09:00',
@@ -1334,7 +1354,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddExam() {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
-    this.newExam = { name: '', track: '', year: '' };
+    this.newExam = { name: '', track: '', year: '', filterMode: 'track', parallel: '' };
     this.dialogError.set('');
     this.addExamOpen.set(true);
   }
@@ -1383,13 +1403,19 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   saveExam() {
     const name = this.newExam.name.trim();
     if (!name) return;
-    this.api.createExam({
-      name,
-      track: this.newExam.track || undefined,
-      year: this.newExam.year || undefined,
-      exam_date: this.selectedDate()
-    }).subscribe({
-      next: () => {
+    const examData: any = { name, exam_date: this.selectedDate() };
+    if (this.newExam.filterMode === 'class') {
+      if (this.newExam.parallel) examData.parallel = this.newExam.parallel;
+    } else {
+      if (this.newExam.track) examData.track = this.newExam.track;
+      if (this.newExam.year) examData.year = this.newExam.year;
+    }
+    this.api.createExam(examData).subscribe({
+      next: (result) => {
+        const codeParams: any = {};
+        if (this.newExam.filterMode === 'class' && examData.parallel) codeParams.parallel = examData.parallel;
+        else { if (examData.track) codeParams.track = examData.track; if (examData.year) codeParams.year = examData.year; }
+        this.api.generateExamCodes(result.id, codeParams).subscribe();
         this.api.getExams().subscribe(v => this.exams.set(v));
         this.closeDialogs();
         if (!this.has('exams')) this.toggleLayer('exams');
@@ -1634,6 +1660,18 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       if (!seen.has(lbl)) seen.set(lbl, y);
     }
     return [...seen.values()];
+  }
+
+  classOptions(): { parallel: string; label: string; count: number }[] {
+    const map = new Map<string, { label: string; count: number }>();
+    for (const s of this.allStudents()) {
+      if (!s.parallel) continue;
+      const existing = map.get(s.parallel);
+      if (existing) existing.count++;
+      else map.set(s.parallel, { label: s.class_name || s.parallel, count: 1 });
+    }
+    return Array.from(map, ([parallel, v]) => ({ parallel, label: v.label, count: v.count }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'he'));
   }
 
   dayLabel(day: CalendarDay): string {
