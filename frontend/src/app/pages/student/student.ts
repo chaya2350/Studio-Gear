@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -352,8 +352,8 @@ type="checkbox"
   <div class="section-title-row">
     <div class="section-title">📁 תיק סרוק</div>
     <label class="upload-doc-btn" [class.uploading]="uploadingDoc()">
-      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" hidden [disabled]="uploadingDoc()" (change)="uploadDocument($event)">
-      {{ uploadingDoc() ? 'מעלה...' : '+ הוסף מסמך' }}
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" hidden multiple [disabled]="uploadingDoc()" (change)="uploadDocuments($event)">
+      {{ uploadingDoc() ? 'מעלה...' : '+ הוסף מסמכים' }}
     </label>
   </div>
   <p *ngIf="docError()" class="edit-error" role="alert">{{ docError() }}</p>
@@ -370,13 +370,15 @@ type="checkbox"
 <div class="card" style="margin-top:20px;">
   <div class="section-title-row">
     <div class="section-title">📋 לוח מודעות</div>
-    <button class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;" (click)="noticeFormOpen.set(!noticeFormOpen())">
+    <button *ngIf="auth.hasPermission('students','change')"
+            class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;"
+            (click)="noticeFormOpen.set(!noticeFormOpen())">
       {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
     </button>
   </div>
 
   <!-- טופס הוספה -->
-  <div *ngIf="noticeFormOpen()" class="notice-form">
+  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','change')" class="notice-form">
     <div class="form-row">
       <div class="form-group">
         <label>כותרת *</label>
@@ -406,18 +408,24 @@ type="checkbox"
   </div>
 
   <!-- רשימת מודעות -->
-  <div *ngIf="!notices().length && !noticeFormOpen()" class="req-note">אין מודעות עדיין</div>
-  <div *ngFor="let n of notices()" class="notice-card">
-    <div class="notice-header">
-      <strong class="notice-title">{{ n.title }}</strong>
-      <span class="notice-date">{{ n.notice_date }}</span>
-      <span class="notice-vis-badge" [class]="'vis-' + n.visibility">
-        {{ n.visibility === 'staff' ? 'צוות' : n.visibility === 'student' ? 'תלמידה' : 'כולם' }}
-      </span>
-      <button class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+  <div *ngIf="!visibleNotices().length && !noticeFormOpen()" class="req-note">אין מודעות עדיין</div>
+
+  <div class="notices-board">
+    <div *ngFor="let n of visibleNotices()" class="notice-pin" [class]="'pin-' + n.visibility">
+      <div class="pin-dot"></div>
+      <div class="pin-body">
+        <div class="pin-header">
+          <span class="notice-vis-badge" [class]="'vis-' + n.visibility">
+            {{ n.visibility === 'staff' ? '👩‍💼 צוות' : n.visibility === 'student' ? '👩‍🎓 תלמידה' : '🌐 כולם' }}
+          </span>
+          <span class="notice-date">{{ n.notice_date }}</span>
+          <button *ngIf="auth.hasPermission('students','change')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+        </div>
+        <strong class="notice-title">{{ n.title }}</strong>
+        <p class="notice-body">{{ n.body }}</p>
+        <span *ngIf="n.created_by_name" class="doc-meta">{{ n.created_by_name }}</span>
+      </div>
     </div>
-    <p class="notice-body">{{ n.body }}</p>
-    <span *ngIf="n.created_by_name" class="doc-meta">נוסף ע"י {{ n.created_by_name }}</span>
   </div>
 </div>
 
@@ -678,16 +686,33 @@ input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary)
     &.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 700; }
   }
 }
-.notice-card { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 8px; }
-.notice-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.notice-title { font-size: 0.92rem; flex: 1; }
-.notice-date { font-size: 0.75rem; color: var(--text-muted); }
-.notice-vis-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+.notices-board {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 8px;
+}
+.notice-pin {
+  position: relative; border-radius: var(--radius-sm); padding: 14px 14px 12px;
+  box-shadow: 2px 3px 10px rgba(0,0,0,.1); border: 1px solid transparent;
+  &.pin-staff    { background: #fffbeb; border-color: #fde68a; }
+  &.pin-student  { background: #eff6ff; border-color: #bfdbfe; }
+  &.pin-all      { background: #f0fdf4; border-color: #bbf7d0; }
+}
+.pin-dot {
+  position: absolute; top: -6px; right: 50%; transform: translateX(50%);
+  width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,.2);
+  .pin-staff &    { background: #f59e0b; }
+  .pin-student &  { background: #3b82f6; }
+  .pin-all &      { background: #10b981; }
+}
+.pin-body { display: flex; flex-direction: column; gap: 6px; }
+.pin-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
+.notice-title { font-size: 0.92rem; font-weight: 800; color: var(--text); display: block; }
+.notice-date { font-size: 0.72rem; color: var(--text-muted); margin-right: auto; }
+.notice-vis-badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 999px; font-weight: 700; white-space: nowrap;
   &.vis-staff    { background: #fef3c7; color: #92400e; }
   &.vis-student  { background: #dbeafe; color: #1e40af; }
-  &.vis-all      { background: var(--primary-light); color: var(--primary); }
+  &.vis-all      { background: #dcfce7; color: #166534; }
 }
-.notice-body { font-size: 0.88rem; color: var(--text); line-height: 1.6; margin: 0 0 4px; white-space: pre-wrap; }
+.notice-body { font-size: 0.85rem; color: var(--text); line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 1050px) {
 .quick-stats { grid-template-columns: 1fr; }
@@ -780,6 +805,16 @@ noticeError = signal('');
 savingNotice = signal(false);
 newNotice = { title: '', body: '', notice_date: new Date().toISOString().split('T')[0], visibility: 'staff' };
 
+// מודעות לפי הרשאות: admin/secretary/laborant רואים הכל, אחרים רק 'all'+'student'
+visibleNotices = computed(() => {
+  const canSeeStaff = this.auth.hasPermission('students', 'view');
+  return this.notices().filter(n =>
+    n.visibility === 'all' ||
+    n.visibility === 'student' ||
+    (n.visibility === 'staff' && canSeeStaff)
+  );
+});
+
 constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
 
 uploadPhoto(event: Event) {
@@ -841,18 +876,29 @@ loadDocuments(id_number: string) {
   this.api.getStudentDocuments(id_number).subscribe({ next: d => this.documents.set(d), error: () => {} });
 }
 
-uploadDocument(event: Event) {
+uploadDocuments(event: Event) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = Array.from(input.files || []);
   const current = this.student();
   input.value = '';
-  if (!file || !current) return;
+  if (!files.length || !current) return;
   this.uploadingDoc.set(true);
   this.docError.set('');
-  this.api.uploadStudentDocument(current.id_number, file).subscribe({
-    next: doc => { this.documents.update(d => [doc, ...d]); this.uploadingDoc.set(false); },
-    error: (e: any) => { this.uploadingDoc.set(false); this.docError.set(e.error?.error || 'שגיאה בהעלאה'); }
-  });
+  let remaining = files.length;
+  for (const file of files) {
+    this.api.uploadStudentDocument(current.id_number, file).subscribe({
+      next: doc => {
+        this.documents.update(d => [doc, ...d]);
+        remaining--;
+        if (remaining === 0) this.uploadingDoc.set(false);
+      },
+      error: (e: any) => {
+        remaining--;
+        this.docError.set(e.error?.error || `שגיאה בהעלאת ${file.name}`);
+        if (remaining === 0) this.uploadingDoc.set(false);
+      }
+    });
+  }
 }
 
 deleteDocument(doc: any) {

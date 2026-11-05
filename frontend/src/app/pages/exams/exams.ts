@@ -86,8 +86,13 @@ template: `
 <button class="btn btn-primary" style="flex:1;" (click)="saveExam()">שמור מבחן</button>
 <button class="btn btn-secondary" (click)="creating.set(false)">ביטול</button>
 </div>
+<p *ngIf="error()" class="hint" style="color:var(--danger); font-weight:600; margin-top:8px;">{{ error() }}</p>
 </div>
 </div>
+
+<!-- הודעות כלליות — מחוץ לבחירת מבחן -->
+<p *ngIf="message() && !selectedExam()" class="hint" style="color:var(--primary); font-weight:600; margin-bottom:10px;">{{ message() }}</p>
+<p *ngIf="error() && !selectedExam()" class="hint" style="color:var(--danger); font-weight:600; margin-bottom:10px;">{{ error() }}</p>
 
 <!-- פרטים למבחן שנבחר -->
 <div class="card" *ngIf="selectedExam()">
@@ -309,17 +314,28 @@ examData.year = this.newExam.year.trim() || undefined;
 }
 this.api.createExam(examData).subscribe({
 next: (result) => {
-this.creating.set(false);
-this.loadExams();
-this.api.generateExamCodes(result.id, examData.parallel ? { parallel: examData.parallel } : { track: examData.track, year: examData.year }).subscribe({
+const codeParams: any = {};
+if (this.newExam.filterMode === 'class') {
+  codeParams.parallel = examData.parallel || undefined;
+} else {
+  if (examData.track) codeParams.track = examData.track;
+  if (examData.year)  codeParams.year  = examData.year;
+}
+this.api.generateExamCodes(result.id, codeParams).subscribe({
 next: (r) => {
-this.message.set(`המבחן נשמר ונוצרו ברקודים ל-${r.created} תלמידות.`);
-this.loadExams();
+  this.creating.set(false);
+  this.message.set(`המבחן נשמר ונוצרו ברקודים ל-${r.created} תלמידות.`);
+  this.loadExams();
 },
-error: (e) => this.error.set(e.error?.error || 'המבחן נשמר, אבל יצירת הברקודים נכשלה')
+error: (e) => {
+  this.creating.set(false);
+  this.message.set('המבחן נשמר בהצלחה.');
+  this.error.set(e.error?.error || 'יצירת הברקודים נכשלה — ניתן ליצור אותם מאוחר יותר');
+  this.loadExams();
+}
 });
 },
-error: (e) => this.error.set(e.error?.error || 'שמירה נכשלה')
+error: (e) => { this.error.set(e.error?.error || 'שמירה נכשלה'); }
 });
 }
 

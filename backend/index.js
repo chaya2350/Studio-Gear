@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -27,7 +27,7 @@ const {
   initializePermissionSchema
 } = require('./permissions');
 
-const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
+const dataDir = process.env.STUDIO_DATA_DIR || __dirname;
 const uploadsDir = process.env.STUDIO_DATA_DIR
   ? path.join(dataDir, 'uploads')
   : path.join(__dirname, 'uploads');
@@ -219,7 +219,6 @@ app.use('/uploads', authenticate, (req, res, next) => {
   const fileUrl = `/uploads/${filename}`;
   const registered = db.prepare('SELECT permission_key FROM uploaded_file_permissions WHERE filename = ?').get(filename);
   const feature = registered?.permission_key
-    || (db.prepare('SELECT 1 FROM students WHERE photo_url = ?').get(fileUrl) ? 'students' : null)
     || (db.prepare('SELECT 1 FROM equipment WHERE image_url = ?').get(fileUrl) ? 'equipment' : null);
   if (!feature) return res.sendStatus(404);
   if (!getUserPermissions(req.user.role)[feature]?.view) {
@@ -437,8 +436,6 @@ const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) =
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
 
 // Migration: student photo
-const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
-if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
 // Migration: source_message_id — הפיכה ל-nullable (לאפשר משימות ישירות ללא הודעה)
 // SQLite לא תומך ב-ALTER COLUMN, לכן נבצע recreate אם source_message_id עדיין NOT NULL
 const srcCol = db.prepare('PRAGMA table_info(personal_tasks)').all().find(c => c.name === 'source_message_id');
@@ -1013,22 +1010,37 @@ app.get('/api/messages', (req, res) => {
 });
 
 app.post('/api/messages', (req, res) => {
-  const recipientId = Number(req.body?.recipient_id);
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-  if (!Number.isInteger(recipientId) || recipientId === req.user.id || !body || body.length > 4000) {
-    return res.status(400).json({ error: 'יש לבחור משתמשת ולכתוב הודעה עד 4000 תווים' });
+  if (!body || body.length > 4000) {
+    return res.status(400).json({ error: 'יש לכתוב הודעה עד 4000 תווים' });
   }
-  if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(recipientId)) {
-    return res.status(400).json({ error: 'המשתמשת שנבחרה אינה פעילה במערכת' });
+  let recipientIds = [];
+  if (Array.isArray(req.body?.recipient_ids)) {
+    recipientIds = req.body.recipient_ids.map(Number).filter(id => Number.isInteger(id) && id !== req.user.id);
+  } else if (req.body?.recipient_id) {
+    const single = Number(req.body.recipient_id);
+    if (Number.isInteger(single) && single !== req.user.id) recipientIds = [single];
   }
-  const result = db.prepare(`
-    INSERT INTO messages (sender_id, recipient_id, body, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(req.user.id, recipientId, body, new Date().toISOString());
-  if (/[❤️💖💕💐👏🎉🙏😊🥰]/u.test(body)) {
-    logActivity(req.user.id, 'שלחה הודעת פרגון', 'message', result.lastInsertRowid, body.slice(0, 120));
-  }
-  res.status(201).json({ id: result.lastInsertRowid });
+  if (!recipientIds.length) return res.status(400).json({ error: 'יש לבחור לפחות נמענת אחת' });
+  const activeIds = db.prepare(`SELECT id FROM users WHERE id IN (${recipientIds.map(() => '?').join(',')}) AND active = 1`)
+    .all(...recipientIds).map(u => u.id);
+  if (!activeIds.length) return res.status(400).json({ error: 'הנמענות שנבחרו אינן פעילות במערכת' });
+  const now = new Date().toISOString();
+  const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at) VALUES (?, ?, ?, ?)');
+  const ids = activeIds.map(rid => insertMsg.run(req.user.id, rid, body, now).lastInsertRowid);
+  res.status(201).json({ id: ids[0], ids });
+});
+
+app.put('/api/messages/:id', (req, res) => {
+  const messageId = Number(req.params.id);
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+  if (!body || body.length > 4000) return res.status(400).json({ error: 'תוכן ההודעה חסר או ארוך מ-4000 תווים' });
+  const message = db.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').get(messageId, req.user.id);
+  if (!message) return res.status(404).json({ error: 'הודעה לא נמצאה' });
+  if ((Date.now() - new Date(message.created_at).getTime()) / 60000 > 15)
+    return res.status(403).json({ error: 'ניתן לערוך הודעה רק עד 15 דקות מהשליחה' });
+  db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, new Date().toISOString(), messageId);
+  res.json({ success: true });
 });
 
 app.post('/api/messages/:id/reactions', (req, res) => {
@@ -1429,7 +1441,11 @@ db.exec(`
   );
 `);
 
+const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
+const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
 if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
 if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
 if (!studentCols.includes('phone_code')) db.exec('ALTER TABLE students ADD COLUMN phone_code TEXT');
@@ -1638,7 +1654,6 @@ app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) =>
   if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   const photoUrl = `/uploads/${req.file.filename}`;
-  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
   registerUploadedFile(req.file, 'students');
   res.json({ url: photoUrl });
 });
@@ -1647,8 +1662,6 @@ app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) =>
 app.patch('/api/students/:id_number/photo', (req, res) => {
   const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
-  const photoUrl = req.body?.photo_url || null;
-  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
   res.json({ success: true });
 });
 
@@ -1675,14 +1688,15 @@ app.post('/api/students/:id_number/documents', xlsxUpload.single('file'), (req, 
   const ALLOWED = ['application/pdf','image/jpeg','image/png','image/webp','image/gif',
     'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
   if (!ALLOWED.includes(req.file.mimetype)) return res.status(400).json({ error: 'סוג קובץ לא מורשה' });
-  // שמירה ב-uploads
-  const ext = require('path').extname(req.file.originalname) || '';
+  // תיקון encoding של שם הקובץ (multer מקבל Latin-1, שם עברי צריך UTF-8)
+  const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  const ext = require('path').extname(originalName) || '';
   const fname = `${Date.now()}-doc${ext}`;
   require('fs').writeFileSync(require('path').join(uploadsDir, fname), req.file.buffer);
   const fileUrl = `/uploads/${fname}`;
   const result = db.prepare(`
     INSERT INTO student_documents (id_number, file_name, file_url, uploaded_by) VALUES (?, ?, ?, ?)
-  `).run(req.params.id_number, req.file.originalname, fileUrl, req.user.id);
+  `).run(req.params.id_number, originalName, fileUrl, req.user.id);
   res.status(201).json({ id: result.lastInsertRowid, file_name: req.file.originalname, file_url: fileUrl });
 });
 
