@@ -1020,20 +1020,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Tasks (single day)
-    if (this.has('personal')) {
-      for (const task of this.tasks()) {
-        const idx = days.indexOf(task.due_date);
-        if (idx < 0) continue;
-        const color = task.completed ? '#10b981' : task.visibility === 'public' ? '#f59e0b' : task.visibility === 'shared' ? '#8b5cf6' : '#6366f1';
-        rows.push({
-          kind: 'task', label: task.title, sublabel: task.visibility === 'public' ? 'ציבורי' : task.visibility === 'shared' ? 'משותף' : '',
-          color, leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
-          date: task.due_date, icon: task.completed ? '✓' : '📋'
-        });
-      }
-    }
-
     // Events (single day)
     if (this.has('schedule')) {
       const sheet = this.selectedSourceSheet();
