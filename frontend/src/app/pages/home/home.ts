@@ -14,10 +14,10 @@ interface Task {
 }
 
 interface DashboardStats {
-  overdueLoans: number;
-  activeLoans: number;
-  unreadMessages: number;
-  totalStudents: number;
+  overdueLoans?: number;
+  activeLoans?: number;
+  unreadMessages?: number;
+  totalStudents?: number;
 }
 
 @Component({
@@ -46,22 +46,22 @@ interface DashboardStats {
       </div>
 
       <div class="hero-metrics">
-        <a routerLink="/loans" class="metric" [class.metric--warn]="(stats()?.overdueLoans ?? 0) > 0">
+        <a *ngIf="auth.hasPermission('loans')" routerLink="/loans" class="metric" [class.metric--warn]="(stats()?.overdueLoans ?? 0) > 0">
           <span class="metric-number">{{ stats()?.overdueLoans ?? '—' }}</span>
           <span class="metric-label">איחורים</span>
           <span class="metric-line"></span>
         </a>
-        <a routerLink="/loans" class="metric">
+        <a *ngIf="auth.hasPermission('loans')" routerLink="/loans" class="metric">
           <span class="metric-number">{{ stats()?.activeLoans ?? '—' }}</span>
           <span class="metric-label">השאלות פעילות</span>
           <span class="metric-line"></span>
         </a>
-        <a routerLink="/messages" class="metric" [class.metric--info]="(stats()?.unreadMessages ?? 0) > 0">
+        <a *ngIf="auth.hasPermission('messages')" routerLink="/messages" class="metric" [class.metric--info]="(stats()?.unreadMessages ?? 0) > 0">
           <span class="metric-number">{{ stats()?.unreadMessages ?? '—' }}</span>
           <span class="metric-label">הודעות חדשות</span>
           <span class="metric-line"></span>
         </a>
-        <a routerLink="/students" class="metric">
+        <a *ngIf="auth.hasPermission('students')" routerLink="/students" class="metric">
           <span class="metric-number">{{ stats()?.totalStudents ?? '—' }}</span>
           <span class="metric-label">תלמידות</span>
           <span class="metric-line"></span>
@@ -77,11 +77,11 @@ interface DashboardStats {
     <div class="panels-stack">
 
       <!-- Tasks -->
-      <article class="card card--tasks">
+      <article *ngIf="auth.hasPermission('messages')" class="card card--tasks">
         <header class="card-header">
           <span class="card-eyebrow">היום</span>
           <h2 class="card-title">משימות</h2>
-          <a routerLink="/messages" class="card-cta">
+          <a routerLink="/calendar/personal" class="card-cta">
             כל המשימות
             <svg viewBox="0 0 16 16" fill="none"><path d="M10 8H6m4 0-2.5-2.5M10 8l-2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </a>
@@ -132,7 +132,7 @@ interface DashboardStats {
       </article>
 
       <!-- Events -->
-      <article class="card card--events">
+      <article *ngIf="auth.hasPermission('calendar')" class="card card--events">
         <header class="card-header">
           <span class="card-eyebrow">לוח שנה</span>
           <h2 class="card-title">אירועים היום</h2>
@@ -190,6 +190,7 @@ interface DashboardStats {
       <p class="nav-eyebrow">ניווט מהיר</p>
       <div class="nav-grid">
         @for (mod of modules; track mod.link) {
+          @if (auth.hasPermission(mod.permission)) {
           <a [routerLink]="mod.link" class="nav-item" [class.nav-item--attendance]="mod.group === 'attendance'">
             <div class="nav-item-inner">
               <span class="nav-title">{{ mod.title }}</span>
@@ -202,6 +203,7 @@ interface DashboardStats {
               <path d="M12.5 10H7.5m5 0L10 7.5m2.5 2.5L10 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </a>
+          }
         }
       </div>
     </nav>
@@ -258,8 +260,7 @@ interface DashboardStats {
     }
 
     .hero-content {
-      max-width: 1200px;
-      margin: 0 auto;
+      width: 100%;
       padding: 44px 44px 40px;
       display: flex;
       align-items: center;
@@ -383,9 +384,7 @@ interface DashboardStats {
       display: grid;
       grid-template-columns: 420px 1fr;
       gap: 28px;
-      max-width: 1200px;
       width: 100%;
-      margin: 0 auto;
       padding: 36px 44px 56px;
       align-items: start;
     }
@@ -825,18 +824,18 @@ export class HomeComponent implements OnInit {
   });
 
   readonly modules = [
-    { link: '/equipment',          title: 'השאלת ציוד',    desc: 'ניהול ציוד והשאלות',       badge: 0, group: '' },
-    { link: '/students',           title: 'תלמידות',       desc: 'פרטים אישיים והיסטוריה',    badge: 0, group: '' },
-    { link: '/teachers/search',    title: 'חיפוש מורה',    desc: 'חיפוש עם השלמה אוטומטית',   badge: 0, group: '' },
-    { link: '/approvals',          title: 'אישורים',       desc: 'הפקת אישורי נוכחות',        badge: 0, group: '' },
-    { link: '/exams',              title: 'מבחנים',        desc: 'ברקודים ורישום ציונים',      badge: 0, group: '' },
-    { link: '/schedule',           title: 'מערכת שעות', desc: 'ניהול שיעורים שבועיים',      badge: 0, group: 'attendance' },
-    { link: '/attendance/print',   title: 'דפי נוכחות', desc: 'הדפסת דפים שבועיים',         badge: 0, group: 'attendance' },
-    { link: '/attendance/scan',    title: 'רישום נוכחות',desc: 'סריקת ברקוד שיעור',          badge: 0, group: 'attendance' },
-    { link: '/pages',              title: 'דפים',          desc: 'נושאים ודפים אישיים',        badge: 0, group: '' },
-    { link: '/messages',           title: 'הודעות',        desc: 'שיחות פרטיות',              badge: 0, group: '' },
-    { link: '/calendar/personal',  title: 'לוח שנה',       desc: 'הלוח האישי ולוח הציוד',     badge: 0, group: '' },
-    { link: '/admin',              title: 'ניהול',         desc: 'נתוני תלמידות ומסלולים',    badge: 0, group: '' },
+    { link: '/equipment', title: 'השאלת ציוד', desc: 'ניהול ציוד והשאלות', badge: 0, group: '', permission: 'equipment' },
+    { link: '/students', title: 'תלמידות', desc: 'פרטים אישיים והיסטוריה', badge: 0, group: '', permission: 'students' },
+    { link: '/teachers/search', title: 'חיפוש מורה', desc: 'חיפוש עם השלמה אוטומטית', badge: 0, group: '', permission: 'teachers' },
+    { link: '/approvals', title: 'אישורים', desc: 'הפקת אישורי נוכחות', badge: 0, group: '', permission: 'approvals' },
+    { link: '/exams', title: 'מבחנים', desc: 'ברקודים ורישום ציונים', badge: 0, group: '', permission: 'exams' },
+    { link: '/schedule', title: 'מערכת שעות', desc: 'ניהול שיעורים שבועיים', badge: 0, group: 'attendance', permission: 'schedule' },
+    { link: '/attendance/print', title: 'דפי נוכחות', desc: 'הדפסת דפים שבועיים', badge: 0, group: 'attendance', permission: 'attendance' },
+    { link: '/attendance/scan', title: 'רישום נוכחות', desc: 'סריקת ברקוד שיעור', badge: 0, group: 'attendance', permission: 'attendance' },
+    { link: '/pages', title: 'דפים', desc: 'נושאים ודפים אישיים', badge: 0, group: '', permission: 'pages' },
+    { link: '/messages', title: 'הודעות', desc: 'שיחות פרטיות', badge: 0, group: '', permission: 'messages' },
+    { link: '/calendar/personal', title: 'לוח שנה', desc: 'הלוח האישי ולוח הציוד', badge: 0, group: '', permission: 'calendar' },
+    { link: '/admin', title: 'ניהול', desc: 'נתוני תלמידות ומסלולים', badge: 0, group: '', permission: 'admin_panel' },
   ];
 
   constructor(
@@ -868,37 +867,23 @@ export class HomeComponent implements OnInit {
   }
 
   private loadStats(): void {
-    let loans: any[] | null    = null;
-    let overdue: any[] | null  = null;
-    let msgs: number | null    = null;
-    let students: any[] | null = null;
-
-    const commit = () => {
-      if ([loans, overdue, msgs, students].some(v => v === null)) return;
-      this.stats.set({
-        activeLoans:    (loans  as any[]).filter(l => !l.actual_return).length,
-        overdueLoans:   (overdue as any[]).length,
-        unreadMessages: msgs as number,
-        totalStudents:  (students as any[]).length,
-      });
-      const m = this.modules;
-      const msg = m.find(x => x.link === '/messages');
-      const eq  = m.find(x => x.link === '/equipment');
-      if (msg) msg.badge = msgs as number;
-      if (eq)  eq.badge  = (overdue as any[]).length;
-    };
-
-    this.api.getLoans().subscribe({
-      next: d => { loans = d; commit(); }, error: () => { loans = []; commit(); }
-    });
-    this.api.getOverdueLoans().subscribe({
-      next: d => { overdue = d; commit(); }, error: () => { overdue = []; commit(); }
-    });
-    this.http.get<{ count: number }>('/api/messages/unread-count').subscribe({
-      next: d => { msgs = d.count; commit(); }, error: () => { msgs = 0; commit(); }
-    });
-    this.api.getStudents().subscribe({
-      next: d => { students = d; commit(); }, error: () => { students = []; commit(); }
+    this.http.get<{ activeLoans: number; overdueLoans: number; unreadMessages: number; totalStudents: number }>('/api/stats').subscribe({
+      next: d => {
+        this.stats.set({
+          activeLoans:    d.activeLoans,
+          overdueLoans:   d.overdueLoans,
+          unreadMessages: d.unreadMessages,
+          totalStudents:  d.totalStudents,
+        });
+        const m = this.modules;
+        const msg = m.find(x => x.link === '/messages');
+        const eq  = m.find(x => x.link === '/equipment');
+        if (msg && this.auth.hasPermission('messages')) msg.badge = d.unreadMessages ?? 0;
+        if (eq && this.auth.hasPermission('loans')) eq.badge = d.overdueLoans ?? 0;
+      },
+      error: () => {
+        this.stats.set({ activeLoans: 0, overdueLoans: 0, unreadMessages: 0, totalStudents: 0 });
+      }
     });
   }
 

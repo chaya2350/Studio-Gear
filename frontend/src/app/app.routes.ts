@@ -9,8 +9,13 @@ export const routes: Routes = [
   {
     path: '',
     canActivate: [authGuard],
+    canActivateChild: [authGuard],
     children: [
       { path: '', loadComponent: () => import('./pages/home/home').then((m) => m.HomeComponent) },
+      {
+        path: 'permission-denied',
+        loadComponent: () => import('./pages/permission-denied/permission-denied').then((m) => m.PermissionDeniedComponent),
+      },
       {
         path: 'approvals',
         loadComponent: () =>
@@ -69,6 +74,13 @@ export const routes: Routes = [
             path: 'schedule',
             loadComponent: () => import('./pages/monthly-calendar/monthly-calendar').then((m) => m.MonthlyCalendarComponent),
             data: { view: 'schedule' },
+          },
+          {
+            path: 'events/:id',
+            loadComponent: () =>
+              import('./pages/calendar-event-detail/calendar-event-detail').then(
+                (m) => m.CalendarEventDetailComponent,
+              ),
           },
         ],
       },

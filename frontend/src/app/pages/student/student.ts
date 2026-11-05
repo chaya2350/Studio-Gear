@@ -47,6 +47,7 @@ template: `
     <input type="file" accept="image/*" [disabled]="uploadingPhoto()" (change)="uploadPhoto($event)" style="display:none">
     {{ uploadingPhoto() ? 'מעלה...' : student()!.photo_url ? '🖼 החלף תמונה' : '📷 הוסף תמונה' }}
   </label>
+  <a *ngIf="student()!.photo_url" class="photo-download-btn" [href]="student()!.photo_url" [download]="student()!.name + '.jpg'" target="_blank">⬇ הורדה</a>
   <button *ngIf="student()!.photo_url" class="photo-remove-btn" (click)="removePhoto()">הסר תמונה</button>
   <span *ngIf="photoError()" class="photo-error">{{ photoError() }}</span>
 </div>
@@ -212,11 +213,11 @@ template: `
 <p *ngIf="!reqs.track" class="req-note">לא הוגדר מסלול לתלמידה. אפשר להגדיר אותו בעריכת הפרטים.</p>
 <p *ngIf="reqs.track && !reqs.defined" class="req-note">
 עדיין לא הוגדרו דרישות למסלול הזה.
-<a *ngIf="auth.user()?.role !== 'secretary'" routerLink="/admin" class="req-link">להגדרת המסלול</a>
+<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להגדרת המסלול</a>
 </p>
 <p *ngIf="reqs.defined && !reqs.requirements.length" class="req-note">
 למסלול הזה עדיין אין דרישות.
-<a *ngIf="auth.user()?.role !== 'secretary'" routerLink="/admin" class="req-link">להוספת דרישות</a>
+<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להוספת דרישות</a>
 </p>
 <ng-container *ngIf="reqs.requirements.length">
 <div class="req-summary" [class.done]="missingRequired() === 0">
@@ -375,6 +376,13 @@ transition: all var(--transition); box-shadow: var(--shadow-xs);
   padding: 6px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
   background: transparent; font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--danger);
   &:hover { background: #fee2e2; border-color: var(--danger); }
+}
+.photo-download-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  background: transparent; font: inherit; font-size: 0.8rem; cursor: pointer;
+  color: var(--primary); text-decoration: none;
+  &:hover { background: var(--primary-light); border-color: var(--primary); }
 }
 .photo-error { font-size: 0.78rem; color: var(--danger); }
 .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }

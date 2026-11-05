@@ -2,13 +2,39 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { catchError, firstValueFrom, Observable, of, tap, throwError } from 'rxjs';
 
-export type UserRole = 'admin' | 'laborant' | 'secretary';
+export type UserRole = string;
+export type PermissionAction = 'view' | 'change';
 
 export interface AuthUser {
   id: number;
   name: string;
   email: string;
   role: UserRole;
+  role_name?: string;
+  permissions?: Record<string, Record<PermissionAction, boolean>>;
+}
+
+export interface SystemRole {
+  role_key: string;
+  name: string;
+  is_system: number;
+}
+
+export interface PermissionFeature {
+  key: string;
+  label: string;
+  description: string;
+  supportsChange?: boolean;
+}
+
+export interface RolePermissionSet extends SystemRole {
+  permissions: Record<string, Record<PermissionAction, boolean>>;
+}
+
+export interface PermissionsConfiguration {
+  actions: PermissionAction[];
+  catalog: PermissionFeature[];
+  roles: RolePermissionSet[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -17,6 +43,15 @@ export class AuthService {
   private loadRequest: Promise<AuthUser | null> | null = null;
 
   constructor(private http: HttpClient) {}
+
+  hasPermission(permission: string, action: PermissionAction = 'view'): boolean {
+    const user = this.user();
+    return user?.role === 'admin' || user?.permissions?.[permission]?.[action] === true;
+  }
+
+  loadPermissions(): Observable<PermissionsConfiguration> {
+    return this.http.get<PermissionsConfiguration>('/api/permissions');
+  }
 
   loadUser(): Promise<AuthUser | null> {
     if (this.user()) return Promise.resolve(this.user());

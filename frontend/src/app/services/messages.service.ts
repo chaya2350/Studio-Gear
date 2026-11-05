@@ -50,8 +50,9 @@ export class MessagesService {
     return this.http.get<MessageUser[]>('/api/messages/users');
   }
 
-  getMessages(): Observable<DirectMessage[]> {
-    return this.http.get<DirectMessage[]>('/api/messages');
+  getMessages(markRead = false): Observable<DirectMessage[]> {
+    const url = markRead ? '/api/messages?markRead=1' : '/api/messages';
+    return this.http.get<DirectMessage[]>(url);
   }
 
   refreshUnreadCount(): Observable<{ count: number }> {

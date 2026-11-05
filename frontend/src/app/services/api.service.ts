@@ -9,6 +9,7 @@ export interface CalendarEvent {
   hebrew_year: number;
   category: string;
   source_sheet: string;
+  notes: string;
 }
 
 export interface CalendarImportResult {
@@ -109,9 +110,14 @@ export class ApiService {
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
   createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
     return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
   }
+  updateCalendarEvent(id: number, data: { title?: string; event_date?: string; category?: string; notes: string }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/calendar-events/${id}`, data);
+  }
+  deleteCalendarEvent(id: number) { return this.http.delete(`${this.base}/calendar-events/${id}`); }
   importCalendarWorkbook(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -137,6 +143,9 @@ export class ApiService {
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
+    return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
+  }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
   getStudentRequirementsSummary() { return this.http.get<Record<string, { total: number; completed: number; missing: number }>>(`${this.base}/students/requirements-summary`); }
   getStudent(id_number: string) { return this.http.get<Student>(`${this.base}/students/${id_number}`); }
@@ -239,24 +248,39 @@ export class ApiService {
     return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
   }
   getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
-  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
+  globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 
   // ── Teachers ──
   getTeacher(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}`); }
   getTeacherProfile(id: number) { return this.http.get<any>(`${this.base}/teachers/${id}/profile`); }
   getMyTeacherProfile() { return this.http.get<any>(`${this.base}/teachers/profile`); }
   getTeachers(q?: string) { return this.http.get<any[]>(`${this.base}/teachers${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  exportTeachersExcel() { return this.http.get(`${this.base}/teachers/export`, { responseType: 'blob' }); }
   createTeacher(data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string }) { return this.http.post<any>(`${this.base}/teachers`, data); }
   updateTeacher(id: number, data: { name: string; subject?: string; phone?: string; email?: string; specialization?: string; active?: number }) { return this.http.put<{success:boolean}>(`${this.base}/teachers/${id}`, data); }
   deleteTeacher(id: number) { return this.http.delete(`${this.base}/teachers/${id}`); }
   deleteAllTeachers() { return this.http.delete<{ success: boolean; deleted: number }>(`${this.base}/teachers`); }
 
   // ── Schedule ──
+  getKodeshAvailability() {
+    return this.http.get<{
+      kodesh: Record<string, Record<string, string>>;
+      instruction: Record<string, Record<string, { start: string; end: string }>>;
+    }>(`${this.base}/schedule/kodesh-availability`);
+  }
   getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
-  createScheduleSlot(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule`, data); }
-  updateScheduleSlot(id: number, data: any) { return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data); }
+  createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number }>(`${this.base}/schedule`, data); }
+  updateScheduleSlot(id: number, data: { teacher_id: number; start_time: string; end_time: string | null; subject: string | null; allow_conflicts?: boolean }) {
+    return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);
+  }
   deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
-  copyWeekSchedule(from: string, to: string) { return this.http.post<{copied:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to }); }
+  getLessonPeriods() { return this.http.get<any[]>(`${this.base}/schedule/periods`); }
+  createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
+  updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
+  deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
+  copyWeekSchedule(from: string, to: string) {
+    return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to });
+  }
   deleteWeekSchedule(week: string) { return this.http.delete<{deleted:number}>(`${this.base}/schedule/week/${week}`); }
 
   // ── Attendance Sheets ──

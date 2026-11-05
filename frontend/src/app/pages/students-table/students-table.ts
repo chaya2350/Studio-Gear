@@ -151,7 +151,7 @@ interface TableStudent {
             <a [routerLink]="['/students', s.id_number]" class="name-link">{{ s.name }}</a>
           </td>
           <td class="col-id mono">{{ s.id_number }}</td>
-          <td class="col-class">{{ s.class_name || '' }}{{ s.parallel && s.parallel !== '0' ? s.parallel : '' }}</td>
+          <td class="col-class">{{ s.class_name || '' }}</td>
           <td class="col-track">{{ s.track || '' }}</td>
           <td class="col-year">{{ toStudyYear(s.year) }}</td>
           <td class="col-phone mono">{{ s.phone || '' }}</td>
@@ -306,10 +306,10 @@ export class StudentsTableComponent implements OnInit {
       if (this.selYear()) list = list.filter(s => s.year === this.selYear());
     }
     if (this.selClass()) {
-      const [cn, pn] = this.selClass().split('_');
+      const [year, parallel] = this.selClass().split('_');
       list = list.filter(s =>
-        String(s.class_name || '').trim() === cn &&
-        String(s.parallel  || '').trim() === pn
+        String(s.year || '').trim() === year &&
+        String(s.parallel || '').trim() === parallel
       );
     }
     if (this.selTrack()) {

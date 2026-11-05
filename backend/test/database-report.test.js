@@ -2,12 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('../database-report');
 
-test('splitTrackValues separates combined track values into clean track names', () => {
-  assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה מתקנת', 'אדריכלות']);
+test('splitTrackValues separates combined track values without merging distinct track names', () => {
+  assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה', 'אדריכלות']);
+  assert.deepEqual(splitTrackValues('הוראה מתקנת / אדריכלות'), ['הוראה מתקנת', 'אדריכלות']);
   assert.deepEqual(splitTrackValues('רוח & ספורט טיפולי'), ['ראיית חשבון', 'ספורט טיפולי']);
   assert.deepEqual(splitTrackValues('חינוך מיוחד / מתמטיקה / ח"מ'), ['חינוך מיוחד', 'מתמטיקה']);
   assert.deepEqual(splitTrackValues('ייעוץ מס / ללא מיסים'), ['ייעוץ מס']);
-  assert.deepEqual(splitTrackValues('יעוץ מס / הוראה / ייעוץ מס'), ['ייעוץ מס', 'הוראה מתקנת']);
+  assert.deepEqual(splitTrackValues('יעוץ מס / הוראה / ייעוץ מס'), ['ייעוץ מס', 'הוראה']);
+  assert.deepEqual(splitTrackValues('הוראה / הוראה מתקנת'), ['הוראה', 'הוראה מתקנת']);
   assert.deepEqual(splitTrackValues('הנדסת חשמל / הנדסת אנרגיה'), ['הנדסת אנרגיה']);
   assert.deepEqual(splitTrackValues('הנדסת חשמל / גרפיקה'), ['הנדסת אנרגיה', 'גרפיקה']);
   assert.deepEqual(splitTrackValues('תיכנות / תכנות'), ['תכנות']);
@@ -16,6 +18,8 @@ test('splitTrackValues separates combined track values into clean track names', 
 test('studentHasTrack matches a selected single track inside a combined student track', () => {
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה'), true);
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'הוראה מתקנת'), true);
+  assert.equal(studentHasTrack('גרפיקה / הוראה', 'הוראה מתקנת'), false);
+  assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'הוראה'), false);
   assert.equal(studentHasTrack('גרפיקה / הוראה מתקנת', 'גרפיקה מתקדמת'), false);
   assert.equal(studentHasTrack('יעוץ מס / הוראה / ייעוץ מס', 'ייעוץ מס'), true);
   assert.equal(studentHasTrack('רו״ח / גרפיקה', 'ראיית חשבון'), true);
@@ -29,7 +33,7 @@ test('resolveStudentTrackIds includes each constituent track and resolves merged
     { id: 2, name: 'הוראה מתקנת', merged_into: null },
     { id: 3, name: 'ייעוץ מס', merged_into: 2 },
   ];
-  assert.deepEqual(resolveStudentTrackIds('גרפיקה / הוראה / ייעוץ מס', tracks), [1, 2]);
+  assert.deepEqual(resolveStudentTrackIds('גרפיקה / הוראה מתקנת / ייעוץ מס', tracks), [1, 2]);
 });
 
 test('buildClassReport normalizes year A/B into H/V for class matching and display', () => {
@@ -98,14 +102,14 @@ test('buildClassReport includes only the selected class plus its parallel and re
   assert.equal(report.students[0].grades[2], undefined);
 });
 
-test('buildClassReport renders a canonical, deduplicated track list instead of the raw imported string', () => {
+test('buildClassReport canonicalizes aliases without merging distinct track names', () => {
   const students = [
-    { id_number: '111', name: 'אילנה כהן', track: 'חינוך מיוחד / הוראה / חינוך מיוחד', year: 'א', extra_data: '{"מקבילה":"2"}' }
+    { id_number: '111', name: 'אילנה כהן', track: 'חינוך מיוחד / הוראה / הוראה מתקנת / חינוך מיוחד', year: 'א', extra_data: '{"מקבילה":"2"}' }
   ];
 
   const report = buildClassReport(students, [], {}, 'ה2');
 
-  assert.equal(report.rows[0].track, 'חינוך מיוחד / הוראה מתקנת');
+  assert.equal(report.rows[0].track, 'חינוך מיוחד / הוראה / הוראה מתקנת');
 });
 
 test('buildTrackReport shows only track-specific exams and credentials without phone prefix', () => {

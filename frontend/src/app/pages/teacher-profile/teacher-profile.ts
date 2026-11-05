@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -63,6 +63,26 @@ import { ApiService } from '../../services/api.service';
           <div class="stat" *ngIf="t.specialization">
             <span class="stat-val">{{ t.specialization }}</span>
             <span class="stat-lbl">התמחות</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="current-location" [class.is-teaching]="currentLessons().length > 0">
+        <div class="current-location-icon">{{ currentLessons().length ? '●' : '○' }}</div>
+        <div>
+          <div class="current-location-label">איפה היא עכשיו?</div>
+          <p *ngIf="currentLessons().length; else noCurrentLesson">
+            כרגע מלמדת בכיתה
+            <strong *ngFor="let lesson of currentLessons(); let last = last">
+              {{ lesson.class_name }}{{ last ? '' : ', ' }}
+            </strong>
+          </p>
+          <ng-template #noCurrentLesson>
+            <p>כרגע אין שיעור משובץ</p>
+          </ng-template>
+          <div *ngFor="let lesson of currentLessons()" class="current-lesson-detail">
+            {{ lesson.start_time }}–{{ lesson.end_time }}
+            <span *ngIf="lesson.subject">· {{ lesson.subject }}</span>
           </div>
         </div>
       </div>
@@ -162,6 +182,19 @@ import { ApiService } from '../../services/api.service';
       border-radius: var(--radius-lg); box-shadow: var(--shadow);
       padding: 24px; margin-bottom: 20px;
     }
+    .current-location {
+      display: flex; align-items: center; gap: 14px; padding: 16px 20px;
+      margin-bottom: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+      background: var(--surface-2); color: var(--text-muted);
+    }
+    .current-location.is-teaching {
+      border-color: #a7d7b5; background: #effaf2; color: #236b3b;
+    }
+    .current-location-icon { font-size: 1.4rem; }
+    .current-location-label { font-size: 0.78rem; font-weight: 700; }
+    .current-location p { margin: 3px 0 0; color: var(--text); font-size: 1.05rem; }
+    .current-location strong { color: var(--primary); }
+    .current-lesson-detail { margin-top: 4px; font-size: 0.8rem; }
     .identity { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
     .avatar {
       width: 72px; height: 72px; border-radius: 50%;
@@ -264,11 +297,26 @@ import { ApiService } from '../../services/api.service';
     }
   `,
 })
-export class TeacherProfileComponent implements OnInit {
+export class TeacherProfileComponent implements OnInit, OnDestroy {
   readonly teacher = signal<any | null>(null);
   readonly lessons = signal<any[]>([]);
   readonly weekStart = signal<string>('');
   readonly loading = signal(true);
+  readonly currentTime = signal(new Date());
+  private clockInterval?: ReturnType<typeof setInterval>;
+
+  readonly currentLessons = computed(() => {
+    const now = this.currentTime();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const minutesNow = now.getHours() * 60 + now.getMinutes();
+
+    return this.lessons().filter(lesson => {
+      if (lesson.lesson_date !== date) return false;
+      const start = this.timeToMinutes(lesson.start_time);
+      const end = this.timeToMinutes(lesson.end_time);
+      return start !== null && end !== null && start <= minutesNow && minutesNow < end;
+    });
+  });
 
   constructor(
     private route: ActivatedRoute,
@@ -277,6 +325,7 @@ export class TeacherProfileComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.clockInterval = setInterval(() => this.currentTime.set(new Date()), 30_000);
     this.route.paramMap.subscribe((params) => {
       const id = Number(params.get('id'));
       const request$ = Number.isFinite(id) && id > 0
@@ -296,6 +345,18 @@ export class TeacherProfileComponent implements OnInit {
         },
       });
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.clockInterval) clearInterval(this.clockInterval);
+  }
+
+  private timeToMinutes(value: string | null | undefined): number | null {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value || '');
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
   }
 
   goBack(event: Event) {
