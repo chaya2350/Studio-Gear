@@ -95,6 +95,9 @@ function formatHebrewDayHeading(dateStr: string): string {
         <button type="button" class="week-arrow" (click)="nextWeek()" title="שבוע הבא" aria-label="שבוע הבא">›</button>
       </div>
       <button type="button" class="current-week-btn" (click)="goToCurrentWeek()">השבוע הנוכחי</button>
+      <div class="date-jump">
+        <input type="date" [ngModel]="weekStart()" (ngModelChange)="jumpToDate($event)" title="קפוץ לתאריך">
+      </div>
       <div class="view-toggle" role="group" aria-label="סוג תצוגת מערכת השעות">
         <button type="button" [class.active]="scheduleView() === 'days'"
                 [attr.aria-pressed]="scheduleView() === 'days'" (click)="scheduleView.set('days')">
@@ -130,7 +133,10 @@ function formatHebrewDayHeading(dateStr: string): string {
       <ng-container *ngIf="scheduleView() === 'days'; else classSchedule">
 
       <h2 class="day-table-title">{{ formatHebrewDayHeading(addDays(weekStart(), selectedDay())) }}</h2>
-      <div class="table-wrap schedule-table-wrap">
+      <div *ngIf="schoolHolidayForDate(addDays(weekStart(), selectedDay())) as holiday" class="day-school-event school-holiday-banner">
+        חופש - {{ holiday.title }}
+      </div>
+      <div *ngIf="!schoolHolidayForDate(addDays(weekStart(), selectedDay()))" class="table-wrap schedule-table-wrap">
         <table class="schedule-table day-schedule-table">
           <thead>
             <tr>
@@ -173,7 +179,7 @@ function formatHebrewDayHeading(dateStr: string): string {
                         </button>
                       </div>
                     </div>
-                    <button *ngIf="!slotsForPeriod(entry.row.byDay[selectedDay()], entry.period).length" class="day-add-lesson"
+                    <button *ngIf="!schoolHolidayForDate(addDays(weekStart(), selectedDay())) && !slotsForPeriod(entry.row.byDay[selectedDay()], entry.period).length" class="day-add-lesson"
                             (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)" aria-label="הוספת שיעור קודש">+</button>
                   </ng-template>
                 </ng-container>
@@ -204,6 +210,9 @@ function formatHebrewDayHeading(dateStr: string): string {
                 <th *ngFor="let d of DAYS; let i = index">
                   <span>יום {{ d }}</span>
                   <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
+                  <strong *ngIf="schoolHolidayForDate(addDays(weekStart(), i)) as holiday" class="class-holiday-label">
+                    חופש - {{ holiday.title }}
+                  </strong>
                 </th>
               </tr>
             </thead>
@@ -214,9 +223,10 @@ function formatHebrewDayHeading(dateStr: string): string {
                   <small>{{ scheduleRow.end_time }}</small>
                 </td>
                 <td *ngFor="let cell of scheduleRow.days" class="day-class-cell"
-                    [ngClass]="'period-' + (cell?.availability || 'empty')"
+                    [ngClass]="cell && schoolHolidayForDate(addDays(weekStart(), cell.day)) ? 'period-holiday' : 'period-' + (cell?.availability || 'empty')"
                     [attr.aria-disabled]="cell?.availability !== 'kodesh'">
                   <ng-container *ngIf="cell as periodCell">
+                    <ng-container *ngIf="!schoolHolidayForDate(addDays(weekStart(), periodCell.day))">
                     <ng-container *ngIf="periodCell.availability === 'kodesh'; else unavailableClassPeriod">
                       <ng-container *ngIf="eventForPeriod(addDays(weekStart(), periodCell.day), selectedClass.classYear, selectedClass.classParallel, periodCell.period) as event; else classDayLesson">
                         <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
@@ -243,7 +253,7 @@ function formatHebrewDayHeading(dateStr: string): string {
                             </button>
                           </div>
                         </div>
-                        <button *ngIf="!slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period).length" class="day-add-lesson"
+                        <button *ngIf="!schoolHolidayForDate(addDays(weekStart(), periodCell.day)) && !slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period).length" class="day-add-lesson"
                                 (click)="openAddSlot(periodCell.day, selectedClass.classYear, selectedClass.classParallel, periodCell.period)" aria-label="הוספת שיעור קודש">+</button>
                       </ng-template>
                     </ng-container>
@@ -253,6 +263,7 @@ function formatHebrewDayHeading(dateStr: string): string {
                       </ng-container>
                       <ng-template #unavailableClassLabel><span class="day-period-label">{{ periodAvailabilityLabel(periodCell.availability) }}</span></ng-template>
                     </ng-template>
+                    </ng-container>
                   </ng-container>
                 </td>
               </tr>
@@ -585,6 +596,7 @@ function formatHebrewDayHeading(dateStr: string): string {
   background: #fff5d9; color: #694d12; font-size: 0.76rem; font-weight: 700;
 }
 .day-school-event small { font-size: 0.67rem; font-weight: 500; }
+.period-holiday { background: var(--surface-2); }
 .day-lesson.schedule-changed { padding: 5px 7px; border: 1px solid #f0d292; border-inline-start: 3px solid #bf7900; border-radius: 6px; background: #fffaf0; }
 .changed-lesson-tag { flex: 0 0 auto; padding: 2px 6px; border-radius: 4px; background: #f5e8c8; color: #76520c; font-size: 0.64rem; font-weight: 700; }
 .schedule-row-changed { background: #fff7e6; box-shadow: inset -3px 0 #d97706; }
@@ -727,6 +739,13 @@ function formatHebrewDayHeading(dateStr: string): string {
   label { display: grid; gap: 5px; font-size: 0.85rem; font-weight: 600;
     input, select { border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px;
       font: inherit; font-size: 0.9rem; width: 100%; box-sizing: border-box; } }
+}
+
+.date-jump input {
+  border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px;
+  font: inherit; font-size: 0.82rem; background: var(--surface); color: var(--text);
+  width: 100%;
+  &:focus { outline: none; border-color: var(--primary); }
 }
 
 .loading-state { text-align: center; padding: 40px; color: var(--text-muted); }
@@ -946,6 +965,10 @@ export class ScheduleComponent implements OnInit {
     }) || null;
   }
 
+  schoolHolidayForDate(date: string) {
+    return this.events().find(event => event.event_date === date && event.is_school_holiday) || null;
+  }
+
   printChangedLesson(slot: any) {
     this.router.navigate(['/attendance/print'], {
       queryParams: { week: slot.week_start, changedSlotId: slot.id }
@@ -984,6 +1007,12 @@ export class ScheduleComponent implements OnInit {
 
   nextWeek() {
     this._weekStart.set(addDays(this._weekStart(), 7));
+    this.loadSchedule();
+  }
+
+  jumpToDate(dateStr: string) {
+    if (!dateStr) return;
+    this._weekStart.set(getWeekStart(new Date(`${dateStr}T12:00:00`)));
     this.loadSchedule();
   }
 

@@ -3625,6 +3625,10 @@ async function ensureSchoolYearHolidays() {
   generatedHolidayRange = range;
 }
 
+function schoolHolidayForDate(date) {
+  return getSchoolHoliday(db, date);
+}
+
 function todayInIsrael() {
   const dateParts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit'
