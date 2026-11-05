@@ -595,11 +595,9 @@ interface GanttRow {
       <span class="wedding-heart">💍</span>
       <div class="detail-main">
         <a [routerLink]="['/students', s.id_number]"><strong>{{ s.name }}</strong></a>
-        <span>
-          {{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}
-          <span *ngIf="s.married_name"> ← {{ s.married_name }}</span>
-        </span>
-        <span *ngIf="s.wedding_venue" style="font-size:0.75rem;color:var(--text-muted)">📍 {{ s.wedding_venue }}</span>
+        <span>{{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
+        <span *ngIf="s.wedding_venue" class="wedding-venue-label">📍 {{ s.wedding_venue }}</span>
+        <span *ngIf="!s.wedding_venue" class="wedding-venue-label" style="color:var(--border)">📍 מקום לא הוזן</span>
       </div>
     </div>
   </ng-container>
@@ -764,6 +762,7 @@ interface GanttRow {
     .wedding-chip:not(.active):hover { border-color: #ec4899; color: #ec4899; background: #fdf2f8; }
     .wedding-row { background: linear-gradient(135deg, #fdf2f8, var(--surface)); border-color: #f9a8d4 !important; }
     .wedding-heart { font-size: 1.1rem; flex-shrink: 0; }
+    .wedding-venue-label { font-size: 0.75rem; color: var(--text-muted); display: block; }
 
     /* ── Calendar grid ── */
     .month-card {
