@@ -59,9 +59,9 @@ interface TableStudent {
 <!-- פילטרים -->
 <div class="card filters-card">
   <div class="filter-mode">
-    <button [class.active]="filterMode()==='track'" (click)="filterMode.set('track')">לפי מסלול ושנה</button>
-    <button [class.active]="filterMode()==='class'" (click)="filterMode.set('class')">לפי כיתה</button>
-    <button [class.active]="filterMode()==='all'" (click)="filterMode.set('all')">כולן</button>
+    <button [class.active]="filterMode()==='track'" (click)="setFilterMode('track')">לפי מסלול ושנה</button>
+    <button [class.active]="filterMode()==='class'" (click)="setFilterMode('class')">לפי כיתה</button>
+    <button [class.active]="filterMode()==='all'" (click)="setFilterMode('all')">כולן</button>
   </div>
 
   <div class="filter-row" *ngIf="filterMode()==='track'">
@@ -294,6 +294,20 @@ export class StudentsTableComponent implements OnInit {
 
   classOptions = computed(() => this.allClasses());
 
+  setFilterMode(mode: 'track' | 'class' | 'all') {
+    if (mode === 'track') {
+      this.selClass.set('');
+    } else if (mode === 'class') {
+      this.selTrack.set('');
+      this.selYear.set('');
+    } else {
+      this.selClass.set('');
+      this.selTrack.set('');
+      this.selYear.set('');
+    }
+    this.filterMode.set(mode);
+  }
+
   extraKeys = computed(() => {
     if (!this.showExtra) return [];
     const keys = new Set<string>();
@@ -309,17 +323,14 @@ export class StudentsTableComponent implements OnInit {
     let list = this.allStudents();
 
     if (this.filterMode() === 'track') {
+      if (this.selTrack()) list = list.filter(s => (s.track || '').includes(this.selTrack()));
       if (this.selYear()) list = list.filter(s => s.year === this.selYear());
-    }
-    if (this.selClass()) {
+    } else if (this.filterMode() === 'class' && this.selClass()) {
       const [year, parallel] = this.selClass().split('_');
       list = list.filter(s =>
         String(s.year || '').trim() === year &&
         String(s.parallel || '').trim() === parallel
       );
-    }
-    if (this.selTrack()) {
-      list = list.filter(s => (s.track || '').includes(this.selTrack()));
     }
     if (this.searchQ().trim()) {
       const q = this.searchQ().trim().toLowerCase();

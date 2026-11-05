@@ -661,7 +661,7 @@ app.get('/api/calendar-events', async (req, res) => {
   }
   res.json(db.prepare(`
     SELECT id, title, event_date, hebrew_year, category, source_sheet, notes,
-      all_day, start_time, end_time, class_scope, class_year, class_parallel
+      all_day, start_time, end_time, class_scope, class_year, class_parallel, is_school_holiday
     FROM calendar_events
     ORDER BY event_date, category, title
   `).all());
@@ -671,7 +671,7 @@ app.get('/api/calendar-events', async (req, res) => {
 app.get('/api/calendar-events/:id', (req, res) => {
   const event = db.prepare(
     `SELECT id, title, event_date, hebrew_year, category, source_sheet, notes,
-      all_day, start_time, end_time, class_scope, class_year, class_parallel
+      all_day, start_time, end_time, class_scope, class_year, class_parallel, is_school_holiday
      FROM calendar_events WHERE id = ?`
   ).get(Number(req.params.id));
   if (!event) return res.status(404).json({ error: 'הארוע לא נמצא' });
@@ -691,11 +691,14 @@ app.put('/api/calendar-events/:id', async (req, res) => {
       const title = String(req.body?.title || '').trim();
       const event_date = req.body?.event_date;
       const category = String(req.body?.category || 'כללי').trim();
+      const is_school_holiday = req.body?.is_school_holiday == null
+        ? event.is_school_holiday : (req.body.is_school_holiday ? 1 : 0);
       const isLegacyEvent = event.class_scope === 'none';
-      const all_day = req.body?.all_day == null ? (isLegacyEvent ? 1 : event.all_day) : (req.body.all_day ? 1 : 0);
+      const all_day = is_school_holiday ? 1
+        : req.body?.all_day == null ? (isLegacyEvent ? 1 : event.all_day) : (req.body.all_day ? 1 : 0);
       const start_time = req.body?.start_time ?? event.start_time;
       const end_time = req.body?.end_time ?? event.end_time;
-      const class_scope = req.body?.class_scope ?? (isLegacyEvent ? 'all' : event.class_scope);
+      const class_scope = is_school_holiday ? 'all' : req.body?.class_scope ?? (isLegacyEvent ? 'all' : event.class_scope);
       const class_year = req.body?.class_year ?? event.class_year;
       const class_parallel = req.body?.class_parallel ?? event.class_parallel;
       if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
@@ -710,9 +713,10 @@ app.put('/api/calendar-events/:id', async (req, res) => {
       } catch (_) {}
       db.prepare(`UPDATE calendar_events
         SET title=?, event_date=?, category=?, hebrew_year=?, notes=?, all_day=?, start_time=?, end_time=?,
-          class_scope=?, class_year=?, class_parallel=? WHERE id=?`)
+          class_scope=?, class_year=?, class_parallel=?, is_school_holiday=? WHERE id=?`)
         .run(title, event_date, category, hebrewYear, notes, all_day, all_day ? null : start_time,
-          all_day ? null : end_time, class_scope, class_year || null, class_scope === 'class' ? class_parallel : null, id);
+          all_day ? null : end_time, class_scope, class_year || null, class_scope === 'class' ? class_parallel : null,
+          is_school_holiday, id);
     } else {
       // ארועים שיובאו — רק הערות ניתנות לעדכון
       db.prepare('UPDATE calendar_events SET notes=? WHERE id=?').run(notes, id);
@@ -728,40 +732,58 @@ app.put('/api/calendar-events/:id', async (req, res) => {
 app.post('/api/calendar-events', async (req, res) => {
   try {
     const title = String(req.body?.title || '').trim();
-    const event_date = req.body?.event_date;
+    const startDate = String(req.body?.event_date || '');
+    const endDate = String(req.body?.end_date || startDate);
     const category = String(req.body?.category || 'כללי').trim();
     const source_sheet = String(req.body?.source_sheet || 'ידני').trim();
-    const all_day = req.body?.all_day ? 1 : 0;
+    const is_school_holiday = req.body?.is_school_holiday ? 1 : 0;
+    const all_day = is_school_holiday || req.body?.all_day ? 1 : 0;
     const start_time = req.body?.start_time;
     const end_time = req.body?.end_time;
-    const class_scope = req.body?.class_scope || 'none';
+    const class_scope = is_school_holiday ? 'all' : req.body?.class_scope || 'none';
     const class_year = req.body?.class_year;
     const class_parallel = req.body?.class_parallel;
     if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
-      return res.status(400).json({ error: 'תאריך לא תקין' });
+    const isValidDate = date => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+      const parsed = new Date(`${date}T00:00:00Z`);
+      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+    };
+    if (!isValidDate(startDate) || !isValidDate(endDate) || endDate < startDate)
+      return res.status(400).json({ error: 'יש לבחור טווח תאריכים תקין' });
+    const dayCount = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000 + 1;
+    if (dayCount > 366) return res.status(400).json({ error: 'טווח האירוע לא יכול לעלות על שנה' });
     const settingsError = validateCalendarEventSettings({ all_day, start_time, end_time, class_scope, class_year, class_parallel });
     if (settingsError) return res.status(400).json({ error: settingsError });
 
-    let hebrewYear = 0;
+    let HDate = null;
     try {
-      const { HDate } = await import('@hebcal/core');
-      hebrewYear = new HDate(new Date(`${event_date}T12:00:00`)).getFullYear();
+      ({ HDate } = await import('@hebcal/core'));
     } catch (_) { /* fallback — hebrew year not critical */ }
 
+    const eventDates = Array.from({ length: dayCount }, (_, index) => addDays(startDate, index));
+    const placeholders = eventDates.map(() => '?').join(', ');
     const existing = db.prepare(`
-      SELECT id FROM calendar_events WHERE event_date = ? AND title = ? AND category = ? AND source_sheet = 'ידני'
-    `).get(event_date, title, category);
-    if (existing) return res.status(409).json({ error: 'אירוע עם אותה כותרת כבר קיים בתאריך זה' });
+      SELECT event_date FROM calendar_events
+      WHERE event_date IN (${placeholders}) AND title = ? AND category = ? AND source_sheet = 'ידני'
+      LIMIT 1
+    `).get(...eventDates, title, category);
+    if (existing) return res.status(409).json({ error: `אירוע עם אותה כותרת כבר קיים בתאריך ${existing.event_date}` });
 
-    const result = db.prepare(`
+    const insert = db.prepare(`
       INSERT INTO calendar_events
         (title, event_date, hebrew_year, category, source_sheet, created_at, all_day, start_time, end_time,
-         class_scope, class_year, class_parallel)
-      VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?)
-    `).run(title, event_date, hebrewYear, category, source_sheet, all_day, all_day ? null : start_time,
-      all_day ? null : end_time, class_scope, class_year || null, class_scope === 'class' ? class_parallel : null);
-    res.status(201).json({ id: result.lastInsertRowid });
+         class_scope, class_year, class_parallel, is_school_holiday)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertRange = db.transaction(() => eventDates.map(eventDate => {
+      const hebrewYear = HDate ? new HDate(new Date(`${eventDate}T12:00:00`)).getFullYear() : 0;
+      return insert.run(title, eventDate, hebrewYear, category, source_sheet, all_day, all_day ? null : start_time,
+        all_day ? null : end_time, class_scope, class_year || null, class_scope === 'class' ? class_parallel : null,
+        is_school_holiday).lastInsertRowid;
+    }));
+    const ids = insertRange();
+    res.status(201).json({ id: ids[0], ids, count: ids.length });
   } catch (err) {
     console.error('calendar-events POST error:', err);
     res.status(500).json({ error: 'שגיאה בשמירת האירוע: ' + (err.message || err) });

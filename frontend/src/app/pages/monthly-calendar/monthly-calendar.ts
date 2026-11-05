@@ -185,6 +185,10 @@ interface GanttRow {
 <div *ngIf="addEventOpen()" class="modal-backdrop" (click)="closeDialogs()">
   <div class="modal-card" (click)="$event.stopPropagation()">
     <div class="modal-title"> אירוע חדש ל-{{ formatShortDate(selectedDate()) }}</div>
+    <div class="form-row">
+      <div class="form-group"><label>מתאריך</label><input type="date" [(ngModel)]="newEvent.start_date"></div>
+      <div class="form-group"><label>עד תאריך</label><input type="date" [(ngModel)]="newEvent.end_date"></div>
+    </div>
     <div class="form-group">
       <label>כותרת *</label>
       <input [(ngModel)]="newEvent.title" placeholder="שם האירוע" (keyup.enter)="saveEvent()">
@@ -195,6 +199,9 @@ interface GanttRow {
     </div>
     <div class="form-group">
       <label class="event-all-day"><input type="checkbox" [(ngModel)]="newEvent.all_day"> כל היום</label>
+    </div>
+    <div class="form-group">
+      <label class="event-all-day"><input type="checkbox" [(ngModel)]="newEvent.is_school_holiday" (ngModelChange)="setHolidayMode(newEvent, $event)"> יום חופש ללא לימודים</label>
     </div>
     <div class="form-row" *ngIf="!newEvent.all_day">
       <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="newEvent.start_time"></div>
@@ -224,7 +231,7 @@ interface GanttRow {
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-primary" [disabled]="!newEvent.title.trim()" (click)="saveEvent()">שמור</button>
+      <button class="btn btn-primary" [disabled]="!newEvent.title.trim() || !validEventDateRange(newEvent.start_date, newEvent.end_date)" (click)="saveEvent()">שמור</button>
       <button class="btn btn-secondary" (click)="closeDialogs()">ביטול</button>
     </div>
     <p *ngIf="dialogError()" class="hint" style="color:var(--danger)">{{ dialogError() }}</p>
@@ -275,6 +282,9 @@ interface GanttRow {
       </div>
       <div class="form-group">
         <label class="event-all-day"><input type="checkbox" [(ngModel)]="editEventDraft.all_day"> כל היום</label>
+      </div>
+      <div class="form-group">
+        <label class="event-all-day"><input type="checkbox" [(ngModel)]="editEventDraft.is_school_holiday" (ngModelChange)="setHolidayMode(editEventDraft, $event)"> יום חופש ללא לימודים</label>
       </div>
       <div class="form-row" *ngIf="!editEventDraft.all_day">
         <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="editEventDraft.start_time"></div>
@@ -1111,8 +1121,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   showUserPicker = signal(false);
   newExam  = { name: '', track: '', year: '' };
   newEvent = {
-    title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
-    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: ''
+    title: '', category: '', start_date: this.today, end_date: this.today,
+    all_day: true, start_time: '08:00', end_time: '09:00',
+    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: '', is_school_holiday: false
   };
 
   // ── Upload / misc ──
@@ -1131,7 +1142,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly deleteTaskError = signal('');
   editEventDraft = {
     title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
-    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: ''
+    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: '', is_school_holiday: false
   };
 
   private colorMap = new Map<number, string>();
@@ -1348,8 +1359,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     this.eventDetailOpen.set(false);
     this.editingEvent.set(false);
     this.newEvent = {
-      title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
-      class_scope: 'all', class_year: 'ה', class_parallel: ''
+      title: '', category: '', start_date: this.selectedDate(), end_date: this.selectedDate(),
+      all_day: true, start_time: '08:00', end_time: '09:00',
+      class_scope: 'all', class_year: 'ה', class_parallel: '', is_school_holiday: false
     };
     this.dialogError.set('');
     this.addEventOpen.set(true);
@@ -1402,10 +1414,11 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   saveEvent() {
     const title = this.newEvent.title.trim();
-    if (!title) return;
+    if (!title || !this.validEventDateRange(this.newEvent.start_date, this.newEvent.end_date)) return;
     this.api.createCalendarEvent({
       title,
-      event_date: this.selectedDate(),
+      event_date: this.newEvent.start_date,
+      end_date: this.newEvent.end_date,
       category: this.newEvent.category.trim() || 'כללי',
       source_sheet: 'ידני',
       all_day: this.newEvent.all_day,
@@ -1413,7 +1426,8 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       end_time: this.newEvent.end_time,
       class_scope: this.newEvent.class_scope,
       class_year: this.newEvent.class_scope === 'all' ? '' : this.newEvent.class_year,
-      class_parallel: this.newEvent.class_scope === 'class' ? this.newEvent.class_parallel : ''
+      class_parallel: this.newEvent.class_scope === 'class' ? this.newEvent.class_parallel : '',
+      is_school_holiday: this.newEvent.is_school_holiday
     }).subscribe({
       next: () => {
         this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
@@ -1422,6 +1436,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       },
       error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
     });
+  }
+
+  validEventDateRange(startDate: string, endDate: string) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) && startDate <= endDate;
   }
 
   // ── Task actions ──
@@ -1511,6 +1529,12 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     return 'לא הוגדר';
   }
 
+  setHolidayMode(event: { all_day: boolean; class_scope: 'all' | 'grade' | 'class' }, enabled: boolean) {
+    if (!enabled) return;
+    event.all_day = true;
+    event.class_scope = 'all';
+  }
+
   dotColor(item: CalendarItem): string | null {
     if (item.kind === 'loan') return this.loanColor(item.loan!);
     if (item.kind === 'exam') return '#e11d48';
@@ -1547,7 +1571,8 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       title: ev.title, category: ev.category, all_day: ev.class_scope === 'none' || !!ev.all_day,
       start_time: ev.start_time || '08:00', end_time: ev.end_time || '09:00',
       class_scope: ev.class_scope === 'none' ? 'all' : ev.class_scope,
-      class_year: ev.class_year || 'ה', class_parallel: ev.class_parallel || ''
+      class_year: ev.class_year || 'ה', class_parallel: ev.class_parallel || '',
+      is_school_holiday: !!ev.is_school_holiday
     };
     this.editingEvent.set(true);
   }
@@ -1565,7 +1590,8 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       end_time: this.editEventDraft.end_time,
       class_scope: this.editEventDraft.class_scope,
       class_year: this.editEventDraft.class_scope === 'all' ? '' : this.editEventDraft.class_year,
-      class_parallel: this.editEventDraft.class_scope === 'class' ? this.editEventDraft.class_parallel : ''
+      class_parallel: this.editEventDraft.class_scope === 'class' ? this.editEventDraft.class_parallel : '',
+      is_school_holiday: this.editEventDraft.is_school_holiday
     }).subscribe({
       next: () => {
         this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
