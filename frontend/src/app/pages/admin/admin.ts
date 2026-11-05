@@ -1186,15 +1186,17 @@ loadTrackNames() {
 
   this.api.getStudents().subscribe({
     next: students => {
+      const normalize = (track: string) =>
+        track.trim()
+          .split('/')[0]          // מסלול ראשי בלבד
+          .replace(/\s*ללא מיסים\s*/gi, '')  // הסר "ללא מיסים"
+          .trim();
+
       const names = [...new Set(
         students
-          .map((s: any) => {
-            const track = (s.track || '').trim();
-            // קח רק את המסלול הראשי (לפני ה-/)
-            return track.split('/')[0].trim();
-          })
+          .map((s: any) => normalize(s.track || ''))
           .filter(Boolean)
-      )];
+      )].sort();
       mergeNames(names);
     },
     error: () => { this.loadingTracks.set(false); }
