@@ -44,53 +44,54 @@ template: `
 </div>
 </div>
 
-<!-- יצירת מבחן — מחוץ לcard הרשימה -->
-<div *ngIf="creating()" class="new-exam card" style="margin-top:14px; background:var(--surface-2);">
-<div class="section-title"> מבחן חדש</div>
-<div class="form-group">
-<label>שם המבחן *</label>
-<input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'">
+<!-- יצירת מבחן — modal -->
+<div *ngIf="creating()" class="modal-backdrop" (click)="creating.set(false)">
+  <div class="modal-card" (click)="$event.stopPropagation()" style="width:min(500px,95vw)">
+    <div class="modal-title">➕ מבחן חדש</div>
+    <div class="form-group">
+      <label>שם המבחן *</label>
+      <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'" (keyup.enter)="newExam.name.trim() && saveExam()" autofocus>
+    </div>
+    <div class="filter-mode-toggle" style="margin:8px 0 10px;">
+      <button type="button" [class.active]="newExam.filterMode==='track'" (click)="newExam.filterMode='track'; newExam.parallel=''">לפי מסלול ושנה</button>
+      <button type="button" [class.active]="newExam.filterMode==='class'" (click)="newExam.filterMode='class'; newExam.track=''; newExam.year=''">לפי כיתה (מקבילה)</button>
+    </div>
+    <div *ngIf="newExam.filterMode==='track'" class="form-row">
+      <div class="form-group">
+        <label>מסלול (אופציונלי)</label>
+        <select [(ngModel)]="newExam.track">
+          <option value="">כל המסלולים</option>
+          <option *ngFor="let t of trackOptions()" [value]="t">{{ t }}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>שנה (אופציונלי)</label>
+        <select [(ngModel)]="newExam.year">
+          <option value="">כל השנים</option>
+          <option *ngFor="let y of yearOptions()" [value]="y">{{ toStudyYear(y) }}</option>
+        </select>
+      </div>
+    </div>
+    <div *ngIf="newExam.filterMode==='class'" class="form-group">
+      <label>כיתה (אופציונלי)</label>
+      <select [(ngModel)]="newExam.parallel">
+        <option value="">כל הכיתות</option>
+        <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }} תלמידות)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>תאריך (אופציונלי)</label>
+      <input type="date" [(ngModel)]="newExam.exam_date">
+    </div>
+    <p *ngIf="error()" class="hint" style="color:var(--danger); margin:0 0 8px;">{{ error() }}</p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" [disabled]="!newExam.name.trim() || saving()" (click)="saveExam()">
+        {{ saving() ? 'שומר...' : 'שמור מבחן' }}
+      </button>
+      <button type="button" class="btn btn-secondary" (click)="creating.set(false); error.set('')">ביטול</button>
+    </div>
+  </div>
 </div>
-<div class="filter-mode-toggle" style="margin:8px 0 10px;">
-<button [class.active]="newExam.filterMode==='track'" (click)="newExam.filterMode='track'; newExam.parallel='' ">לפי מסלול ושנה</button>
-<button [class.active]="newExam.filterMode==='class'" (click)="newExam.filterMode='class'; newExam.track=''; newExam.year=''">לפי כיתה (מקבילה)</button>
-</div>
-<div *ngIf="newExam.filterMode==='track'" class="form-row">
-<div class="form-group">
-<label>מסלול (אופציונלי)</label>
-<select [(ngModel)]="newExam.track">
-<option value="">כל המסלולים</option>
-<option *ngFor="let t of trackOptions()" [value]="t">{{ t }}</option>
-</select>
-</div>
-<div class="form-group">
-<label>שנה (אופציונלי)</label>
-<select [(ngModel)]="newExam.year">
-<option value="">כל השנים</option>
-<option *ngFor="let y of yearOptions()" [value]="y">{{ toStudyYear(y) }}</option>
-</select>
-</div>
-</div>
-<div *ngIf="newExam.filterMode==='class'" class="form-group">
-<label>בחרי כיתה (אופציונלי)</label>
-<select [(ngModel)]="newExam.parallel">
-<option value="">כל הכיתות</option>
-<option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }} תלמידות)</option>
-</select>
-</div>
-<p class="hint">בחירת המסלול והשנה או הכיתה תגדיר לאילו תלמידות יופק ברקוד למבחן הזה.</p>
-<div class="form-group">
-<label>תאריך (אופציונלי)</label>
-<input type="date" [(ngModel)]="newExam.exam_date">
-</div>
-<div style="display:flex; gap:8px; margin-top:12px;">
-<button class="btn btn-primary" style="flex:1;" (click)="saveExam()">שמור מבחן</button>
-<button class="btn btn-secondary" (click)="creating.set(false)">ביטול</button>
-</div>
-<p *ngIf="error()" class="hint" style="color:var(--danger); font-weight:600; margin-top:8px;">{{ error() }}</p>
-</div>
-
-</div><!-- /exams-grid -->
 
 <!-- הודעות כלליות — מחוץ לבחירת מבחן -->
 <p *ngIf="message() && !selectedExam()" class="hint" style="color:var(--primary); font-weight:600; margin-bottom:10px;">{{ message() }}</p>
@@ -215,6 +216,7 @@ selectedExam = signal<any | null>(null);
 selectedExamStudents = signal<any[]>([]);
 stats = signal<{ byStudent: any[]; byExam: any[] } | null>(null);
 creating = signal(false);
+saving = signal(false);
 printMode = signal<'class' | 'personal'>('class');
 message = signal('');
 error = signal('');
@@ -303,6 +305,7 @@ this.creating.set(true);
 saveExam() {
 if (!this.newExam.name.trim()) return;
 this.error.set('');
+this.saving.set(true);
 const examData: any = {
 name: this.newExam.name.trim(),
 exam_date: this.newExam.exam_date || undefined
@@ -318,27 +321,30 @@ next: (result) => {
 const codeParams: any = {};
 if (this.newExam.filterMode === 'class' && examData.parallel) {
   codeParams.parallel = examData.parallel;
-} else if (this.newExam.filterMode === 'class' && !examData.parallel) {
-  // לא נבחרה כיתה ספציפית — ניצור ברקודים לכל התלמידות
-} else {
+} else if (this.newExam.filterMode !== 'class') {
   if (examData.track) codeParams.track = examData.track;
   if (examData.year)  codeParams.year  = examData.year;
 }
 this.api.generateExamCodes(result.id, codeParams).subscribe({
 next: (r) => {
+  this.saving.set(false);
   this.creating.set(false);
   this.message.set(`המבחן נשמר ונוצרו ברקודים ל-${r.created} תלמידות.`);
   this.loadExams();
 },
 error: (e) => {
+  this.saving.set(false);
   this.creating.set(false);
   this.message.set('המבחן נשמר בהצלחה.');
-  this.error.set(e.error?.error || 'יצירת הברקודים נכשלה — ניתן ליצור אותם מאוחר יותר');
+  this.error.set(e.error?.error || 'יצירת הברקודים נכשלה');
   this.loadExams();
 }
 });
 },
-error: (e) => { this.error.set(e.error?.error || 'שמירה נכשלה'); }
+error: (e) => {
+  this.saving.set(false);
+  this.error.set(e.error?.error || 'שמירה נכשלה');
+}
 });
 }
 
