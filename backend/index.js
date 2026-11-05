@@ -1300,7 +1300,7 @@ app.put('/api/users/:id', (req, res) => {
   }
 
   db.prepare('UPDATE users SET role = ?, active = ?, coordinator_track = ? WHERE id = ?')
-    .run(role, Number(active), role === 'coordinator' ? (req.body?.coordinator_track || null) : null, id);
+    .run(role, Number(active), ['admin','secretary','laborant'].includes(role) ? null : (req.body?.coordinator_track || null), id);
   if (!active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   res.json({ success: true });
 });
@@ -1541,8 +1541,10 @@ function mapStudentRow(row) {
 
 app.get('/api/students', (req, res) => {
   const { q } = req.query;
-  // מרכזת מסלול רואה רק את התלמידות של המסלול שלה
-  const coordinatorTrack = req.user.role === 'coordinator' ? (req.user.coordinator_track || null) : null;
+  // role מנוהל (custom, לא system) עם coordinator_track — רואה רק את המסלול שלה
+  const sysRoles = ['admin', 'secretary', 'laborant'];
+  const coordinatorTrack = !sysRoles.includes(req.user.role) && req.user.coordinator_track
+    ? req.user.coordinator_track : null;
 
   if (q) {
     let rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
@@ -1561,7 +1563,8 @@ app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] });
   const like = `%${q}%`;
-  const coordinatorTrack = req.user.role === 'coordinator' ? (req.user.coordinator_track || null) : null;
+  const coordinatorTrack = !['admin','secretary','laborant'].includes(req.user.role) && req.user.coordinator_track
+    ? req.user.coordinator_track : null;
   const students = permissions.students?.view
     ? (() => {
         let rows = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
