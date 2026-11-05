@@ -23,6 +23,7 @@ export interface DirectMessage {
   recipient_name: string;
   body: string;
   created_at: string;
+  edited_at: string | null;
   read_at: string | null;
   reactions: MessageReaction[];
 }
@@ -61,8 +62,12 @@ export class MessagesService {
       .pipe(tap(({ count }) => this.unreadCount.set(count)));
   }
 
-  sendMessage(recipient_id: number, body: string): Observable<{ id: number }> {
-    return this.http.post<{ id: number }>('/api/messages', { recipient_id, body });
+  sendMessage(recipient_ids: number[], body: string): Observable<{ id: number; ids: number[] }> {
+    return this.http.post<{ id: number; ids: number[] }>('/api/messages', { recipient_ids, body });
+  }
+
+  editMessage(messageId: number, body: string): Observable<{ success: boolean }> {
+    return this.http.put<{ success: boolean }>(`/api/messages/${messageId}`, { body });
   }
 
   toggleReaction(messageId: number, emoji: string): Observable<{ added: boolean }> {

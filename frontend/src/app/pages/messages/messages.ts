@@ -28,10 +28,9 @@ template: `
 {{ usersError }}
 <button type="button" class="retry-button" (click)="loadUsers()">נסי שוב</button>
 </div>
-<label for="recipient">אל</label>
-<select id="recipient" [(ngModel)]="recipientId" (ngModelChange)="selectRecipient($event)"
-[disabled]="usersLoading || !users.length">
-<option [ngValue]="null">{{ usersLoading ? 'טוענת משתמשות…' : users.length ? 'בחרי משתמשת רשומה' : 'אין משתמשות פעילות אחרות' }}</option>
+<label for="recipient">אל (ניתן לבחור מספר עם Ctrl)</label>
+<select id="recipient" multiple [(ngModel)]="recipientIds"
+[disabled]="usersLoading || !users.length" size="4" style="height:auto">
 <option *ngFor="let user of users" [ngValue]="user.id">{{ user.name }}</option>
 </select>
 <div *ngIf="replyToName" class="reply-hint">
@@ -43,7 +42,7 @@ template: `
 placeholder="כתבי הודעה..."></textarea>
 <div class="compose-footer">
 <small>{{ body.length }}/4000</small>
-<button class="btn btn-primary" type="button" [disabled]="sending || usersLoading || !recipientId || !body.trim()"
+<button class="btn btn-primary" type="button" [disabled]="sending || usersLoading || !recipientIds.length || !body.trim()"
 (click)="send()">{{ sending ? 'שולחת…' : 'שליחת הודעה ' }}</button>
 </div>
 <div *ngIf="sendError" class="alert alert-error" role="alert">{{ sendError }}</div>
@@ -83,11 +82,22 @@ placeholder="כתבי הודעה..."></textarea>
 <div class="message-heading">
 <div>
 <strong>{{ message.sender_id === auth.user()?.id ? 'את ל־' + message.recipient_name : 'מאת ' + message.sender_name }}</strong>
-<span>{{ message.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+<span>{{ message.created_at | date:'dd/MM/yyyy HH:mm' }}{{ message.edited_at ? ' (נערך)' : '' }}</span>
 </div>
+<div style="display:flex;gap:6px;align-items:center">
+<button class="reply-button" type="button" (click)="startEdit(message)">✏️</button>
 <button class="reply-button" type="button" (click)="reply(message)">השיבי ↩</button>
 </div>
-<p class="message-body">{{ message.body }}</p>
+</div>
+<ng-container *ngIf="editingMessageId === message.id; else showBody">
+<textarea style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:8px;font:inherit;resize:vertical;margin:6px 0" [(ngModel)]="editBody" rows="3" maxlength="4000"></textarea>
+<div style="display:flex;gap:8px;margin-bottom:4px">
+<button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit || !editBody.trim()" (click)="saveEdit(message)">{{ savingEdit ? 'שומרת…' : 'שמירה' }}</button>
+<button class="btn btn-secondary" style="padding:4px 12px;font-size:0.8rem" type="button" (click)="cancelEdit()">ביטול</button>
+</div>
+<p *ngIf="editError" class="alert alert-error">{{ editError }}</p>
+</ng-container>
+<ng-template #showBody><p class="message-body">{{ message.body }}</p></ng-template>
 <div class="message-actions">
 <div class="message-task">
 <a *ngIf="taskForMessage(message) as task" routerLink="/calendar/personal"
@@ -191,12 +201,16 @@ private destroy$ = new Subject<void>();
 readonly emojis = ['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓'];
 users: MessageUser[] = [];
 messages: DirectMessage[] = [];
-recipientId: number | null = null;
+recipientIds: number[] = [];
 body = '';
 view: MessageView = 'all';
 selectedConversationId: number | null = null;
 replyToName = '';
 emojiPickerMessageId: number | null = null;
+editingMessageId: number | null = null;
+editBody = '';
+savingEdit = false;
+editError = '';
 loading = false;
 usersLoading = false;
 sending = false;
@@ -331,13 +345,10 @@ this.selectedConversationId = userId;
 this.emojiPickerMessageId = null;
 const activeContact = this.users.find(user => user.id === userId);
 if (activeContact) {
-this.recipientId = activeContact.id;
+this.recipientIds = [activeContact.id];
 this.replyToName = activeContact.name;
-} else if (userId === null) {
-this.recipientId = null;
-this.replyToName = '';
 } else {
-this.recipientId = null;
+this.recipientIds = [];
 this.replyToName = '';
 }
 this.sendError = '';
@@ -372,17 +383,16 @@ this.changeDetector.markForCheck();
 }
 
 send() {
-if (!this.recipientId || !this.body.trim() || this.sending) return;
+if (!this.recipientIds.length || !this.body.trim() || this.sending) return;
 this.sending = true;
 this.sendError = '';
 this.sendSuccess = '';
-this.messagesApi.sendMessage(this.recipientId, this.body).subscribe({
+this.messagesApi.sendMessage(this.recipientIds, this.body).subscribe({
 next: () => {
-const recipient = this.users.find(user => user.id === this.recipientId);
-const recipientName = recipient?.name || 'המשתמשת שנבחרה';
+const names = this.recipientIds.map(id => this.users.find(u => u.id === id)?.name || '').filter(Boolean).join(', ');
 this.body = '';
 this.replyToName = '';
-this.sendSuccess = `ההודעה נשלחה בהצלחה אל ${recipientName}`;
+this.sendSuccess = `ההודעה נשלחה בהצלחה אל ${names}`;
 this.sending = false;
 this.changeDetector.markForCheck();
 this.loadMessages();
@@ -399,14 +409,33 @@ reply(message: DirectMessage) {
 const currentId = this.auth.user()?.id;
 const recipientId = message.sender_id === currentId ? message.recipient_id : message.sender_id;
 const recipient = this.users.find(user => user.id === recipientId);
-if (!recipient) {
-this.sendError = 'המשתמשת אינה פעילה עוד במערכת';
-return;
-}
-this.recipientId = recipient.id;
+if (!recipient) { this.sendError = 'המשתמשת אינה פעילה עוד במערכת'; return; }
+this.recipientIds = [recipient.id];
 this.replyToName = recipient.name;
 this.sendError = '';
 this.sendSuccess = '';
+}
+
+startEdit(message: DirectMessage) {
+this.editingMessageId = message.id;
+this.editBody = message.body;
+this.editError = '';
+}
+
+cancelEdit() {
+this.editingMessageId = null;
+this.editBody = '';
+this.editError = '';
+}
+
+saveEdit(message: DirectMessage) {
+if (!this.editBody.trim() || this.savingEdit) return;
+this.savingEdit = true;
+this.editError = '';
+this.messagesApi.editMessage(message.id, this.editBody).subscribe({
+next: () => { this.editingMessageId = null; this.savingEdit = false; this.loadMessages(); },
+error: err => { this.savingEdit = false; this.editError = err.error?.error || 'לא ניתן לערוך'; this.changeDetector.markForCheck(); }
+});
 }
 
 reactionGroups(message: DirectMessage) {

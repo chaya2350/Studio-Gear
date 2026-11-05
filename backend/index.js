@@ -988,7 +988,7 @@ app.get('/api/messages', (req, res) => {
   }
   const messages = db.prepare(`
     SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
-      recipient.name AS recipient_name, m.body, m.created_at, m.read_at
+      recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at
     FROM messages m
     JOIN users sender ON sender.id = m.sender_id
     JOIN users recipient ON recipient.id = m.recipient_id
@@ -1044,10 +1044,9 @@ app.put('/api/messages/:id', (req, res) => {
   const messageId = Number(req.params.id);
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
   if (!body || body.length > 4000) return res.status(400).json({ error: 'תוכן ההודעה חסר או ארוך מ-4000 תווים' });
-  const message = db.prepare('SELECT * FROM messages WHERE id = ? AND sender_id = ?').get(messageId, req.user.id);
+  // שני הצדדים יכולים לערוך — שולח ונמען
+  const message = db.prepare('SELECT * FROM messages WHERE id = ? AND (sender_id = ? OR recipient_id = ?)').get(messageId, req.user.id, req.user.id);
   if (!message) return res.status(404).json({ error: 'הודעה לא נמצאה' });
-  if ((Date.now() - new Date(message.created_at).getTime()) / 60000 > 15)
-    return res.status(403).json({ error: 'ניתן לערוך הודעה רק עד 15 דקות מהשליחה' });
   db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, new Date().toISOString(), messageId);
   res.json({ success: true });
 });
