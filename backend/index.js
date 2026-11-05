@@ -493,7 +493,7 @@ app.get('/api/calendar-events', (req, res) => {
 });
 
 // יצירת אירוע ידני מלוח השנה
-app.post('/api/calendar-events', (req, res) => {
+app.post('/api/calendar-events', async (req, res) => {
   const title = String(req.body?.title || '').trim();
   const event_date = req.body?.event_date;
   const category = String(req.body?.category || 'כללי').trim();
@@ -501,13 +501,18 @@ app.post('/api/calendar-events', (req, res) => {
   if (!title) return res.status(400).json({ error: 'כותרת האירוע חסרה' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(event_date || ''))
     return res.status(400).json({ error: 'תאריך לא תקין' });
-  const hd = new (require('@hebcal/core').HDate)(new Date(`${event_date}T12:00:00`));
-  const result = db.prepare(`
-    INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
-  `).run(title, event_date, hebrewYear, category, source_sheet);
-  res.status(201).json({ id: result.lastInsertRowid });
+  try {
+    const { HDate } = await import('@hebcal/core');
+    const hebrewYear = new HDate(new Date(`${event_date}T12:00:00`)).getFullYear();
+    const result = db.prepare(`
+      INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
+    `).run(title, event_date, hebrewYear, category, source_sheet);
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (e) {
+    res.status(500).json({ error: 'שגיאה ביצירת האירוע: ' + (e instanceof Error ? e.message : String(e)) });
+  }
 });
 
 // מחיקת אירוע ידני
