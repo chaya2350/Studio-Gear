@@ -315,4 +315,17 @@ export class ApiService {
   updateStudentParallel(id_number: string, parallel: string) {
     return this.http.put<{success:boolean}>(`${this.base}/students/${encodeURIComponent(id_number)}/parallel`, { parallel });
   }
+  // תיק סרוק
+  getStudentDocuments(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/documents`); }
+  uploadStudentDocument(id_number: string, file: File) {
+    const fd = new FormData(); fd.append('file', file);
+    return this.http.post<{id:number; file_name:string; file_url:string}>(`${this.base}/students/${encodeURIComponent(id_number)}/documents`, fd);
+  }
+  deleteStudentDocument(id_number: string, doc_id: number) { return this.http.delete(`${this.base}/students/${encodeURIComponent(id_number)}/documents/${doc_id}`); }
+  // לוח מודעות
+  getStudentNotices(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/notices`); }
+  createStudentNotice(id_number: string, data: { title: string; body: string; notice_date: string; visibility: string }) {
+    return this.http.post<{id:number}>(`${this.base}/students/${encodeURIComponent(id_number)}/notices`, data);
+  }
+  deleteStudentNotice(id_number: string, notice_id: number) { return this.http.delete(`${this.base}/students/${encodeURIComponent(id_number)}/notices/${notice_id}`); }
 }

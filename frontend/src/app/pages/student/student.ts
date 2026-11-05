@@ -347,6 +347,80 @@ type="checkbox"
 </div>
 </div>
 
+<!-- ── תיק סרוק ── -->
+<div class="card" style="margin-top:20px;">
+  <div class="section-title-row">
+    <div class="section-title">📁 תיק סרוק</div>
+    <label class="upload-doc-btn" [class.uploading]="uploadingDoc()">
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" hidden [disabled]="uploadingDoc()" (change)="uploadDocument($event)">
+      {{ uploadingDoc() ? 'מעלה...' : '+ הוסף מסמך' }}
+    </label>
+  </div>
+  <p *ngIf="docError()" class="edit-error" role="alert">{{ docError() }}</p>
+  <div *ngIf="!documents().length" class="req-note">אין מסמכים בתיק עדיין</div>
+  <div *ngFor="let doc of documents()" class="doc-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" style="flex-shrink:0;color:var(--primary)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <a [href]="doc.file_url" target="_blank" rel="noopener" class="doc-name">{{ doc.file_name }}</a>
+    <span class="doc-meta">{{ doc.created_at | date:'dd/MM/yy' }} · {{ doc.uploaded_by_name || '' }}</span>
+    <button class="doc-del" (click)="deleteDocument(doc)" title="מחיקה">✕</button>
+  </div>
+</div>
+
+<!-- ── לוח מודעות ── -->
+<div class="card" style="margin-top:20px;">
+  <div class="section-title-row">
+    <div class="section-title">📋 לוח מודעות</div>
+    <button class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;" (click)="noticeFormOpen.set(!noticeFormOpen())">
+      {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
+    </button>
+  </div>
+
+  <!-- טופס הוספה -->
+  <div *ngIf="noticeFormOpen()" class="notice-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label>כותרת *</label>
+        <input [(ngModel)]="newNotice.title" placeholder="כותרת המודעה">
+      </div>
+      <div class="form-group">
+        <label>תאריך *</label>
+        <input type="date" [(ngModel)]="newNotice.notice_date">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>תוכן *</label>
+      <textarea [(ngModel)]="newNotice.body" rows="3" placeholder="תוכן המודעה..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>מי רואה?</label>
+      <div class="visibility-chips">
+        <button type="button" [class.active]="newNotice.visibility==='staff'" (click)="newNotice.visibility='staff'">👩‍💼 צוות בלבד</button>
+        <button type="button" [class.active]="newNotice.visibility==='student'" (click)="newNotice.visibility='student'">👩‍🎓 תלמידה בלבד</button>
+        <button type="button" [class.active]="newNotice.visibility==='all'" (click)="newNotice.visibility='all'">🌐 כולם</button>
+      </div>
+    </div>
+    <p *ngIf="noticeError()" class="edit-error">{{ noticeError() }}</p>
+    <button class="btn btn-primary" [disabled]="savingNotice()" (click)="saveNotice()">
+      {{ savingNotice() ? 'שומר...' : 'הוסף מודעה' }}
+    </button>
+  </div>
+
+  <!-- רשימת מודעות -->
+  <div *ngIf="!notices().length && !noticeFormOpen()" class="req-note">אין מודעות עדיין</div>
+  <div *ngFor="let n of notices()" class="notice-card">
+    <div class="notice-header">
+      <strong class="notice-title">{{ n.title }}</strong>
+      <span class="notice-date">{{ n.notice_date }}</span>
+      <span class="notice-vis-badge" [class]="'vis-' + n.visibility">
+        {{ n.visibility === 'staff' ? 'צוות' : n.visibility === 'student' ? 'תלמידה' : 'כולם' }}
+      </span>
+      <button class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+    </div>
+    <p class="notice-body">{{ n.body }}</p>
+    <span *ngIf="n.created_by_name" class="doc-meta">נוסף ע"י {{ n.created_by_name }}</span>
+  </div>
+</div>
+
 <div *ngIf="!student() && !loading()" class="empty-state"><div class="empty-icon"></div>
 <p>תלמידה לא נמצאה</p>
 <a href="#" (click)="goBack($event)" class="btn btn-primary" style="margin-top:16px;">חזרה</a>
@@ -579,6 +653,41 @@ input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary)
 .file-req .btn { padding: 6px 12px; font-size: 0.82rem; text-decoration: none; }
 .upload-btn { cursor: pointer; margin: 0; }
 .upload-btn.disabled { opacity: 0.6; pointer-events: none; }
+/* ── תיק סרוק ── */
+.section-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.upload-doc-btn {
+  display: inline-flex; align-items: center; padding: 6px 13px;
+  border: 1.5px solid var(--primary); border-radius: var(--radius-sm);
+  background: var(--primary-light); color: var(--primary); font: inherit; font-size: 0.8rem;
+  font-weight: 700; cursor: pointer;
+  &.uploading { opacity: 0.6; cursor: wait; }
+  &:hover { background: var(--primary); color: white; }
+}
+.doc-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  &:last-child { border-bottom: none; }
+}
+.doc-name { color: var(--primary); text-decoration: none; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; &:hover { text-decoration: underline; } }
+.doc-meta { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+.doc-del { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.78rem; padding: 3px 5px; border-radius: 4px; flex-shrink: 0; &:hover { color: var(--danger); background: #fee2e2; } }
+/* ── לוח מודעות ── */
+.notice-form { background: var(--surface-2); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px; }
+.visibility-chips { display: flex; gap: 6px; flex-wrap: wrap;
+  button { padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 999px; background: var(--surface); font: inherit; font-size: 0.8rem; cursor: pointer;
+    &.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 700; }
+  }
+}
+.notice-card { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 8px; }
+.notice-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.notice-title { font-size: 0.92rem; flex: 1; }
+.notice-date { font-size: 0.75rem; color: var(--text-muted); }
+.notice-vis-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+  &.vis-staff    { background: #fef3c7; color: #92400e; }
+  &.vis-student  { background: #dbeafe; color: #1e40af; }
+  &.vis-all      { background: var(--primary-light); color: var(--primary); }
+}
+.notice-body { font-size: 0.88rem; color: var(--text); line-height: 1.6; margin: 0 0 4px; white-space: pre-wrap; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 1050px) {
 .quick-stats { grid-template-columns: 1fr; }
@@ -659,6 +768,18 @@ attendance = signal<any>(null);
 uploadingPhoto = signal(false);
 photoError = signal('');
 
+// ── תיק סרוק ──
+documents = signal<any[]>([]);
+uploadingDoc = signal(false);
+docError = signal('');
+
+// ── לוח מודעות ──
+notices = signal<any[]>([]);
+noticeFormOpen = signal(false);
+noticeError = signal('');
+savingNotice = signal(false);
+newNotice = { title: '', body: '', notice_date: new Date().toISOString().split('T')[0], visibility: 'staff' };
+
 constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
 
 uploadPhoto(event: Event) {
@@ -703,9 +824,76 @@ this.loadStudent(id);
 
 loadStudent(id: string) {
 this.api.getStudent(id).subscribe({
-next: s => { this.student.set(s); this.loading.set(false); this.loadRequirements(s.id_number); this.loadExams(s.id_number); this.loadAttendance(s.id_number); },
+next: s => {
+  this.student.set(s);
+  this.loading.set(false);
+  this.loadRequirements(s.id_number);
+  this.loadExams(s.id_number);
+  this.loadAttendance(s.id_number);
+  this.loadDocuments(s.id_number);
+  this.loadNotices(s.id_number);
+},
 error: () => this.loading.set(false)
 });
+}
+
+loadDocuments(id_number: string) {
+  this.api.getStudentDocuments(id_number).subscribe({ next: d => this.documents.set(d), error: () => {} });
+}
+
+uploadDocument(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const current = this.student();
+  input.value = '';
+  if (!file || !current) return;
+  this.uploadingDoc.set(true);
+  this.docError.set('');
+  this.api.uploadStudentDocument(current.id_number, file).subscribe({
+    next: doc => { this.documents.update(d => [doc, ...d]); this.uploadingDoc.set(false); },
+    error: (e: any) => { this.uploadingDoc.set(false); this.docError.set(e.error?.error || 'שגיאה בהעלאה'); }
+  });
+}
+
+deleteDocument(doc: any) {
+  if (!confirm(`למחוק את "${doc.file_name}"?`)) return;
+  const current = this.student();
+  if (!current) return;
+  this.api.deleteStudentDocument(current.id_number, doc.id).subscribe({
+    next: () => this.documents.update(d => d.filter(x => x.id !== doc.id)),
+    error: () => {}
+  });
+}
+
+loadNotices(id_number: string) {
+  this.api.getStudentNotices(id_number).subscribe({ next: n => this.notices.set(n), error: () => {} });
+}
+
+saveNotice() {
+  const current = this.student();
+  if (!current) return;
+  const { title, body, notice_date, visibility } = this.newNotice;
+  if (!title.trim() || !body.trim() || !notice_date) { this.noticeError.set('יש למלא כותרת, תוכן ותאריך'); return; }
+  this.savingNotice.set(true); this.noticeError.set('');
+  this.api.createStudentNotice(current.id_number, { title: title.trim(), body: body.trim(), notice_date, visibility }).subscribe({
+    next: () => {
+      this.loadNotices(current.id_number);
+      this.newNotice = { title: '', body: '', notice_date: new Date().toISOString().split('T')[0], visibility: 'staff' };
+      this.noticeFormOpen.set(false);
+      this.savingNotice.set(false);
+    },
+    error: (e: any) => { this.savingNotice.set(false); this.noticeError.set(e.error?.error || 'שגיאה בשמירה'); }
+  });
+}
+
+deleteNotice(notice: any) {
+  if (!confirm(`למחוק את המודעה "${notice.title}"?`)) return;
+  const current = this.student();
+  if (!current) return;
+  this.api.deleteStudentNotice(current.id_number, notice.id).subscribe({
+    next: () => this.notices.update(n => n.filter(x => x.id !== notice.id)),
+    error: () => {}
+  });
 }
 
 loadExams(id_number: string) {

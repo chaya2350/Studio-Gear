@@ -358,7 +358,7 @@ interface CtxMenu {
     <span class="legend-dot public-task-dot"></span> משימה ציבורית
     <span class="legend-dot completed-dot"></span> בוצעה
   </span>
-  <span class="legend-item" *ngFor="let cat of eventLegend()"><span class="legend-dot" [style.background]="cat.color"></span> {{ cat.name }}</span>
+  <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
   <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
   <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
 </div>
@@ -610,9 +610,19 @@ interface CtxMenu {
     .upload-error   { flex-basis: 100%; margin: 0; font-size: 0.83rem; color: var(--danger); }
 
     /* ── Legend ── */
+    .calendar-legend-wrap { margin: 0 0 12px; }
+    .legend-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 5px 12px; font: inherit; font-size: 0.78rem; font-weight: 700;
+      color: var(--text-muted); cursor: pointer;
+      &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    }
     .calendar-legend {
       display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-      margin: 0 0 12px; color: var(--text-muted); font-size: 0.78rem;
+      margin: 8px 0 0; padding: 10px 12px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text-muted); font-size: 0.78rem;
     }
     .legend-item { display: inline-flex; align-items: center; gap: 5px; }
     .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -797,6 +807,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   // ── Context menu ──
   readonly ctxMenu = signal<CtxMenu | null>(null);
+
+  // ── Legend collapse ──
+  readonly legendOpen = signal(false);
 
   // ── Dialogs ──
   readonly addTaskOpen  = signal(false);
@@ -1060,8 +1073,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         this.api.getExams().subscribe(v => this.exams.set(v));
         this.closeDialogs();
         if (!this.has('exams')) this.toggleLayer('exams');
-        // ניווט לטאב מבחנים
-        this.router.navigate(['/calendar/exams'], { queryParams: { date: this.selectedDate() } });
       },
       error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
     });
