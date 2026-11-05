@@ -70,6 +70,9 @@ export interface Student {
   photo_url?: string;
   extra_data?: Record<string, string>;
   loans?: Loan[];
+  marital_status?: string;
+  married_name?: string;
+  personal_phone?: string;
 }
 
 export interface Teacher {

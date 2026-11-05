@@ -92,6 +92,29 @@ template: `
 </section>
 
 <section class="edit-section">
+<h3>סטטוס אישי</h3>
+<div class="edit-grid">
+<label class="field">
+<span>סטטוס</span>
+<select name="marital_status" [(ngModel)]="studentDraft.marital_status">
+  <option value="">לא הוגדר</option>
+  <option value="רווקה">רווקה</option>
+  <option value="מאורסת">מאורסת</option>
+  <option value="נשואה">נשואה</option>
+</select>
+</label>
+<label class="field">
+<span>שם לאחר חתונה</span>
+<input name="married_name" [(ngModel)]="studentDraft.married_name" placeholder="שם משפחה חדש">
+</label>
+<label class="field">
+<span>טלפון אישי (נוסף)</span>
+<input name="personal_phone" [(ngModel)]="studentDraft.personal_phone" placeholder="050-0000000">
+</label>
+</div>
+</section>
+
+<section class="edit-section">
 <h3>טלפון ציבורי</h3>
 <div class="edit-grid single-col">
 <label class="field">
@@ -168,6 +191,18 @@ template: `
 <div class="info-row" *ngIf="student()!.track">
 <span class="info-label">מסלול</span>
 <span class="info-value">{{ student()!.track }}{{ student()!.year ? ' ' + student()!.year : '' }}</span>
+</div>
+<div class="info-row" *ngIf="student()!.marital_status">
+<span class="info-label">סטטוס</span>
+<span class="info-value">{{ student()!.marital_status }}</span>
+</div>
+<div class="info-row" *ngIf="student()!.married_name">
+<span class="info-label">שם לאחר חתונה</span>
+<span class="info-value">{{ student()!.married_name }}</span>
+</div>
+<div class="info-row" *ngIf="student()!.personal_phone">
+<span class="info-label">טלפון אישי</span>
+<span class="info-value">{{ student()!.personal_phone }}</span>
 </div>
 </div>
 
@@ -780,7 +815,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '' };
+studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -1049,7 +1084,10 @@ phone: current.phone || '',
 phone_code: current.phone_code || '',
 track: current.track || '',
 year: current.year || '',
-parallel: current.parallel || ''
+parallel: current.parallel || '',
+marital_status: current.marital_status || '',
+married_name:   current.married_name   || '',
+personal_phone: current.personal_phone || ''
 };
 this.editingExtraFields = this.extraFields().map((field) => ({ ...field }));
 this.newExtraField = { key: '', value: '' };
