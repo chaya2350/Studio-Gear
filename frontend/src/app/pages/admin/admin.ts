@@ -119,7 +119,7 @@ class="section-tab"
       <label>אימייל *</label>
       <input [(ngModel)]="editUserDraft.email" type="email" placeholder="כתובת אימייל" dir="ltr">
     </div>
-    <div class="form-group" *ngIf="editingUser()!.role === 'coordinator'">
+    <div class="form-group" *ngIf="isCoordinatorRole(editingUser()!.role)">
       <label>מסלול מנוהל</label>
       <select [(ngModel)]="editUserDraft.coordinator_track">
         <option value="">— ללא מסלול —</option>
@@ -234,7 +234,7 @@ class="section-tab"
 <div class="user-info">
 <strong>{{ user.name }}</strong>
 <span>{{ user.email }} · {{ user.active ? 'פעילה' : 'מושבתת' }}</span>
-<span *ngIf="user.role === 'coordinator' && user.coordinator_track" class="coordinator-track-badge">מסלול: {{ user.coordinator_track }}</span>
+<span *ngIf="isCoordinatorRole(user.role) && user.coordinator_track" class="coordinator-track-badge">מסלול: {{ user.coordinator_track }}</span>
 </div>
 <select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
 [disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
@@ -1202,6 +1202,12 @@ startEditUser(user: UserAccount) {
   this.editingUser.set(user);
 }
 
+isCoordinatorRole(role: string): boolean {
+  // role מנוהל = כל role שאינו מהמערכת (is_system=0), כלומר custom
+  const sysRoles = ['admin', 'secretary', 'laborant'];
+  return !sysRoles.includes(role);
+}
+
 saveEditUser() {
   const user = this.editingUser();
   if (!user) return;
@@ -1213,8 +1219,8 @@ saveEditUser() {
   // שמירת שם ואימייל
   this.http.patch(`/api/users/${user.id}`, { name, email }).subscribe({
     next: () => {
-      // אם רכזת מסלול — שמירת המסלול גם כן
-      if (user.role === 'coordinator') {
+      // אם role מנוהל (custom) — שמירת המסלול גם כן
+      if (this.isCoordinatorRole(user.role)) {
         const track = this.editUserDraft.coordinator_track || null;
         this.http.put(`/api/users/${user.id}`, { role: user.role, active: !!user.active, coordinator_track: track }).subscribe({
           next: () => { this.savingEditUser.set(false); this.editingUser.set(null); this.loadUsers(); },
