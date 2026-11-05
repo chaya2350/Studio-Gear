@@ -16,6 +16,7 @@ export interface CalendarEvent {
   class_scope: 'none' | 'all' | 'grade' | 'class';
   class_year: string | null;
   class_parallel: string | null;
+  is_school_holiday: number;
 }
 
 export interface CalendarImportResult {
@@ -118,16 +119,18 @@ export class ApiService {
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
   getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
   createCalendarEvent(data: {
-    title: string; event_date: string; category: string; source_sheet: string;
+    title: string; event_date: string; end_date?: string; category: string; source_sheet: string;
     all_day: boolean; start_time: string; end_time: string;
     class_scope: 'all' | 'grade' | 'class'; class_year: string; class_parallel: string;
+    is_school_holiday: boolean;
   }) {
-    return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
+    return this.http.post<{ id: number; ids: number[]; count: number }>(`${this.base}/calendar-events`, data);
   }
   updateCalendarEvent(id: number, data: {
     title?: string; event_date?: string; category?: string; notes: string;
     all_day?: boolean; start_time?: string; end_time?: string;
     class_scope?: 'all' | 'grade' | 'class'; class_year?: string; class_parallel?: string;
+    is_school_holiday?: boolean;
   }) {
     return this.http.put<{ success: boolean }>(`${this.base}/calendar-events/${id}`, data);
   }

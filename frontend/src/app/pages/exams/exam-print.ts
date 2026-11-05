@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { splitTrackNames } from '../../utils/track-names';
 
 
 @Component({
@@ -173,7 +174,7 @@ export class ExamPrintComponent implements OnInit {
             <div class="exam-info">
               <span>שם: <strong>${esc(s.name)}</strong></span>
               ${exam.exam_date ? `<span>תאריך: ${esc(exam.exam_date)}</span>` : ''}
-              ${s.track ? `<span>מסלול: ${esc(s.track)}</span>` : ''}
+              ${s.track ? `<span>מסלול: ${esc(splitTrackNames(s.track).join(' / '))}</span>` : ''}
             </div>
           </div>
           <div class="barcode-wrap">
