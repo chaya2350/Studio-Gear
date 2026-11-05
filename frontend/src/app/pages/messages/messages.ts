@@ -85,7 +85,7 @@ placeholder="כתבי הודעה..."></textarea>
 <span>{{ message.created_at | date:'dd/MM/yyyy HH:mm' }}{{ message.edited_at ? ' (נערך)' : '' }}</span>
 </div>
 <div style="display:flex;gap:6px;align-items:center">
-<button *ngIf="message.sender_id === auth.user()?.id" class="reply-button" type="button" (click)="startEdit(message)">✏️</button>
+<button class="reply-button" type="button" (click)="startEdit(message)">✏️</button>
 <button class="reply-button" type="button" (click)="reply(message)">השיבי ↩</button>
 </div>
 </div>
