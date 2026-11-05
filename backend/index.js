@@ -10,6 +10,7 @@ const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
+const { buildStudentUpdateNotice } = require('./student-update-notice');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
@@ -1738,6 +1739,7 @@ app.put('/api/students/:id_number', (req, res) => {
   };
 
   const phone = optionalText(req.body?.phone, existing.phone);
+  const address = optionalText(req.body?.address, existing.address);
   const track = optionalText(req.body?.track, existing.track);
   const year = optionalText(req.body?.year, existing.year);
   const phoneCode = optionalText(req.body?.phone_code, existing.phone_code);
@@ -1752,12 +1754,26 @@ app.put('/api/students/:id_number', (req, res) => {
     : (existing.wedding_date ?? null);
   const weddingVenue  = optionalText(req.body?.wedding_venue, existing.wedding_venue);
 
-  const result = db.prepare(`
+  const updateNotice = buildStudentUpdateNotice(existing, {
+    name, address, phone, phone_code: phoneCode, track, year, parallel,
+    marital_status: maritalStatus, married_name: marriedName, personal_phone: personalPhone,
+    wedding_date: weddingDate, wedding_venue: weddingVenue, extra_data: extraData
+  });
+  db.transaction(() => {
+    db.prepare(`
     UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?,
-      marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?, wedding_venue = ?
+      address = ?, marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?, wedding_venue = ?
     WHERE id_number = ?
-  `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData),
-         maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);  res.json({ success: true });
+    `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), address,
+      maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);
+    if (updateNotice) {
+      db.prepare(`
+        INSERT INTO student_notices (id_number, title, body, notice_date, visibility, created_by)
+        VALUES (?, ?, ?, ?, 'staff', ?)
+      `).run(req.params.id_number, updateNotice.title, updateNotice.body, todayInIsrael(), req.user?.id || null);
+    }
+  })();
+  res.json({ success: true, notice_created: Boolean(updateNotice) });
 });
 
 // העלאת תמונת פרופיל לתלמידה
