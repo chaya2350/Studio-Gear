@@ -42,8 +42,9 @@ template: `
 <p>עדיין אין מבחנים. לחצי על "מבחן חדש"</p>
 </div>
 </div>
+</div>
 
-<!-- יצירת מבחן -->
+<!-- יצירת מבחן — מחוץ לcard הרשימה -->
 <div *ngIf="creating()" class="new-exam card" style="margin-top:14px; background:var(--surface-2);">
 <div class="section-title"> מבחן חדש</div>
 <div class="form-group">
@@ -88,7 +89,8 @@ template: `
 </div>
 <p *ngIf="error()" class="hint" style="color:var(--danger); font-weight:600; margin-top:8px;">{{ error() }}</p>
 </div>
-</div>
+
+</div><!-- /exams-grid -->
 
 <!-- הודעות כלליות — מחוץ לבחירת מבחן -->
 <p *ngIf="message() && !selectedExam()" class="hint" style="color:var(--primary); font-weight:600; margin-bottom:10px;">{{ message() }}</p>
@@ -109,7 +111,6 @@ template: `
 <div class="empty-state">
 <div class="empty-icon"></div>
 <p>בחרי מבחן מהרשימה כדי להפיק ברקודים</p>
-</div>
 </div>
 </div>
 
