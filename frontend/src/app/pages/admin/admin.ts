@@ -1189,7 +1189,9 @@ loadTrackNames() {
       const normalize = (track: string) =>
         track.trim()
           .split('/')[0]          // מסלול ראשי בלבד
-          .replace(/\s*ללא מיסים\s*/gi, '')  // הסר "ללא מיסים"
+          .replace(/\s*[-–—]\s*ללא מיסים\s*/gi, '')  // הסר "- ללא מיסים"
+          .replace(/\s*ללא מיסים\s*/gi, '')           // הסר "ללא מיסים" ללא מקף
+          .replace(/\s*[-–—]\s*$/g, '')               // הסר מקף בסוף
           .trim();
 
       const names = [...new Set(
