@@ -121,10 +121,11 @@ class="section-tab"
     </div>
     <div class="form-group" *ngIf="isCoordinatorRole(editingUser()!.role)">
       <label>מסלול מנוהל</label>
-      <select [(ngModel)]="editUserDraft.coordinator_track">
-        <option value="">— ללא מסלול —</option>
+      <select [(ngModel)]="editUserDraft.coordinator_track" [disabled]="loadingTracks()">
+        <option value="">{{ loadingTracks() ? 'טוען מסלולים...' : '— ללא מסלול —' }}</option>
         <option *ngFor="let t of trackNames()" [value]="t">{{ t }}</option>
       </select>
+      <small *ngIf="loadingTracks()" style="color:var(--text-muted);font-size:0.75rem;">⏳ טוען רשימת מסלולים...</small>
     </div>
     <p *ngIf="userError()" class="alert alert-error" style="margin:0 0 8px;">{{ userError() }}</p>
     <div class="modal-actions">
@@ -1167,22 +1168,22 @@ this.http.get<UserAccount[]>('/api/users').subscribe(users => this.users.set(use
 }
 
 trackNames = signal<string[]>([]);
+loadingTracks = signal(false);
 
 loadTrackNames() {
-  // נטען מסלולים מהתלמידות (מקור אמין) ומהגדרות המסלולים
+  this.loadingTracks.set(true);
   const mergeNames = (extra: string[]) => {
     const existing = this.trackNames();
     const all = [...new Set([...existing, ...extra].filter(Boolean))].sort();
     this.trackNames.set(all);
+    this.loadingTracks.set(false);
   };
 
-  // מהגדרות המסלולים
   this.api.getTracks().subscribe({
     next: r => mergeNames(r.tracks.map((t: any) => t.name)),
-    error: () => {}
+    error: () => { this.loadingTracks.set(false); }
   });
 
-  // מרשימת התלמידות — מקור אמין תמיד
   this.api.getStudents().subscribe({
     next: students => {
       const names = [...new Set(
@@ -1192,7 +1193,7 @@ loadTrackNames() {
       )];
       mergeNames(names);
     },
-    error: () => {}
+    error: () => { this.loadingTracks.set(false); }
   });
 }
 
@@ -1221,6 +1222,10 @@ startEditUser(user: UserAccount) {
   this.editUserDraft = { name: user.name, email: user.email, coordinator_track: user.coordinator_track || '' };
   this.userError.set('');
   this.editingUser.set(user);
+  // אם המשתמשת היא custom role — וודא שהמסלולים נטענו
+  if (this.isCoordinatorRole(user.role) && !this.trackNames().length) {
+    this.loadTrackNames();
+  }
 }
 
 isCoordinatorRole(role: string): boolean {
