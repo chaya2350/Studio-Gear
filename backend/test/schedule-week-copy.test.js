@@ -15,7 +15,8 @@ function createDatabase() {
       start_time TEXT NOT NULL,
       end_time TEXT,
       subject TEXT,
-      week_start TEXT NOT NULL
+      week_start TEXT NOT NULL,
+      series_id TEXT
     )
   `);
   return db;
@@ -25,11 +26,11 @@ test('copies valid lessons to an empty week and skips invalid lessons', () => {
   const db = createDatabase();
   const insert = db.prepare(`
     INSERT INTO schedule_slots
-      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start, series_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01');
-  insert.run(2, 'ה', '2', 1, '09:10', '09:50', 'תנ״ך', '2026-11-01');
+  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01', 'series-1');
+  insert.run(2, 'ה', '2', 1, '09:10', '09:50', 'תנ״ך', '2026-11-01', 'series-2');
 
   const result = copyScheduleWeekIfEmpty(db, {
     fromWeek: '2026-11-01',
@@ -53,11 +54,11 @@ test('does not overwrite a week that already has lessons', () => {
   const db = createDatabase();
   const insert = db.prepare(`
     INSERT INTO schedule_slots
-      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start, series_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'ישן', '2026-11-01');
-  insert.run(2, 'ה', '1', 1, '08:30', '09:10', 'ערוך', '2026-11-08');
+  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'ישן', '2026-11-01', 'series-1');
+  insert.run(2, 'ה', '1', 1, '08:30', '09:10', 'ערוך', '2026-11-08', 'series-2');
 
   const result = copyScheduleWeekIfEmpty(db, {
     fromWeek: '2026-11-01',
@@ -89,11 +90,11 @@ test('skips copied lessons that overlap another lesson for the same class', () =
   const db = createDatabase();
   const insert = db.prepare(`
     INSERT INTO schedule_slots
-      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start, series_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01');
-  insert.run(2, 'ה', '1', 1, '08:30', '09:10', 'תנ״ך', '2026-11-01');
+  insert.run(1, 'ה', '1', 1, '08:30', '09:10', 'הלכה', '2026-11-01', 'series-1');
+  insert.run(2, 'ה', '1', 1, '08:30', '09:10', 'תנ״ך', '2026-11-01', 'series-2');
 
   const result = copyScheduleWeekIfEmpty(db, {
     fromWeek: '2026-11-01',

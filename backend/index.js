@@ -6,7 +6,6 @@ const Database = require('better-sqlite3');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
-const cron = require('node-cron');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
@@ -14,7 +13,10 @@ const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
+const { copyScheduleAcrossYear } = require('./schedule-year-copy');
 const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-conflicts');
+const { collectFutureScheduleOccurrences } = require('./schedule-series');
+const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
@@ -3056,6 +3058,12 @@ db.exec(`
     end_time TEXT,
     subject TEXT,
     week_start TEXT NOT NULL,
+    series_id TEXT,
+    change_scope TEXT,
+    change_category TEXT,
+    change_reason TEXT,
+    change_from_teacher_id INTEGER,
+    change_from_teacher_name TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS schedule_slots_week_idx ON schedule_slots(week_start);
@@ -3082,6 +3090,12 @@ if (hasLegacyScheduleUnique) {
       end_time TEXT,
       subject TEXT,
       week_start TEXT NOT NULL,
+      series_id TEXT,
+      change_scope TEXT,
+      change_category TEXT,
+      change_reason TEXT,
+      change_from_teacher_id INTEGER,
+      change_from_teacher_name TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     INSERT INTO schedule_slots_new
@@ -3096,6 +3110,49 @@ if (hasLegacyScheduleUnique) {
     PRAGMA foreign_keys=ON;
   `);
 }
+
+const scheduleSlotColumns = db.prepare('PRAGMA table_info(schedule_slots)').all().map(column => column.name);
+if (!scheduleSlotColumns.includes('series_id')) db.exec('ALTER TABLE schedule_slots ADD COLUMN series_id TEXT');
+if (!scheduleSlotColumns.includes('change_scope')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_scope TEXT');
+if (!scheduleSlotColumns.includes('change_category')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_category TEXT');
+if (!scheduleSlotColumns.includes('change_reason')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_reason TEXT');
+if (!scheduleSlotColumns.includes('change_from_teacher_id')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_from_teacher_id INTEGER');
+if (!scheduleSlotColumns.includes('change_from_teacher_name')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_from_teacher_name TEXT');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schedule_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL
+  );
+`);
+db.prepare('INSERT OR IGNORE INTO schedule_settings (setting_key, setting_value) VALUES (?, ?)')
+  .run('school_year_end', '2027-08-31');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schedule_change_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slot_id INTEGER,
+    series_id TEXT,
+    class_year TEXT NOT NULL,
+    class_parallel TEXT NOT NULL,
+    week_start TEXT NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    subject TEXT,
+    action TEXT NOT NULL CHECK (action IN ('add', 'update', 'delete')),
+    change_scope TEXT NOT NULL CHECK (change_scope IN ('once', 'permanent')),
+    change_category TEXT NOT NULL,
+    change_reason TEXT NOT NULL,
+    from_teacher_id INTEGER,
+    from_teacher_name TEXT,
+    to_teacher_id INTEGER,
+    to_teacher_name TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS schedule_change_log_week_idx ON schedule_change_log(week_start, action);
+`);
 
 // Attendance sessions: one per teacher-class-date event
 db.exec(`
@@ -3380,6 +3437,25 @@ app.get('/api/schedule/kodesh-availability', (req, res) => {
   res.json({ kodesh: KODESH_CUTOFFS, instruction: INSTRUCTION_WINDOWS });
 });
 
+app.get('/api/schedule/school-year-end', (req, res) => {
+  res.json({ through_date: getSchoolYearEnd() });
+});
+
+app.put('/api/schedule/school-year-end', (req, res) => {
+  const throughDate = String(req.body?.through_date || '');
+  const parsedDate = new Date(`${throughDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(throughDate) || Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== throughDate) {
+    return res.status(400).json({ error: 'יש לבחור תאריך סיום תקין' });
+  }
+  if (throughDate < todayInIsrael()) return res.status(400).json({ error: 'תאריך הסיום צריך להיות היום או בעתיד' });
+  db.prepare(`
+    INSERT INTO schedule_settings (setting_key, setting_value) VALUES ('school_year_end', ?)
+    ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+  `).run(throughDate);
+  res.json({ through_date: throughDate });
+});
+
 app.get('/api/schedule', (req, res) => {
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
@@ -3431,6 +3507,64 @@ function scheduleConflictConfirmation(conflicts) {
   };
 }
 
+function scheduleChangeInput(body) {
+  const change = {
+    scope: body?.change_scope,
+    category: body?.change_category,
+    reason: String(body?.change_reason || '').trim()
+  };
+  return { ...change, error: validateScheduleChange(change) };
+}
+
+function getSchoolYearEnd() {
+  return db.prepare('SELECT setting_value FROM schedule_settings WHERE setting_key = ?')
+    .get('school_year_end')?.setting_value || '2027-08-31';
+}
+
+function todayInIsrael() {
+  const dateParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date()).reduce((parts, part) => {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+    return parts;
+  }, {});
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
+function currentScheduleWeek() {
+  return getWeekStart(todayInIsrael());
+}
+
+function weeksForScheduleChange(weekStart, dayOfWeek, scope) {
+  if (scope === 'once') return [weekStart];
+  const weeks = [];
+  const firstWeek = weekStart < currentScheduleWeek() ? currentScheduleWeek() : weekStart;
+  for (let week = firstWeek; addDays(week, Number(dayOfWeek)) <= getSchoolYearEnd(); week = addDays(week, 7)) weeks.push(week);
+  return weeks;
+}
+
+function teacherName(teacherId) {
+  if (!teacherId) return null;
+  return db.prepare('SELECT name FROM teachers WHERE id = ?').get(teacherId)?.name || null;
+}
+
+function recordScheduleChange({ slot, action, change, fromTeacherId, toTeacherId, userId }) {
+  db.prepare(`
+    INSERT INTO schedule_change_log (
+      slot_id, series_id, class_year, class_parallel, week_start, day_of_week, subject,
+      action, change_scope, change_category, change_reason,
+      from_teacher_id, from_teacher_name, to_teacher_id, to_teacher_name,
+      start_time, end_time, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    slot.id || null, slot.series_id || null, slot.class_year, slot.class_parallel,
+    slot.week_start, slot.day_of_week, slot.subject || null, action, change.scope,
+    change.category, change.reason, fromTeacherId || null, teacherName(fromTeacherId),
+    toTeacherId || null, teacherName(toTeacherId), slot.start_time || null,
+    slot.end_time || null, userId || null
+  );
+}
+
 app.post('/api/schedule', (req, res) => {
   const { teacher_id, day_of_week, start_time, end_time, subject, week_start, allow_conflicts } = req.body || {};
   const classes = Array.isArray(req.body?.classes) ? req.body.classes : [{
@@ -3441,55 +3575,41 @@ app.post('/api/schedule', (req, res) => {
       !classes.length || classes.some(c => !c?.class_year || !c?.class_parallel)) {
     return res.status(400).json({ error: 'שדות חסרים: מורה, כיתה, יום, שעה, שבוע' });
   }
+  const weeks = [week_start];
   const classKeys = classes.map(c => `${String(c.class_year)}_${String(c.class_parallel)}`);
   if (new Set(classKeys).size !== classKeys.length) {
     return res.status(400).json({ error: 'כיתה נבחרה יותר מפעם אחת' });
   }
-  for (const classInfo of classes) {
-    const lessonDate = addDays(week_start, Number(day_of_week));
-    const eventConflict = db.prepare(`
-      SELECT * FROM calendar_events
-      WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
-    `).all(lessonDate).find(event => calendarEventAffectsLesson(
-      event, lessonDate, String(classInfo.class_year), String(classInfo.class_parallel), start_time, end_time
-    ));
-    if (eventConflict) {
-      return res.status(409).json({ error: `לא ניתן להוסיף שיעור בזמן האירוע "${eventConflict.title}"` });
-    }
-    const availability = validateConfiguredKodeshSlot({
-      class_year: classInfo.class_year, day_of_week, start_time, end_time
-    });
-    if (!availability.valid) return res.status(400).json({ error: availability.error });
-  }
-
   const conflicts = new Set();
   for (const classInfo of classes) {
-    const conflict = findClassTimeConflict(db, {
-      class_year: classInfo.class_year,
-      class_parallel: classInfo.class_parallel,
-      day_of_week,
-      start_time,
-      end_time,
-      week_start
-    });
-    if (conflict) {
-      return res.status(409).json({
-        error: `כבר קיים שיעור לכיתה ${classInfo.class_year}${classInfo.class_parallel} בשעה זו`
-      });
+    for (const targetWeek of weeks) {
+      const lessonDate = addDays(targetWeek, Number(day_of_week));
+      const eventConflict = db.prepare(`
+        SELECT * FROM calendar_events
+        WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
+      `).all(lessonDate).find(event => calendarEventAffectsLesson(
+        event, lessonDate, String(classInfo.class_year), String(classInfo.class_parallel), start_time, end_time
+      ));
+      if (eventConflict) return res.status(409).json({ error: `לא ניתן להוסיף שיעור בזמן האירוע "${eventConflict.title}"` });
+
+      const availability = validateConfiguredKodeshSlot({ class_year: classInfo.class_year, day_of_week, start_time, end_time });
+      if (!availability.valid) return res.status(400).json({ error: availability.error });
+      if (findClassTimeConflict(db, {
+        class_year: classInfo.class_year, class_parallel: classInfo.class_parallel,
+        day_of_week, start_time, end_time, week_start: targetWeek
+      })) {
+        return res.status(409).json({ error: `כבר קיים שיעור לכיתה ${classInfo.class_year}${classInfo.class_parallel} בשעה זו בשבוע ${targetWeek}` });
+      }
+      if (findTeacherClassDayConflict({
+        teacher_id, class_year: classInfo.class_year, class_parallel: classInfo.class_parallel,
+        day_of_week, week_start: targetWeek
+      })) conflicts.add('sameClassDay');
+      const teacherConflicts = findTeacherTimeConflicts(db, { teacher_id, day_of_week, start_time, end_time, week_start: targetWeek });
+      if (teacherConflicts.some(teacherConflict =>
+        String(teacherConflict.class_year) !== String(classInfo.class_year) ||
+        String(teacherConflict.class_parallel) !== String(classInfo.class_parallel)
+      )) conflicts.add('teacher');
     }
-    const sameClassDay = findTeacherClassDayConflict({
-      teacher_id,
-      class_year: classInfo.class_year,
-      class_parallel: classInfo.class_parallel,
-      day_of_week,
-      week_start
-    });
-    if (sameClassDay) conflicts.add('sameClassDay');
-    const teacherConflicts = findTeacherTimeConflicts(db, { teacher_id, day_of_week, start_time, end_time, week_start });
-    if (teacherConflicts.some(teacherConflict =>
-      String(teacherConflict.class_year) !== String(classInfo.class_year) ||
-      String(teacherConflict.class_parallel) !== String(classInfo.class_parallel)
-    )) conflicts.add('teacher');
   }
   if (conflicts.size && allow_conflicts !== true) {
     return res.status(409).json(scheduleConflictConfirmation(conflicts));
@@ -3497,22 +3617,71 @@ app.post('/api/schedule', (req, res) => {
 
   try {
     const insertSlot = db.prepare(`
-      INSERT INTO schedule_slots (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO schedule_slots (
+        teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start,
+        series_id, change_scope, change_category, change_reason, change_from_teacher_id, change_from_teacher_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertAll = db.transaction(() => classes.map(classInfo => insertSlot.run(
-      teacher_id,
-      String(classInfo.class_year),
-      String(classInfo.class_parallel),
-      Number(day_of_week),
-      start_time,
-      end_time || null,
-      subject || null,
-      week_start
-    ).lastInsertRowid));
-    res.json({ ids: insertAll(), count: classes.length });
+    const insertAll = db.transaction(() => {
+      const ids = [];
+      for (const classInfo of classes) {
+        const seriesId = randomBytes(12).toString('hex');
+        for (const targetWeek of weeks) {
+          const result = insertSlot.run(
+            teacher_id, String(classInfo.class_year), String(classInfo.class_parallel), Number(day_of_week),
+            start_time, end_time || null, subject || null, targetWeek, seriesId,
+            null, null, null, null, null
+          );
+          ids.push(result.lastInsertRowid);
+        }
+      }
+      return ids;
+    });
+    const ids = insertAll();
+    res.json({ ids, count: ids.length, weeks: weeks.length });
   } catch {
     res.status(400).json({ error: 'שמירת השיעור נכשלה' });
+  }
+});
+
+app.post('/api/schedule/copy-school-year', (req, res) => {
+  const sourceDate = String(req.body?.source_week || '');
+  const throughDate = String(req.body?.through_date || getSchoolYearEnd());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceDate)) {
+    return res.status(400).json({ error: 'יש לבחור תאריך תקין לשבוע המקור' });
+  }
+  const parsedEndDate = new Date(`${throughDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(throughDate) || Number.isNaN(parsedEndDate.getTime()) ||
+      parsedEndDate.toISOString().slice(0, 10) !== throughDate || throughDate < todayInIsrael()) {
+    return res.status(400).json({ error: 'יש לבחור תאריך סיום תקין בעתיד' });
+  }
+  db.prepare(`
+    INSERT INTO schedule_settings (setting_key, setting_value) VALUES ('school_year_end', ?)
+    ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+  `).run(throughDate);
+  const sourceWeek = getWeekStart(sourceDate);
+  if (sourceWeek > throughDate) return res.status(400).json({ error: 'שבוע המקור חייב להיות לפני סוף שנת הלימודים' });
+
+  const today = todayInIsrael();
+  const firstWeek = getWeekStart(today);
+  if (firstWeek > throughDate) return res.status(400).json({ error: 'שנת הלימודים כבר הסתיימה' });
+
+  try {
+    const result = copyScheduleAcrossYear(db, {
+      sourceWeek,
+      firstWeek,
+      throughDate,
+      validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+      createSeriesId: () => randomBytes(12).toString('hex')
+    });
+    if (result.reason === 'source_empty') return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
+    if (result.reason === 'source_has_one_time_changes') {
+      return res.status(400).json({ error: 'שבוע המקור כולל שינויים חד־פעמיים; בחרי שבוע בסיס אחר' });
+    }
+    res.json({ ...result, source_week: sourceWeek, through_date: throughDate });
+  } catch (error) {
+    console.error('School-year schedule copy failed:', error);
+    res.status(500).json({ error: 'שכפול המערכת לשנת הלימודים נכשל' });
   }
 });
 
@@ -3520,13 +3689,24 @@ app.post('/api/schedule', (req, res) => {
 app.post('/api/schedule/copy-week', (req, res) => {
   const { from_week, to_week } = req.body || {};
   if (!from_week || !to_week) return res.status(400).json({ error: 'חסרים פרמטרים: from_week, to_week' });
+  const change = scheduleChangeInput({ ...req.body, change_scope: 'once' });
+  if (change.error) return res.status(400).json({ error: change.error });
   const existing = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(to_week);
   if (existing.c > 0) return res.status(400).json({ error: 'שבוע היעד כבר מכיל שיעורים' });
 
   const result = copyScheduleWeekIfEmpty(db, {
     fromWeek: from_week,
     toWeek: to_week,
-    validateSlot: slot => validateConfiguredKodeshSlot(slot).valid
+    validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+    createSeriesId: () => randomBytes(12).toString('hex'),
+    onCopied: slot => {
+      db.prepare(`UPDATE schedule_slots SET change_scope = 'once', change_category = ?, change_reason = ? WHERE id = ?`)
+        .run(change.category, change.reason, slot.id);
+      recordScheduleChange({
+        slot, action: 'add', change, fromTeacherId: slot.teacher_id,
+        toTeacherId: slot.teacher_id, userId: req.user?.id
+      });
+    }
   });
   if (result.reason === 'source_empty') return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
   res.json({ copied: result.copied, skipped: result.skipped, to_week });
@@ -3534,104 +3714,136 @@ app.post('/api/schedule/copy-week', (req, res) => {
 
 app.put('/api/schedule/:id', (req, res) => {
   const { teacher_id, start_time, end_time, subject, allow_conflicts } = req.body || {};
+  const change = scheduleChangeInput(req.body);
   const current = db.prepare('SELECT * FROM schedule_slots WHERE id=?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
+  if (change.error) return res.status(400).json({ error: change.error });
   const { class_year, class_parallel, day_of_week } = current;
-  const lessonDate = addDays(current.week_start, Number(day_of_week));
-  const eventConflict = db.prepare(`
-    SELECT * FROM calendar_events
-    WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
-  `).all(lessonDate).find(event => calendarEventAffectsLesson(
-    event, lessonDate, class_year, class_parallel, start_time, end_time
-  ));
-  if (eventConflict) {
-    return res.status(409).json({ error: `לא ניתן לקבוע שיעור בזמן האירוע "${eventConflict.title}"` });
+  if (change.scope === 'permanent' && current.week_start < currentScheduleWeek()) {
+    return res.status(400).json({ error: 'שינוי קבוע מתחיל מהשבוע הנוכחי; בחרי שיעור מהשבוע הנוכחי או משבוע עתידי' });
   }
-  const availability = validateConfiguredKodeshSlot({ class_year, day_of_week, start_time, end_time });
-  if (!availability.valid) return res.status(400).json({ error: availability.error });
-  const conflicts = new Set();
-  const conflict = findClassTimeConflict(db, {
-    class_year, class_parallel, day_of_week, start_time, end_time,
-    week_start: current.week_start, excludeId: req.params.id
-  });
-  if (conflict) {
-    return res.status(409).json({
-      error: `כבר קיים שיעור לכיתה ${class_year}${class_parallel} בשעה זו`
+  const seriesId = current.series_id || randomBytes(12).toString('hex');
+  let targets = [current];
+  if (change.scope === 'permanent') {
+    const planned = collectFutureScheduleOccurrences(db, {
+      sourceSlot: current,
+      seriesId,
+      weeks: weeksForScheduleChange(current.week_start, current.day_of_week, change.scope)
     });
+    if (planned.error) return res.status(409).json({ error: planned.error });
+    targets = planned.targets;
   }
-  const sameClassDay = findTeacherClassDayConflict({
-    teacher_id, class_year, class_parallel, day_of_week, week_start: current.week_start, excludeId: req.params.id
-  });
-  if (sameClassDay) conflicts.add('sameClassDay');
-  const teacherConflicts = findTeacherTimeConflicts(db, { teacher_id, day_of_week, start_time, end_time, week_start: current.week_start, excludeId: req.params.id });
-  if (teacherConflicts.some(teacherConflict =>
-    String(teacherConflict.class_year) !== String(class_year) ||
-    String(teacherConflict.class_parallel) !== String(class_parallel)
-  )) conflicts.add('teacher');
+  const conflicts = new Set();
+  for (const target of targets) {
+    const targetDate = addDays(target.week_start, Number(target.day_of_week));
+    const eventConflict = db.prepare(`
+      SELECT * FROM calendar_events
+      WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
+    `).all(targetDate).find(event => calendarEventAffectsLesson(
+      event, targetDate, target.class_year, target.class_parallel, start_time, end_time
+    ));
+    if (eventConflict) return res.status(409).json({ error: `לא ניתן לקבוע שיעור בזמן האירוע "${eventConflict.title}" בתאריך ${targetDate}` });
+    const availability = validateConfiguredKodeshSlot({ class_year: target.class_year, day_of_week: target.day_of_week, start_time, end_time });
+    if (!availability.valid) return res.status(400).json({ error: availability.error });
+    if (findClassTimeConflict(db, {
+      class_year: target.class_year, class_parallel: target.class_parallel,
+      day_of_week: target.day_of_week, start_time, end_time,
+      week_start: target.week_start, excludeId: target.id || 0
+    })) {
+      return res.status(409).json({ error: `כבר קיים שיעור לכיתה ${target.class_year}${target.class_parallel} בשעה זו בשבוע ${target.week_start}` });
+    }
+    if (findTeacherClassDayConflict({
+      teacher_id, class_year: target.class_year, class_parallel: target.class_parallel,
+      day_of_week: target.day_of_week, week_start: target.week_start, excludeId: target.id || 0
+    })) conflicts.add('sameClassDay');
+    const teacherConflicts = findTeacherTimeConflicts(db, {
+      teacher_id, day_of_week: target.day_of_week, start_time, end_time,
+      week_start: target.week_start, excludeId: target.id || 0
+    });
+    if (teacherConflicts.some(teacherConflict =>
+      String(teacherConflict.class_year) !== String(target.class_year) ||
+      String(teacherConflict.class_parallel) !== String(target.class_parallel)
+    )) conflicts.add('teacher');
+  }
   if (conflicts.size && allow_conflicts !== true) {
     return res.status(409).json(scheduleConflictConfirmation(conflicts));
   }
-  const result = db.prepare(`
-    UPDATE schedule_slots SET teacher_id=?, start_time=?, end_time=?, subject=? WHERE id=?
-  `).run(teacher_id, start_time, end_time, subject || null, req.params.id);
-  if (!result.changes) return res.status(404).json({ error: 'שיעור לא נמצא' });
-  res.json({ success: true });
+  const update = db.prepare(`
+    UPDATE schedule_slots SET teacher_id=?, start_time=?, end_time=?, subject=?, series_id=?,
+      change_scope=?, change_category=?, change_reason=?, change_from_teacher_id=?, change_from_teacher_name=?
+    WHERE id=?
+  `);
+  const insert = db.prepare(`
+    INSERT INTO schedule_slots (
+      teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject,
+      week_start, series_id, change_scope, change_category, change_reason,
+      change_from_teacher_id, change_from_teacher_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  db.transaction(() => targets.forEach(target => {
+    let slotId = target.id;
+    const occurrenceChange = occurrenceChangeMetadata({
+      change, changedWeekStart: current.week_start, occurrenceWeekStart: target.week_start,
+      fromTeacherId: target.teacher_id, fromTeacherName: teacherName(target.teacher_id)
+    });
+    if (target.isNewOccurrence) {
+      slotId = insert.run(
+        teacher_id, target.class_year, target.class_parallel, target.day_of_week,
+        start_time, end_time, subject || null, target.week_start, seriesId, occurrenceChange.change_scope,
+        occurrenceChange.change_category, occurrenceChange.change_reason,
+        occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name
+      ).lastInsertRowid;
+    } else {
+      update.run(teacher_id, start_time, end_time, subject || null, seriesId, occurrenceChange.change_scope,
+        occurrenceChange.change_category, occurrenceChange.change_reason,
+        occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name, target.id);
+    }
+    recordScheduleChange({
+      slot: { ...target, id: slotId, series_id: seriesId, start_time, end_time, subject },
+      action: 'update', change, fromTeacherId: target.teacher_id, toTeacherId: teacher_id,
+      userId: req.user?.id
+    });
+  }))();
+  res.json({ success: true, updated: targets.length });
 });
 
 app.delete('/api/schedule/:id', (req, res) => {
-  db.prepare('DELETE FROM schedule_slots WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  const current = db.prepare('SELECT * FROM schedule_slots WHERE id=?').get(req.params.id);
+  if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
+  const change = scheduleChangeInput(req.body);
+  if (change.error) return res.status(400).json({ error: change.error });
+  if (change.scope === 'permanent' && current.week_start < currentScheduleWeek()) {
+    return res.status(400).json({ error: 'מחיקה קבועה מתחילה מהשבוע הנוכחי; בחרי שיעור מהשבוע הנוכחי או משבוע עתידי' });
+  }
+  if (change.scope === 'permanent' && !current.series_id) {
+    return res.status(400).json({ error: 'יש להשלים תחילה את המערכת לכל השנה כדי למחוק את כל ההופעות' });
+  }
+  const targets = change.scope === 'permanent' && current.series_id
+    ? db.prepare('SELECT * FROM schedule_slots WHERE series_id = ? AND week_start >= ? AND week_start <= ? ORDER BY week_start')
+      .all(current.series_id, current.week_start, getSchoolYearEnd())
+      .filter(target => addDays(target.week_start, Number(target.day_of_week)) <= getSchoolYearEnd())
+    : [current];
+  db.transaction(() => targets.forEach(target => {
+    recordScheduleChange({ slot: target, action: 'delete', change, fromTeacherId: target.teacher_id, userId: req.user?.id });
+    db.prepare('DELETE FROM schedule_slots WHERE id=?').run(target.id);
+  }))();
+  res.json({ success: true, deleted: targets.length });
 });
 
 // Delete entire week
 app.delete('/api/schedule/week/:week_start', (req, res) => {
-  const result = db.prepare('DELETE FROM schedule_slots WHERE week_start=?').run(req.params.week_start);
-  res.json({ deleted: result.changes });
+  const change = scheduleChangeInput({ ...req.body, change_scope: 'once' });
+  if (change.error) return res.status(400).json({ error: change.error });
+  const slots = db.prepare('SELECT * FROM schedule_slots WHERE week_start=?').all(req.params.week_start);
+  db.transaction(() => slots.forEach(slot => {
+    recordScheduleChange({ slot, action: 'delete', change, fromTeacherId: slot.teacher_id, userId: req.user?.id });
+    db.prepare('DELETE FROM schedule_slots WHERE id=?').run(slot.id);
+  }))();
+  res.json({ deleted: slots.length });
 });
 
 // ── Weekly Sheets – PDF Data ───────────────────────────────────
 // Returns JSON with all data needed to render the printable sheets
-function copyPreviousWeekSchedule() {
-  const dateParts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Jerusalem',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(new Date()).reduce((parts, part) => {
-    if (part.type !== 'literal') parts[part.type] = part.value;
-    return parts;
-  }, {});
-  const currentDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-  const toWeek = getWeekStart(currentDate);
-  const fromWeek = addDays(toWeek, -7);
-  const result = copyScheduleWeekIfEmpty(db, {
-    fromWeek,
-    toWeek,
-    validateSlot: slot => validateConfiguredKodeshSlot(slot).valid
-  });
-
-  if (result.reason === 'copied') {
-    console.info(`Copied ${result.copied} schedule lessons from ${fromWeek} to ${toWeek}` +
-      (result.skipped ? `; skipped ${result.skipped} unavailable lessons` : ''));
-  } else if (result.reason === 'no_valid_slots') {
-    console.warn(`No valid schedule lessons to copy from ${fromWeek} to ${toWeek}; skipped ${result.skipped}`);
-  }
-}
-
-cron.schedule('5 0 * * 0', () => {
-  try {
-    copyPreviousWeekSchedule();
-  } catch (error) {
-    console.error('Automatic weekly schedule copy failed:', error);
-  }
-}, { timezone: 'Asia/Jerusalem' });
-
-try {
-  copyPreviousWeekSchedule();
-} catch (error) {
-  console.error('Initial weekly schedule copy check failed:', error);
-}
-
 app.get('/api/attendance/weekly-sheets', (req, res) => {
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
@@ -3645,7 +3857,7 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
     ORDER BY t.name, s.class_year, s.class_parallel, s.day_of_week
   `).all(weekStart);
 
-  if (!slots.length) return res.json({ week_start: weekStart, sheets: [] });
+  if (!slots.length) return res.json({ week_start: weekStart, sheets: [], changes: [] });
 
   // Build date for each day: weekStart + day_of_week
   function slotDate(slot) {
@@ -3656,6 +3868,7 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
 
   // Group: teacher → class → days
   const teacherMap = new Map();
+  const activeSlots = [];
   for (const slot of slots) {
     const lessonDate = slotDate(slot);
     const cancelledByEvent = db.prepare(`
@@ -3665,6 +3878,7 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
       event, lessonDate, slot.class_year, slot.class_parallel, slot.start_time, slot.end_time
     ));
     if (cancelledByEvent) continue;
+    activeSlots.push(slot);
     if (!teacherMap.has(slot.teacher_id)) {
       teacherMap.set(slot.teacher_id, {
         teacher_id: slot.teacher_id,
@@ -3727,7 +3941,38 @@ app.get('/api/attendance/weekly-sheets', (req, res) => {
     }
   }
 
-  res.json({ week_start: weekStart, sheets });
+  const changes = activeSlots.filter(slot => slot.change_reason).map(slot => {
+    const lessonDate = slotDate(slot);
+    const students = db.prepare(`
+      SELECT id_number, name FROM students WHERE year = ? AND parallel = ?
+    `).all(slot.class_year, slot.class_parallel).sort(compareByLastName).map(student => ({
+      ...student, barcode: `STU-${student.id_number}`
+    }));
+    return {
+      changed_slot_id: slot.id,
+      teacher_id: slot.teacher_id,
+      teacher_name: slot.teacher_name,
+      class_year: slot.class_year,
+      class_parallel: slot.class_parallel,
+      class_name: `${slot.class_year}${slot.class_parallel}`,
+      week_start: weekStart,
+      change_category: slot.change_category,
+      change_reason: slot.change_reason,
+      change_from_teacher_name: slot.change_from_teacher_name,
+      days: [{
+        slot_id: slot.id,
+        day_of_week: slot.day_of_week,
+        day_name: DAYS_HE[slot.day_of_week],
+        lesson_date: lessonDate,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        subject: slot.subject || slot.teacher_subject || '',
+        barcode: encodeAttendanceCode(slot.teacher_id, slot.class_year, slot.class_parallel, lessonDate)
+      }],
+      students
+    };
+  });
+  res.json({ week_start: weekStart, sheets, changes });
 });
 
 // ── Attendance Sessions CRUD ───────────────────────────────────

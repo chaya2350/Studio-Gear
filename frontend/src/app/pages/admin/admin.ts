@@ -393,6 +393,14 @@ class="section-tab"
       <label class="field-label">מקצוע
         <input [(ngModel)]="newTeacherSubject" placeholder="מקצוע הוראה (אופציונלי)" class="admin-input">
       </label>
+      <label class="field-label">תחום / התמחות
+        <select [(ngModel)]="newTeacherSpecialization" class="admin-input">
+          <option value="">ללא תחום מיוחד</option>
+          <option value="קודש">קודש</option>
+          <option value="רכזת קודש">רכזת קודש</option>
+          <option value="רכזת חינוכית">רכזת חינוכית</option>
+        </select>
+      </label>
       <label class="field-label">מייל
         <input [(ngModel)]="newTeacherEmail" placeholder="מייל (אופציונלי)" class="admin-input">
       </label>
@@ -433,6 +441,21 @@ class="section-tab"
       ✓ יובאו {{ teacherImportResult()!.imported }} מורות חדשות
       <span *ngIf="teacherImportResult()!.skipped">({{ teacherImportResult()!.skipped }} קיימות / דולגו)</span>
     </div>
+  </div>
+
+  <div class="card" style="max-width:640px; margin-bottom:16px;">
+    <div class="section-title">שנת לימודים ומערכת שעות</div>
+    <p class="import-hint">קבעי את היום האחרון ללימודים. שכפול המערכת והשינויים הקבועים יסתיימו בתאריך זה.</p>
+    <div class="period-row period-form">
+      <label class="field-label">תאריך סיום שנת הלימודים
+        <input type="date" class="admin-input" [(ngModel)]="schoolYearEndDate">
+      </label>
+      <button class="btn btn-primary" [disabled]="savingSchoolYearEnd()" (click)="saveSchoolYearEnd()">
+        {{ savingSchoolYearEnd() ? 'שומר...' : 'שמירת תאריך' }}
+      </button>
+    </div>
+    <div *ngIf="schoolYearEndMessage()" class="import-status success">{{ schoolYearEndMessage() }}</div>
+    <div *ngIf="schoolYearEndError()" class="import-status error">{{ schoolYearEndError() }}</div>
   </div>
 
   <!-- ניהול שעות שיעורים -->
@@ -673,7 +696,7 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 /* Teachers tab */
 .teachers-admin { max-width: 640px; }
 .import-hint { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.7; }
-.teacher-add-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: flex-end; }
+.teacher-add-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: flex-end; }
 @media (max-width: 700px) { .teacher-add-form { grid-template-columns: 1fr; } }
 .field-label { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); display: grid; gap: 5px; }
 .admin-input { border: 1.5px solid var(--border); border-radius: 8px; padding: 9px 12px;
@@ -830,6 +853,32 @@ if (auth.user()?.role === 'admin') {
 }
 this.loadTeachers();
 this.loadPeriods();
+this.loadSchoolYearEnd();
+}
+
+loadSchoolYearEnd() {
+  this.api.getScheduleYearEnd().subscribe({
+    next: result => this.schoolYearEndDate = result.through_date,
+    error: () => {}
+  });
+}
+
+saveSchoolYearEnd() {
+  if (!this.schoolYearEndDate || this.savingSchoolYearEnd()) return;
+  this.savingSchoolYearEnd.set(true);
+  this.schoolYearEndMessage.set('');
+  this.schoolYearEndError.set('');
+  this.api.updateScheduleYearEnd(this.schoolYearEndDate).subscribe({
+    next: result => {
+      this.schoolYearEndDate = result.through_date;
+      this.savingSchoolYearEnd.set(false);
+      this.schoolYearEndMessage.set('תאריך הסיום נשמר');
+    },
+    error: error => {
+      this.savingSchoolYearEnd.set(false);
+      this.schoolYearEndError.set(error.error?.error || 'שמירת תאריך הסיום נכשלה');
+    }
+  });
 }
 
 systemRoles(): SystemRole[] {
@@ -1124,6 +1173,7 @@ this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.le
 teachers = signal<any[]>([]);
 newTeacherName = '';
 newTeacherSubject = '';
+newTeacherSpecialization = '';
 newTeacherEmail = '';
 newTeacherPhone = '';
 savingTeacher = signal(false);
@@ -1137,6 +1187,11 @@ draggingSchedule = signal(false);
 importingSchedule = signal(false);
 scheduleImportResult = signal<any>(null);
 scheduleImportWeek = '';
+
+schoolYearEndDate = '2027-08-31';
+savingSchoolYearEnd = signal(false);
+schoolYearEndMessage = signal('');
+schoolYearEndError = signal('');
 
 periods = signal<any[]>([]);
 editingPeriodId = signal(0);
@@ -1181,13 +1236,14 @@ createTeacher() {
   this.api.createTeacher({
     name: this.newTeacherName.trim(),
     subject: this.newTeacherSubject.trim() || undefined,
+    specialization: this.newTeacherSpecialization || undefined,
     email: this.newTeacherEmail.trim() || undefined,
     phone: this.newTeacherPhone.trim() || undefined,
   }).subscribe({
     next: () => {
       this.savingTeacher.set(false);
       this.teacherMsg.set(`✓ המורה "${this.newTeacherName}" נוספה`);
-      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherEmail = ''; this.newTeacherPhone = '';
+      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherSpecialization = ''; this.newTeacherEmail = ''; this.newTeacherPhone = '';
       this.loadTeachers();
     },
     error: e => { this.savingTeacher.set(false); this.teacherMsg.set('שגיאה: ' + (e.error?.error || 'לא ניתן להוסיף')); }
@@ -1207,7 +1263,7 @@ saveTeacher(id: number) {
 }
 
 deleteTeacher(id: number) {
-  if (!confirm('למחוק מורה זו? כל השיעורים שלה ייהחקו גם כן.')) return;
+  if (!confirm('למחוק מורה זו? כל השיעורים שלה ימחקו גם כן.')) return;
   this.api.deleteTeacher(id).subscribe({ next: () => this.loadTeachers() });
 }
 

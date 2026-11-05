@@ -283,22 +283,38 @@ export class ApiService {
     }>(`${this.base}/schedule/kodesh-availability`);
   }
   getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]; events: CalendarEvent[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
-  createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number }>(`${this.base}/schedule`, data); }
-  updateScheduleSlot(id: number, data: { teacher_id: number; start_time: string; end_time: string | null; subject: string | null; allow_conflicts?: boolean }) {
+  getScheduleYearEnd() { return this.http.get<{through_date:string}>(`${this.base}/schedule/school-year-end`); }
+  updateScheduleYearEnd(throughDate: string) {
+    return this.http.put<{through_date:string}>(`${this.base}/schedule/school-year-end`, { through_date: throughDate });
+  }
+  createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number; weeks?: number }>(`${this.base}/schedule`, data); }
+  updateScheduleSlot(id: number, data: {
+    teacher_id: number; start_time: string; end_time: string | null; subject: string | null;
+    change_scope: 'once' | 'permanent'; change_category: string; change_reason: string; allow_conflicts?: boolean;
+  }) {
     return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);
   }
-  deleteScheduleSlot(id: number) { return this.http.delete(`${this.base}/schedule/${id}`); }
+  deleteScheduleSlot(id: number, change: { change_scope: 'once' | 'permanent'; change_category: string; change_reason: string }) {
+    return this.http.request<{success:boolean; deleted:number}>('DELETE', `${this.base}/schedule/${id}`, { body: change });
+  }
   getLessonPeriods() { return this.http.get<any[]>(`${this.base}/schedule/periods`); }
   createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
   updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
   deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
-  copyWeekSchedule(from: string, to: string) {
-    return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to });
+  copyWeekSchedule(from: string, to: string, change: { change_category: string; change_reason: string }) {
+    return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to, ...change });
   }
-  deleteWeekSchedule(week: string) { return this.http.delete<{deleted:number}>(`${this.base}/schedule/week/${week}`); }
+  copySchoolYearSchedule(sourceWeek: string) {
+    return this.http.post<{ inserted: number; linked: number; skipped: number; source_week: string; through_date: string }>(
+      `${this.base}/schedule/copy-school-year`, { source_week: sourceWeek }
+    );
+  }
+  deleteWeekSchedule(week: string, change: { change_category: string; change_reason: string }) {
+    return this.http.request<{deleted:number}>('DELETE', `${this.base}/schedule/week/${week}`, { body: change });
+  }
 
   // ── Attendance Sheets ──
-  getWeeklySheets(week?: string) { return this.http.get<{week_start:string; sheets:any[]}>(`${this.base}/attendance/weekly-sheets${week ? '?week=' + week : ''}`); }
+  getWeeklySheets(week?: string) { return this.http.get<{week_start:string; sheets:any[]; changes:any[]}>(`${this.base}/attendance/weekly-sheets${week ? '?week=' + week : ''}`); }
   getAttendanceBarcodeUrl(code: string) { return `${this.base}/attendance/barcode?code=${encodeURIComponent(code)}`; }
   getStudentAttendanceBarcodeUrl(id_number: string) { return `${this.base}/attendance/student-barcode/${encodeURIComponent(id_number)}`; }
 

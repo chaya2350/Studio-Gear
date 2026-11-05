@@ -16,7 +16,7 @@ import { filter, takeUntil } from 'rxjs/operators';
   template: `
     <!-- ───────────── TOPBAR ───────────── -->
     <header
-      *ngIf="currentPath !== '/login' && currentPath !== '/kiosk' && currentPath !== '/attendance/print'"
+      *ngIf="currentPath !== '/login' && currentPath !== '/kiosk'"
       class="topbar"
       (click)="searchResults = null"
     >
@@ -345,7 +345,7 @@ import { filter, takeUntil } from 'rxjs/operators';
           <router-outlet />
         </main>
 
-        <footer *ngIf="currentPath !== '/login' && currentPath !== '/kiosk' && currentPath !== '/attendance/print'" class="app-footer">
+        <footer *ngIf="currentPath !== '/login' && currentPath !== '/kiosk'" class="app-footer">
           <img src="/MCP.png" alt="MCP" class="footer-logo" />
           <span>כל הזכויות שמורות</span>
         </footer>

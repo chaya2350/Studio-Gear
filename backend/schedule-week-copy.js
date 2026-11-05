@@ -1,6 +1,6 @@
 const { findClassTimeConflict } = require('./schedule-conflicts');
 
-function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot }) {
+function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot, createSeriesId = () => null, onCopied = () => {} }) {
   return db.transaction(() => {
     const destination = db.prepare(
       'SELECT 1 FROM schedule_slots WHERE week_start = ? LIMIT 1'
@@ -14,9 +14,10 @@ function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot }) {
 
     const insert = db.prepare(`
       INSERT INTO schedule_slots
-        (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (teacher_id, class_year, class_parallel, day_of_week, start_time, end_time, subject, week_start, series_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const updateSeries = db.prepare('UPDATE schedule_slots SET series_id = ? WHERE id = ?');
     let copied = 0;
     let skipped = 0;
     for (const slot of sourceSlots) {
@@ -31,10 +32,14 @@ function copyScheduleWeekIfEmpty(db, { fromWeek, toWeek, validateSlot }) {
         skipped++;
         continue;
       }
-      copied += insert.run(
+      const seriesId = slot.series_id || createSeriesId();
+      if (!slot.series_id) updateSeries.run(seriesId, slot.id);
+      const result = insert.run(
         slot.teacher_id, slot.class_year, slot.class_parallel, slot.day_of_week,
-        slot.start_time, slot.end_time, slot.subject, toWeek
-      ).changes;
+        slot.start_time, slot.end_time, slot.subject, toWeek, seriesId
+      );
+      copied += result.changes;
+      onCopied({ ...slot, id: result.lastInsertRowid, series_id: seriesId, week_start: toWeek });
     }
 
     return {

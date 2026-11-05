@@ -1,7 +1,7 @@
 import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { Observable } from 'rxjs';
 
@@ -11,19 +11,18 @@ const PARALLELS = ['1', '2', '3', '4', '5', '6', '7', '8'];
 
 function getWeekStart(date: Date): string {
   const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay()); // Sunday
+  d.setDate(d.getDate() - d.getDay());
   return d.toISOString().split('T')[0];
 }
 
 function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
+  const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
 
 function formatHebDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
 }
 
 function toHebrewNumeral(value: number): string {
@@ -50,49 +49,26 @@ function toHebrewNumeral(value: number): string {
 function formatHebrewDayHeading(dateStr: string): string {
   const date = new Date(`${dateStr}T12:00:00`);
   const parts = new Intl.DateTimeFormat('he-IL-u-ca-hebrew', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || '';
   const weekday = part('weekday').replace(/^יום\s*/, '');
-  const month = part('month');
-  return `${weekday} - ${toHebrewNumeral(Number(part('day')))} ${month} ${toHebrewNumeral(Number(part('year')) % 1000)}`;
+  return `${weekday} - ${toHebrewNumeral(Number(part('day')))} ${part('month')} ${toHebrewNumeral(Number(part('year')) % 1000)}`;
 }
 
 @Component({
   selector: 'app-schedule',
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-<div class="page-header">
+<div class="page-header schedule-page-header">
   <div>
     <h1>מערכת שעות</h1>
-    <p class="subtitle">ניהול שיעורים שבועיים לפי מורה וכיתה</p>
   </div>
   <div class="header-actions">
+    <button *ngIf="activeTab() === 'grid'" type="button" class="btn btn-secondary" (click)="activeTab.set('manage')">ניהול שיעורים</button>
+    <button *ngIf="activeTab() === 'manage'" type="button" class="btn btn-secondary" (click)="activeTab.set('grid')">חזרה למערכת</button>
     <a routerLink="/schedule/print" class="btn btn-secondary">הדפסת דפי נוכחות</a>
   </div>
-</div>
-
-<!-- Week Navigation -->
-<div class="week-nav card">
-  <button class="btn btn-secondary" (click)="prevWeek()">→ שבוע קודם</button>
-  <div class="week-info">
-    <strong>שבוע: {{ weekStart() }}</strong>
-    <span class="week-range">
-      {{ formatHebDate(weekStart()) }} – {{ formatHebDate(weekEnd()) }}
-    </span>
-  </div>
-  <button class="btn btn-secondary" (click)="nextWeek()">שבוע הבא ←</button>
-  <button class="btn btn-primary" (click)="goToCurrentWeek()">השבוע הנוכחי</button>
-</div>
-
-<!-- Tabs -->
-<div class="tab-bar">
-  <button [class.active]="activeTab() === 'grid'" (click)="activeTab.set('grid')">תצוגת לוח</button>
-  <button [class.active]="activeTab() === 'teachers'" (click)="activeTab.set('teachers')">מורות</button>
-  <button [class.active]="activeTab() === 'manage'" (click)="activeTab.set('manage')">ניהול</button>
 </div>
 
 <p *ngIf="kodeshAvailabilityError()" class="error-msg" role="alert">{{ kodeshAvailabilityError() }}</p>
@@ -108,53 +84,50 @@ function formatHebrewDayHeading(dateStr: string): string {
     <button class="btn btn-secondary" (click)="showCopyWeek=true" style="margin-top:8px;">העתק משבוע קודם</button>
   </div>
 
-  <div *ngIf="!loading() && !slots().length && classOptions().length" class="empty-state card no-week-slots">
-    <p>עדיין לא שובצו שיעורי קודש לשבוע זה. השעות מסומנות לפי סוגן.</p>
-    <button class="btn btn-secondary" (click)="showCopyWeek=true">העתק משבוע קודם</button>
-  </div>
-
-  <!-- Copy week prompt -->
-  <div *ngIf="showCopyWeek" class="copy-week-card card">
-    <h3>העתקת שיעורים משבוע קודם</h3>
-    <label>שבוע מקור:
-      <input type="date" [(ngModel)]="copyFromWeek" [value]="prevWeekStr()">
-    </label>
-    <div class="copy-actions">
-      <button class="btn btn-primary" [disabled]="copyLoading()" (click)="doCopyWeek()">
-        {{ copyLoading() ? 'מעתיק...' : 'העתק שיעורים' }}
-      </button>
-      <button class="btn btn-secondary" (click)="showCopyWeek=false">ביטול</button>
-    </div>
-    <p *ngIf="copyError()" class="error-msg">{{ copyError() }}</p>
-  </div>
-
-  <div *ngIf="!loading() && (slots().length || classOptions().length)" class="schedule-display">
-    <div class="schedule-view-toolbar card">
-      <div class="schedule-view-copy">
-        <strong>תצוגת המערכת</strong>
-        <span>בחרי איך נוח לך לראות את השיעורים</span>
+  <div *ngIf="!loading() && (slots().length || classOptions().length)" class="schedule-workspace">
+    <aside class="schedule-control-rail" aria-label="בקרות תצוגת מערכת השעות">
+      <div class="week-control">
+        <button type="button" class="week-arrow" (click)="prevWeek()" title="שבוע קודם" aria-label="שבוע קודם">‹</button>
+        <div class="week-control-label">
+          <strong>{{ formatHebDate(weekStart()) }} – {{ formatHebDate(weekEnd()) }}</strong>
+          <small>{{ weekStart() }}</small>
+        </div>
+        <button type="button" class="week-arrow" (click)="nextWeek()" title="שבוע הבא" aria-label="שבוע הבא">›</button>
       </div>
+      <button type="button" class="current-week-btn" (click)="goToCurrentWeek()">השבוע הנוכחי</button>
       <div class="view-toggle" role="group" aria-label="סוג תצוגת מערכת השעות">
         <button type="button" [class.active]="scheduleView() === 'days'"
                 [attr.aria-pressed]="scheduleView() === 'days'" (click)="scheduleView.set('days')">
-          לפי ימים
+          ימים
         </button>
         <button type="button" [class.active]="scheduleView() === 'classes'"
                 [attr.aria-pressed]="scheduleView() === 'classes'" (click)="scheduleView.set('classes')">
-          לפי כיתות
+          כיתות
         </button>
       </div>
-    </div>
+      <ng-container *ngIf="scheduleView() === 'days'; else classPickerControl">
+        <div class="day-selector" role="group" aria-label="בחירת יום">
+          <button *ngFor="let d of DAYS; let i = index" type="button"
+                  [class.active]="selectedDay() === i" [attr.aria-pressed]="selectedDay() === i"
+                  (click)="selectedDay.set(i)">
+            <span>יום {{ d }}</span>
+            <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
+          </button>
+        </div>
+      </ng-container>
+      <ng-template #classPickerControl>
+        <label class="class-picker">
+          <span>כיתה</span>
+          <select [ngModel]="selectedClassKey() || gridRows()[0]?.className || ''"
+                  (ngModelChange)="selectedClassKey.set($event)">
+            <option *ngFor="let row of gridRows()" [value]="row.className">{{ row.className }}</option>
+          </select>
+        </label>
+      </ng-template>
+    </aside>
 
-    <ng-container *ngIf="scheduleView() === 'days'; else classSchedule">
-      <div class="day-selector" role="group" aria-label="בחירת יום">
-        <button *ngFor="let d of DAYS; let i = index" type="button"
-                [class.active]="selectedDay() === i" [attr.aria-pressed]="selectedDay() === i"
-                (click)="selectedDay.set(i)">
-          <span>יום {{ d }}</span>
-          <small>{{ formatHebDate(addDays(weekStart(), i)) }}</small>
-        </button>
-      </div>
+    <main class="schedule-display">
+      <ng-container *ngIf="scheduleView() === 'days'; else classSchedule">
 
       <h2 class="day-table-title">{{ formatHebrewDayHeading(addDays(weekStart(), selectedDay())) }}</h2>
       <div class="table-wrap schedule-table-wrap">
@@ -179,16 +152,24 @@ function formatHebrewDayHeading(dateStr: string): string {
                     <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
                   </ng-container>
                   <ng-template #dayLesson>
-                    <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)" class="day-lesson">
+                    <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)" class="day-lesson"
+                      [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || ''">
                       <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                          [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                       <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                      <span *ngIf="slot.change_reason" class="changed-lesson-tag">
+                        {{ slot.change_from_teacher_id && slot.change_from_teacher_id !== slot.teacher_id ? 'הוחלף מ־' + (slot.change_from_teacher_name || 'המורה הקודמת') : 'שונה' }}
+                      </span>
                       <div class="day-lesson-actions">
                         <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)" title="עריכת שיעור" aria-label="עריכת שיעור">
                           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
                         </button>
-                        <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                        <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
                           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                        </button>
+                        <button *ngIf="slot.change_reason" type="button" class="slot-icon-btn slot-icon-print" (click)="printChangedLesson(slot)"
+                                title="הדפסת דף נוכחות לשיעור ששונה" aria-label="הדפסת דף נוכחות לשיעור ששונה">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/><path d="M18 12h.01"/></svg>
                         </button>
                       </div>
                     </div>
@@ -213,14 +194,6 @@ function formatHebrewDayHeading(dateStr: string): string {
     </ng-container>
 
     <ng-template #classSchedule>
-      <label class="class-picker">
-        <span>בחירת כיתה</span>
-        <select [ngModel]="selectedClassKey() || gridRows()[0]?.className || ''"
-                (ngModelChange)="selectedClassKey.set($event)">
-          <option *ngFor="let row of gridRows()" [value]="row.className">{{ row.className }}</option>
-        </select>
-      </label>
-
       <ng-container *ngIf="selectedClassRow() as selectedClass; else noScheduleClasses">
         <h2 class="day-table-title">מערכת שעות — כיתה {{ selectedClass.className }}</h2>
         <div class="table-wrap schedule-table-wrap">
@@ -249,16 +222,24 @@ function formatHebrewDayHeading(dateStr: string): string {
                         <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
                       </ng-container>
                       <ng-template #classDayLesson>
-                        <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)" class="day-lesson">
+                            <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)" class="day-lesson"
+                              [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || ''">
                           <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                              [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                           <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                            <span *ngIf="slot.change_reason" class="changed-lesson-tag">
+                              {{ slot.change_from_teacher_id && slot.change_from_teacher_id !== slot.teacher_id ? 'הוחלף מ־' + (slot.change_from_teacher_name || 'המורה הקודמת') : 'שונה' }}
+                            </span>
                           <div class="day-lesson-actions">
                             <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)" title="עריכת שיעור" aria-label="עריכת שיעור">
                               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
                             </button>
-                            <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                            <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
                               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                            </button>
+                            <button *ngIf="slot.change_reason" type="button" class="slot-icon-btn slot-icon-print" (click)="printChangedLesson(slot)"
+                                    title="הדפסת דף נוכחות לשיעור ששונה" aria-label="הדפסת דף נוכחות לשיעור ששונה">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/><path d="M18 12h.01"/></svg>
                             </button>
                           </div>
                         </div>
@@ -286,66 +267,7 @@ function formatHebrewDayHeading(dateStr: string): string {
         <div class="schedule-empty">לא נמצאו כיתות להצגה</div>
       </ng-template>
     </ng-template>
-  </div>
-</div>
-
-<!-- TEACHERS TAB -->
-<div *ngIf="activeTab() === 'teachers'" class="teachers-view">
-  <div class="section-header">
-    <h3>רשימת מורות</h3>
-    <button class="btn btn-primary" (click)="showAddTeacher=true">+ הוסף מורה</button>
-  </div>
-
-  <label class="teacher-search">
-    <input type="search" aria-label="חיפוש מורה לפי שם, מקצוע או התמחות"
-           [ngModel]="teacherSearch()" (ngModelChange)="teacherSearch.set($event)"
-           placeholder="חיפוש לפי שם, מקצוע או התמחות">
-  </label>
-
-  <div *ngIf="showAddTeacher" class="add-form card">
-    <h4>מורה חדשה</h4>
-    <div class="form-row">
-      <label>שם מלא <input [(ngModel)]="newTeacher.name" placeholder="שם המורה"></label>
-      <label>מקצוע <input [(ngModel)]="newTeacher.subject" placeholder="מקצוע הוראה"></label>
-      <label>התמחות <input [(ngModel)]="newTeacher.specialization" placeholder="לדוגמה: קודש"></label>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-primary" [disabled]="savingTeacher()" (click)="createTeacher()">
-        {{ savingTeacher() ? 'שומר...' : 'שמור' }}
-      </button>
-      <button class="btn btn-secondary" (click)="showAddTeacher=false; newTeacher={name:'',subject:'',specialization:''}">ביטול</button>
-    </div>
-    <p *ngIf="teacherError()" class="error-msg">{{ teacherError() }}</p>
-  </div>
-
-  <div class="teachers-list">
-    <div *ngFor="let t of filteredTeachers()" class="teacher-row card">
-      <div class="teacher-info" *ngIf="editingTeacherId() !== t.id">
-        <div class="teacher-color" [style.background]="teacherColor(t.id)"></div>
-        <div>
-          <a [routerLink]="['/teachers', t.id]" class="teacher-name-link"><strong>{{ t.name }}</strong></a>
-          <span *ngIf="t.subject" class="teacher-subject">{{ t.subject }}</span>
-          <span *ngIf="t.specialization" class="teacher-specialization">{{ t.specialization }}</span>
-        </div>
-        <div class="teacher-count">
-          {{ slotCountForTeacher(t.id) }} שיעורים השבוע
-        </div>
-        <div class="teacher-actions">
-          <button class="btn btn-secondary" (click)="startEditTeacher(t)" title="עריכה">✎</button>
-          <button class="btn btn-danger" (click)="deleteTeacher(t.id)" title="מחיקה">⌫</button>
-        </div>
-      </div>
-      <div class="teacher-edit" *ngIf="editingTeacherId() === t.id">
-        <input [(ngModel)]="editTeacherDraft.name" placeholder="שם">
-        <input [(ngModel)]="editTeacherDraft.subject" placeholder="מקצוע">
-        <input [(ngModel)]="editTeacherDraft.specialization" placeholder="התמחות">
-        <button class="btn btn-primary" (click)="saveTeacher(t.id)">שמור</button>
-        <button class="btn btn-secondary" (click)="editingTeacherId.set(0)">ביטול</button>
-      </div>
-    </div>
-    <p *ngIf="!filteredTeachers().length" class="empty-state card">
-      {{ teacherSearch().trim() ? 'לא נמצאו מורות התואמות לחיפוש' : 'אין מורות להצגה' }}
-    </p>
+    </main>
   </div>
 </div>
 
@@ -428,10 +350,31 @@ function formatHebrewDayHeading(dateStr: string): string {
     <button class="btn btn-danger" *ngIf="slots().length" (click)="deleteWeek()">מחק את כל שיעורי השבוע</button>
   </div>
 
+  <div class="school-year-copy card">
+    <label class="field">
+      <span>שבוע מקור לכל השנה</span>
+      <input type="date" [(ngModel)]="copyYearSourceWeek">
+    </label>
+    <button class="btn btn-primary" [disabled]="copyYearLoading()" (click)="copySchoolYearSchedule()">
+      {{ copyYearLoading() ? 'מעתיק...' : 'השלם מערכת לשנת הלימודים' }}
+    </button>
+    <p *ngIf="copyYearMessage()" class="success-msg">{{ copyYearMessage() }}</p>
+    <p *ngIf="copyYearError()" class="error-msg">{{ copyYearError() }}</p>
+  </div>
+
   <div *ngIf="showCopyWeek" class="copy-week-card card">
     <h4>העתקת שיעורים</h4>
     <label>שבוע מקור (תאריך ראשון בשבוע):
       <input type="date" [(ngModel)]="copyFromWeek">
+    </label>
+    <label>סיבת ההעתקה:
+      <select [(ngModel)]="copyWeekChange.change_category">
+        <option value="">בחירת סיבה</option>
+        <option *ngFor="let option of changeCategoryOptions" [value]="option.value">{{ option.label }}</option>
+      </select>
+    </label>
+    <label>פירוט:
+      <textarea [(ngModel)]="copyWeekChange.change_reason" rows="2" placeholder="יש לפרט"></textarea>
     </label>
     <div class="copy-actions">
       <button class="btn btn-primary" [disabled]="copyLoading()" (click)="doCopyWeek()">
@@ -452,16 +395,20 @@ function formatHebrewDayHeading(dateStr: string): string {
           <tr><th>מורה</th><th>כיתה</th><th>יום</th><th>שעה</th><th>מקצוע</th><th></th></tr>
         </thead>
         <tbody>
-          <tr *ngFor="let s of slots()">
+          <tr *ngFor="let s of slots()" [class.schedule-row-changed]="s.change_reason" [title]="s.change_reason || ''">
             <td>{{ s.teacher_name }}</td>
             <td><span class="class-badge">{{ s.class_year }}{{ s.class_parallel }}</span></td>
             <td>יום {{ DAYS[s.day_of_week] }}</td>
             <td>{{ s.start_time }}{{ s.end_time ? ' – ' + s.end_time : '' }}</td>
             <td>{{ s.subject || s.teacher_subject || '—' }}</td>
             <td>
-              <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(s.id)"
+              <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(s)"
                       title="מחיקת שיעור" aria-label="מחיקת שיעור">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+              </button>
+              <button *ngIf="s.change_reason" type="button" class="slot-icon-btn slot-icon-print" (click)="printChangedLesson(s)"
+                      title="הדפסת דף נוכחות לשיעור ששונה" aria-label="הדפסת דף נוכחות לשיעור ששונה">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/><path d="M18 12h.01"/></svg>
               </button>
             </td>
           </tr>
@@ -535,6 +482,18 @@ function formatHebrewDayHeading(dateStr: string): string {
     <label>שם השיעור / מקצוע:
       <input [(ngModel)]="editSlotDraft.subject" placeholder="שם השיעור">
     </label>
+    <label>תוקף השינוי:
+      <select [(ngModel)]="editSlotDraft.change_scope"><option value="">בחירת תוקף</option><option value="once">חד־פעמי</option><option value="permanent">קבוע עד סוף השנה</option></select>
+    </label>
+    <label>סיבת השינוי:
+      <select [(ngModel)]="editSlotDraft.change_category">
+        <option value="">בחירת סיבה</option>
+        <option *ngFor="let option of changeCategoryOptions" [value]="option.value">{{ option.label }}</option>
+      </select>
+    </label>
+    <label>פירוט הסיבה:
+      <textarea [(ngModel)]="editSlotDraft.change_reason" rows="2" placeholder="יש לפרט את הסיבה"></textarea>
+    </label>
     <p *ngIf="editSlotError()" class="error-msg" role="alert">{{ editSlotError() }}</p>
     <div class="form-actions">
       <button class="btn btn-primary" [disabled]="savingEditSlot()" (click)="saveEditedSlot()">
@@ -544,18 +503,54 @@ function formatHebrewDayHeading(dateStr: string): string {
     </div>
   </div>
 </div>
+
+<div *ngIf="deletingSlot() as slot" class="modal-overlay" (click)="cancelDeleteSlot()">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-slot-title" (click)="$event.stopPropagation()">
+    <h3 id="delete-slot-title">מחיקת שיעור בכיתה {{ slot.class_year }}{{ slot.class_parallel }}</h3>
+    <label>תוקף המחיקה:
+      <select [(ngModel)]="deleteSlotDraft.change_scope"><option value="">בחירת תוקף</option><option value="once">רק השבוע</option><option value="permanent">גם בהמשך השנה</option></select>
+    </label>
+    <label>סיבת המחיקה:
+      <select [(ngModel)]="deleteSlotDraft.change_category">
+        <option value="">בחירת סיבה</option>
+        <option *ngFor="let option of changeCategoryOptions" [value]="option.value">{{ option.label }}</option>
+      </select>
+    </label>
+    <label>פירוט הסיבה:
+      <textarea [(ngModel)]="deleteSlotDraft.change_reason" rows="3" placeholder="יש לפרט את הסיבה"></textarea>
+    </label>
+    <p *ngIf="deleteSlotError()" class="error-msg">{{ deleteSlotError() }}</p>
+    <div class="form-actions">
+      <button class="btn btn-danger" [disabled]="deletingSlotSaving()" (click)="confirmDeleteSlot()">מחק שיעור</button>
+      <button class="btn btn-secondary" (click)="cancelDeleteSlot()">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="deletingWeek()" class="modal-overlay" (click)="deletingWeek.set(false)">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-week-title" (click)="$event.stopPropagation()">
+    <h3 id="delete-week-title">מחיקת מערכת לשבוע {{ weekStart() }}</h3>
+    <label>סיבת המחיקה:
+      <select [(ngModel)]="deleteWeekDraft.change_category">
+        <option value="">בחירת סיבה</option>
+        <option *ngFor="let option of changeCategoryOptions" [value]="option.value">{{ option.label }}</option>
+      </select>
+    </label>
+    <label>פירוט:
+      <textarea [(ngModel)]="deleteWeekDraft.change_reason" rows="3" placeholder="יש לפרט"></textarea>
+    </label>
+    <p *ngIf="deleteWeekError()" class="error-msg">{{ deleteWeekError() }}</p>
+    <div class="form-actions">
+      <button class="btn btn-danger" [disabled]="deletingWeekSaving()" (click)="confirmDeleteWeek()">מחקי את כל שיעורי השבוע</button>
+      <button class="btn btn-secondary" (click)="deletingWeek.set(false)">ביטול</button>
+    </div>
+  </div>
+</div>
 `,
   styles: [`
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.schedule-page-header { margin-bottom: 8px; align-items: center; }
 .header-actions { display: flex; gap: 8px; }
-
-.week-nav {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
-  padding: 12px 16px;
-}
-.week-info { flex: 1; text-align: center; }
-.week-info strong { display: block; font-size: 1rem; }
-.week-range { font-size: 0.82rem; color: var(--text-muted); }
 
 .tab-bar {
   display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface-2);
@@ -567,24 +562,7 @@ function formatHebrewDayHeading(dateStr: string): string {
       box-shadow: var(--shadow-xs); } }
 }
 
-.schedule-display { display: grid; gap: 14px; }
-.schedule-view-toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 14px 18px; margin: 0;
-}
-.schedule-view-copy { display: grid; gap: 3px; }
-.schedule-view-copy strong { font-size: 0.95rem; }
-.schedule-view-copy span { color: var(--text-muted); font-size: 0.8rem; }
-.view-toggle {
-  display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border);
-  border-radius: var(--radius); background: var(--surface-2);
-  button {
-    padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: transparent;
-    color: var(--text-muted); font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer;
-    &.active { color: var(--primary); background: var(--surface); box-shadow: var(--shadow-xs); }
-  }
-}
-.schedule-table-wrap { box-shadow: var(--shadow-sm); background: var(--surface); }
+.schedule-table-wrap { flex: 1; min-height: 0; overflow: auto; box-shadow: var(--shadow-sm); background: var(--surface); }
 .schedule-table { min-width: 100%; }
 .schedule-table th small { display: block; margin-top: 3px; font-size: 0.72rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .day-school-event {
@@ -592,6 +570,10 @@ function formatHebrewDayHeading(dateStr: string): string {
   background: #fff5d9; color: #694d12; font-size: 0.76rem; font-weight: 700;
 }
 .day-school-event small { font-size: 0.67rem; font-weight: 500; }
+.day-lesson.schedule-changed { padding: 5px 7px; border: 1px solid #f0d292; border-inline-start: 3px solid #bf7900; border-radius: 6px; background: #fffaf0; }
+.changed-lesson-tag { flex: 0 0 auto; padding: 2px 6px; border-radius: 4px; background: #f5e8c8; color: #76520c; font-size: 0.64rem; font-weight: 700; }
+.schedule-row-changed { background: #fff7e6; box-shadow: inset -3px 0 #d97706; }
+.slot-icon-print { color: #a45b08; }
 .class-schedule-table { min-width: 900px; }
 .class-schedule-table .class-heading { width: 90px; text-align: center; }
 .class-schedule-cell { min-width: 145px; vertical-align: top !important; padding: 8px !important; }
@@ -665,11 +647,6 @@ function formatHebrewDayHeading(dateStr: string): string {
 .edit-time-fields label { display: grid; gap: 5px; font-size: 0.85rem; font-weight: 600; }
 .edit-time-fields select { min-width: 0; border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
 .schedule-empty { padding: 28px !important; text-align: center !important; color: var(--text-muted); }
-@media (max-width: 640px) {
-  .schedule-view-toolbar { align-items: stretch; flex-direction: column; }
-  .view-toggle button { flex: 1; }
-}
-
 /* Teachers */
 .teachers-list { display: flex; flex-direction: column; gap: 8px; }
 .teacher-search { display: block; margin-bottom: 12px; }
@@ -749,13 +726,17 @@ export class ScheduleComponent implements OnInit {
   readonly DAYS = DAYS;
   readonly YEARS = YEARS;
   readonly PARALLELS = PARALLELS;
+  readonly changeCategoryOptions = [
+    { value: 'seminary_constraints', label: 'אילוצי סמינר' },
+    { value: 'absent_teacher', label: 'המורה המתוכננת אינה יכולה להגיע' },
+    { value: 'replacement_teacher', label: 'סיבה הקשורה למורה המחליפה' }
+  ];
 
   loading = signal(false);
   teachers = signal<any[]>([]);
-  teacherSearch = signal('');
   slots = signal<any[]>([]);
   events = signal<any[]>([]);
-  activeTab = signal<'grid' | 'teachers' | 'manage'>('grid');
+  activeTab = signal<'grid' | 'manage'>('grid');
   scheduleView = signal<'days' | 'classes'>('classes');
   selectedDay = signal(0);
   selectedClassKey = signal('');
@@ -764,14 +745,6 @@ export class ScheduleComponent implements OnInit {
   private _weekStart = signal(getWeekStart(new Date()));
   weekStart = computed(() => this._weekStart());
   weekEnd = computed(() => addDays(this._weekStart(), 4));
-
-  // Teacher CRUD
-  showAddTeacher = false;
-  newTeacher = { name: '', subject: '', specialization: '' };
-  savingTeacher = signal(false);
-  teacherError = signal('');
-  editingTeacherId = signal(0);
-  editTeacherDraft = { name: '', subject: '', specialization: '' };
 
   // Lesson type toggle: 'class' = שיעור לכיתה, 'specialization' = שיעור להתמחות
   lessonType = signal<'class' | 'specialization'>('class');
@@ -788,15 +761,28 @@ export class ScheduleComponent implements OnInit {
   copyLoading = signal(false);
   copyError = signal('');
   copySuccess = signal('');
+  copyWeekChange = { change_category: '', change_reason: '' };
+  copyYearSourceWeek = getWeekStart(new Date());
+  copyYearLoading = signal(false);
+  copyYearMessage = signal('');
+  copyYearError = signal('');
 
   // Quick add from grid
   quickAddSlot: any = null;
   quickSlotError = signal('');
   savingQuickSlot = signal(false);
   editingSlot = signal<any | null>(null);
-  editSlotDraft = { teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '' };
+  editSlotDraft = { teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '', change_scope: '', change_category: '', change_reason: '' };
   savingEditSlot = signal(false);
   editSlotError = signal('');
+  deletingSlot = signal<any | null>(null);
+  deleteSlotDraft = { change_scope: '', change_category: '', change_reason: '' };
+  deleteSlotError = signal('');
+  deletingSlotSaving = signal(false);
+  deletingWeek = signal(false);
+  deleteWeekDraft = { change_category: '', change_reason: '' };
+  deleteWeekError = signal('');
+  deletingWeekSaving = signal(false);
   kodeshAvailability = signal<{
     kodesh: Record<string, Record<string, string>>;
     instruction: Record<string, Record<string, { start: string; end: string }>>;
@@ -807,7 +793,7 @@ export class ScheduleComponent implements OnInit {
   // Teacher colors
   private colors = ['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#ede9fe','#ffedd5','#e0f2fe','#f0fdf4'];
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   ngOnInit() {
     this.loadTeachers();
@@ -945,6 +931,12 @@ export class ScheduleComponent implements OnInit {
     }) || null;
   }
 
+  printChangedLesson(slot: any) {
+    this.router.navigate(['/attendance/print'], {
+      queryParams: { week: slot.week_start, changedSlotId: slot.id }
+    });
+  }
+
   pickPeriod(target: any, id: string) {
     const p = this.periods().find(x => String(x.id) === String(id));
     target.period_id = id;
@@ -962,15 +954,6 @@ export class ScheduleComponent implements OnInit {
         specialization === 'רכזתחנוכית';
     });
   });
-  filteredTeachers = computed(() => {
-    const query = this.teacherSearch().trim().toLocaleLowerCase('he');
-    if (!query) return this.teachers();
-    return this.teachers().filter(teacher =>
-      [teacher.name, teacher.subject, teacher.specialization]
-        .some(value => String(value || '').toLocaleLowerCase('he').includes(query))
-    );
-  });
-
   loadSchedule() {
     this.loading.set(true);
     this.api.getSchedule(this._weekStart()).subscribe({
@@ -995,6 +978,26 @@ export class ScheduleComponent implements OnInit {
   }
 
   prevWeekStr() { return addDays(this._weekStart(), -7); }
+
+  copySchoolYearSchedule() {
+    if (!this.copyYearSourceWeek || this.copyYearLoading()) return;
+    if (!confirm(`להשלים את המערכת עד תאריך הסיום שהוגדר בניהול, לפי שבוע המקור ${this.copyYearSourceWeek}? שבועות קיימים לא יידרסו.`)) return;
+    this.copyYearLoading.set(true);
+    this.copyYearMessage.set('');
+    this.copyYearError.set('');
+    this.api.copySchoolYearSchedule(this.copyYearSourceWeek).subscribe({
+      next: result => {
+        this.copyYearLoading.set(false);
+        this.copyYearMessage.set(`נוספו ${result.inserted} שיעורים עד ${result.through_date}; ${result.linked} שיעורים קיימים קושרו למערכת.` +
+          (result.skipped ? ` ${result.skipped} שיעורים דולגו בגלל התנגשות או חוסר זמינות.` : ''));
+        this.loadSchedule();
+      },
+      error: error => {
+        this.copyYearLoading.set(false);
+        this.copyYearError.set(error.error?.error || 'השלמת המערכת השנתית נכשלה');
+      }
+    });
+  }
 
   formatHebDate(d: string) { return formatHebDate(d); }
   formatHebrewDayHeading(d: string) { return formatHebrewDayHeading(d); }
@@ -1130,7 +1133,7 @@ export class ScheduleComponent implements OnInit {
       period_id: matchingPeriod ? String(matchingPeriod.id) : '',
       start_time: slot.start_time,
       end_time: slot.end_time || '',
-      subject: slot.subject || ''
+      subject: slot.subject || '', change_scope: '', change_category: '', change_reason: ''
     };
     this.editSlotError.set('');
   }
@@ -1139,6 +1142,13 @@ export class ScheduleComponent implements OnInit {
     if (this.savingEditSlot()) return;
     this.editingSlot.set(null);
     this.editSlotError.set('');
+  }
+
+  private validateChangeDraft(draft: any): string {
+    if (!['once', 'permanent'].includes(draft.change_scope)) return 'יש לבחור אם השינוי חד־פעמי או קבוע';
+    if (!this.changeCategoryOptions.some(option => option.value === draft.change_category)) return 'יש לבחור סיבת שינוי';
+    if (!String(draft.change_reason || '').trim()) return 'יש לפרט את סיבת השינוי';
+    return '';
   }
 
   private submitScheduleWithConfirmation(
@@ -1168,6 +1178,8 @@ export class ScheduleComponent implements OnInit {
       this.editSlotError.set('יש לבחור מורה ושעה מתוך זמני הקודש של הכיתה');
       return;
     }
+    const changeError = this.validateChangeDraft(this.editSlotDraft);
+    if (changeError) { this.editSlotError.set(changeError); return; }
     if (!this.kodeshPeriodsForYear(slot.class_year, slot.day_of_week).some(period =>
       period.start_time === this.editSlotDraft.start_time && period.end_time === this.editSlotDraft.end_time
     )) {
@@ -1181,7 +1193,10 @@ export class ScheduleComponent implements OnInit {
       teacher_id: this.editSlotDraft.teacher_id,
       start_time: this.editSlotDraft.start_time,
       end_time: this.editSlotDraft.end_time || null,
-      subject: this.editSlotDraft.subject.trim() || null
+      subject: this.editSlotDraft.subject.trim() || null,
+      change_scope: this.editSlotDraft.change_scope as 'once' | 'permanent',
+      change_category: this.editSlotDraft.change_category,
+      change_reason: this.editSlotDraft.change_reason.trim()
     };
     this.submitScheduleWithConfirmation(
       allowConflicts => this.api.updateScheduleSlot(slot.id, {
@@ -1272,22 +1287,75 @@ export class ScheduleComponent implements OnInit {
     );
   }
 
-  deleteSlot(id: number) {
-    if (!confirm('למחוק שיעור זה?')) return;
-    this.api.deleteScheduleSlot(id).subscribe({ next: () => this.loadSchedule() });
+  deleteSlot(slot: any) {
+    this.deletingSlot.set(slot);
+    this.deleteSlotDraft = { change_scope: '', change_category: '', change_reason: '' };
+    this.deleteSlotError.set('');
+  }
+
+  cancelDeleteSlot() {
+    if (this.deletingSlotSaving()) return;
+    this.deletingSlot.set(null);
+    this.deleteSlotError.set('');
+  }
+
+  confirmDeleteSlot() {
+    const slot = this.deletingSlot();
+    if (!slot) return;
+    const changeError = this.validateChangeDraft(this.deleteSlotDraft);
+    if (changeError) { this.deleteSlotError.set(changeError); return; }
+    this.deletingSlotSaving.set(true);
+    this.api.deleteScheduleSlot(slot.id, {
+      change_scope: this.deleteSlotDraft.change_scope as 'once' | 'permanent',
+      change_category: this.deleteSlotDraft.change_category,
+      change_reason: this.deleteSlotDraft.change_reason.trim()
+    }).subscribe({
+      next: () => {
+        this.deletingSlotSaving.set(false);
+        this.deletingSlot.set(null);
+        this.loadSchedule();
+      },
+      error: error => {
+        this.deletingSlotSaving.set(false);
+        this.deleteSlotError.set(error.error?.error || 'מחיקת השיעור נכשלה');
+      }
+    });
   }
 
   deleteWeek() {
-    if (!confirm(`למחוק את כל ${this.slots().length} שיעורי שבוע ${this._weekStart()}?`)) return;
-    this.api.deleteWeekSchedule(this._weekStart()).subscribe({ next: () => this.loadSchedule() });
+    this.deleteWeekDraft = { change_category: '', change_reason: '' };
+    this.deleteWeekError.set('');
+    this.deletingWeek.set(true);
+  }
+
+  confirmDeleteWeek() {
+    const changeError = this.validateChangeDraft({ ...this.deleteWeekDraft, change_scope: 'once' });
+    if (changeError) { this.deleteWeekError.set(changeError); return; }
+    this.deletingWeekSaving.set(true);
+    this.api.deleteWeekSchedule(this._weekStart(), {
+      change_category: this.deleteWeekDraft.change_category,
+      change_reason: this.deleteWeekDraft.change_reason.trim()
+    }).subscribe({
+      next: () => {
+        this.deletingWeekSaving.set(false);
+        this.deletingWeek.set(false);
+        this.loadSchedule();
+      },
+      error: error => {
+        this.deletingWeekSaving.set(false);
+        this.deleteWeekError.set(error.error?.error || 'מחיקת השבוע נכשלה');
+      }
+    });
   }
 
   doCopyWeek() {
     if (!this.copyFromWeek) { this.copyError.set('בחרי שבוע מקור'); return; }
+    const changeError = this.validateChangeDraft({ ...this.copyWeekChange, change_scope: 'once' });
+    if (changeError) { this.copyError.set(changeError); return; }
     // Normalize to week start
     const from = getWeekStart(new Date(this.copyFromWeek));
     this.copyLoading.set(true); this.copyError.set(''); this.copySuccess.set('');
-    this.api.copyWeekSchedule(from, this._weekStart()).subscribe({
+    this.api.copyWeekSchedule(from, this._weekStart(), this.copyWeekChange).subscribe({
       next: r => {
         this.copyLoading.set(false);
         const skipped = r.skipped ? `; ${r.skipped} שיעורים לא הועתקו כי אינם בשעות הקודש של הכיתה` : '';
@@ -1299,29 +1367,4 @@ export class ScheduleComponent implements OnInit {
     });
   }
 
-  createTeacher() {
-    if (!this.newTeacher.name.trim()) { this.teacherError.set('שם חובה'); return; }
-    this.savingTeacher.set(true); this.teacherError.set('');
-    this.api.createTeacher(this.newTeacher).subscribe({
-      next: () => { this.savingTeacher.set(false); this.showAddTeacher = false; this.newTeacher = { name: '', subject: '', specialization: '' }; this.loadTeachers(); },
-      error: e => { this.savingTeacher.set(false); this.teacherError.set(e.error?.error || 'שגיאה'); }
-    });
-  }
-
-  startEditTeacher(t: any) {
-    this.editingTeacherId.set(t.id);
-    this.editTeacherDraft = { name: t.name, subject: t.subject || '', specialization: t.specialization || '' };
-  }
-
-  saveTeacher(id: number) {
-    this.api.updateTeacher(id, this.editTeacherDraft).subscribe({
-      next: () => { this.editingTeacherId.set(0); this.loadTeachers(); },
-      error: e => alert(e.error?.error || 'שגיאה')
-    });
-  }
-
-  deleteTeacher(id: number) {
-    if (!confirm('למחוק מורה זו? כל השיעורים שלה יימחקו.')) return;
-    this.api.deleteTeacher(id).subscribe({ next: () => { this.loadTeachers(); this.loadSchedule(); } });
-  }
 }
