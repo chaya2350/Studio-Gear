@@ -25,7 +25,7 @@ const {
   initializePermissionSchema
 } = require('./permissions');
 
-const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
+const dataDir = process.env.STUDIO_DATA_DIR || __dirname;
 const uploadsDir = process.env.STUDIO_DATA_DIR
   ? path.join(dataDir, 'uploads')
   : path.join(__dirname, 'uploads');
@@ -217,7 +217,6 @@ app.use('/uploads', authenticate, (req, res, next) => {
   const fileUrl = `/uploads/${filename}`;
   const registered = db.prepare('SELECT permission_key FROM uploaded_file_permissions WHERE filename = ?').get(filename);
   const feature = registered?.permission_key
-    || (db.prepare('SELECT 1 FROM students WHERE photo_url = ?').get(fileUrl) ? 'students' : null)
     || (db.prepare('SELECT 1 FROM equipment WHERE image_url = ?').get(fileUrl) ? 'equipment' : null);
   if (!feature) return res.sendStatus(404);
   if (!getUserPermissions(req.user.role)[feature]?.view) {
@@ -435,10 +434,6 @@ const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) =
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
 
 // Migration: student photo
-const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
-if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
-const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
-if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 // Migration: source_message_id — הפיכה ל-nullable (לאפשר משימות ישירות ללא הודעה)
 // SQLite לא תומך ב-ALTER COLUMN, לכן נבצע recreate אם source_message_id עדיין NOT NULL
 const srcCol = db.prepare('PRAGMA table_info(personal_tasks)').all().find(c => c.name === 'source_message_id');
@@ -1034,7 +1029,7 @@ app.post('/api/messages', (req, res) => {
   res.status(201).json({ id: ids[0], ids });
 });
 
-app.put('/api/messages/:id', requireAuth, (req, res) => {
+app.put('/api/messages/:id', (req, res) => {
   const messageId = Number(req.params.id);
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
   if (!body || body.length > 4000) return res.status(400).json({ error: 'תוכן ההודעה חסר או ארוך מ-4000 תווים' });
@@ -1042,6 +1037,7 @@ app.put('/api/messages/:id', requireAuth, (req, res) => {
   if (!message) return res.status(404).json({ error: 'הודעה לא נמצאה' });
   if ((Date.now() - new Date(message.created_at).getTime()) / 60000 > 15)
     return res.status(403).json({ error: 'ניתן לערוך הודעה רק עד 15 דקות מהשליחה' });
+  db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, new Date().toISOString(), messageId);
   res.json({ success: true });
 });
 
@@ -1443,7 +1439,11 @@ db.exec(`
   );
 `);
 
+const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
+const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
 if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
 if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
 if (!studentCols.includes('phone_code')) db.exec('ALTER TABLE students ADD COLUMN phone_code TEXT');
@@ -1652,7 +1652,6 @@ app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) =>
   if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   const photoUrl = `/uploads/${req.file.filename}`;
-  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
   registerUploadedFile(req.file, 'students');
   res.json({ url: photoUrl });
 });
@@ -1661,8 +1660,6 @@ app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) =>
 app.patch('/api/students/:id_number/photo', (req, res) => {
   const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
-  const photoUrl = req.body?.photo_url || null;
-  db.prepare('UPDATE students SET photo_url = ? WHERE id_number = ?').run(photoUrl, req.params.id_number);
   res.json({ success: true });
 });
 
