@@ -2,10 +2,33 @@ import { Component, OnInit, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HDate, months } from '@hebcal/core';
 import { ApiService, StudentRequirement, StudentRequirements } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 import { StudentProfileCardComponent } from '../../components/student-profile-card/student-profile-card';
+
+const HEBREW_MONTH_NAMES: Record<number, string> = {
+  [months.TISHREI]: 'תשרי', [months.CHESHVAN]: 'חשוון', [months.KISLEV]: 'כסלו',
+  [months.TEVET]: 'טבת', [months.SHVAT]: 'שבט', [months.ADAR_I]: 'אדר',
+  [months.ADAR_II]: 'אדר ב׳', [months.NISAN]: 'ניסן', [months.IYYAR]: 'אייר',
+  [months.SIVAN]: 'סיוון', [months.TAMUZ]: 'תמוז', [months.AV]: 'אב', [months.ELUL]: 'אלול',
+};
+
+function toHebrewDateLabel(dateStr: string): string {
+  try {
+    const hd = new HDate(new Date(`${dateStr}T12:00:00`));
+    const numerals = ['','א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ז׳','ח׳','ט׳','י׳','י״א','י״ב','י״ג','י״ד','ט״ו','ט״ז','י״ז','י״ח','י״ט','כ׳','כ״א','כ״ב','כ״ג','כ״ד','כ״ה','כ״ו','כ״ז','כ״ח','כ״ט','ל׳'];
+    const day = numerals[hd.getDate()] || String(hd.getDate());
+    const month = HEBREW_MONTH_NAMES[hd.getMonth()] || '';
+    let yr = hd.getFullYear() % 1000;
+    let label = '';
+    const vals: [number,string][] = [[400,'ת'],[300,'ש'],[200,'ר'],[100,'ק'],[90,'צ'],[80,'פ'],[70,'ע'],[60,'ס'],[50,'נ'],[40,'מ'],[30,'ל'],[20,'כ'],[10,'י'],[9,'ט'],[8,'ח'],[7,'ז'],[6,'ו'],[5,'ה'],[4,'ד'],[3,'ג'],[2,'ב'],[1,'א']];
+    for (const [n, l] of vals) { while (yr >= n) { label += l; yr -= n; } }
+    const yearStr = label.length === 1 ? `${label}׳` : `${label.slice(0,-1)}״${label.slice(-1)}`;
+    return `${day} ${month} ${yearStr}`;
+  } catch { return ''; }
+}
 
 @Component({
 selector: 'app-student',
@@ -112,6 +135,16 @@ template: `
 <input name="personal_phone" [(ngModel)]="studentDraft.personal_phone" placeholder="050-0000000">
 </label>
 </div>
+<div *ngIf="studentDraft.marital_status === 'מאורסת'" class="wedding-date-row">
+  <label class="field">
+    <span>💍 תאריך חתונה</span>
+    <input type="date" name="wedding_date" [(ngModel)]="studentDraft.wedding_date"
+           (ngModelChange)="updateHebrewWeddingDate()">
+  </label>
+  <div *ngIf="hebrewWeddingDate" class="hebrew-date-preview">
+    <span>📅 {{ hebrewWeddingDate }}</span>
+  </div>
+</div>
 </section>
 
 <section class="edit-section">
@@ -203,6 +236,10 @@ template: `
 <div class="info-row" *ngIf="student()!.personal_phone">
 <span class="info-label">טלפון אישי</span>
 <span class="info-value">{{ student()!.personal_phone }}</span>
+</div>
+<div class="info-row" *ngIf="student()!.wedding_date">
+<span class="info-label">💍 תאריך חתונה</span>
+<span class="info-value">{{ formatWeddingDate(student()!.wedding_date!) }}</span>
 </div>
 </div>
 
@@ -500,6 +537,13 @@ transition: all var(--transition); box-shadow: var(--shadow-xs);
   background: transparent; font: inherit; font-size: 0.8rem; cursor: pointer;
   color: var(--primary); text-decoration: none;
   &:hover { background: var(--primary-light); border-color: var(--primary); }
+}
+.wedding-date-row {
+  margin-top: 12px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.hebrew-date-preview {
+  padding: 8px 14px; background: #fff8ec; border: 1px solid #fde68a;
+  border-radius: var(--radius-sm); font-size: 0.88rem; font-weight: 700; color: #92400e;
 }
 .photo-error { font-size: 0.78rem; color: var(--danger); }
 .student-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -815,7 +859,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '' };
+studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -840,9 +884,25 @@ noticeError = signal('');
 savingNotice = signal(false);
 newNotice = { title: '', body: '', notice_date: new Date().toISOString().split('T')[0], visibility: 'staff' };
 
+// תאריך חתונה עברי
+hebrewWeddingDate = '';
+
+updateHebrewWeddingDate() {
+  const d = this.studentDraft.wedding_date;
+  this.hebrewWeddingDate = d ? toHebrewDateLabel(d) : '';
+}
+
+formatWeddingDate(dateStr: string): string {
+  const heb = toHebrewDateLabel(dateStr);
+  try {
+    const d = new Date(`${dateStr}T12:00:00`);
+    const greg = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
+    return heb ? `${heb} (${greg})` : greg;
+  } catch { return dateStr; }
+}
+
 // מודעות לפי הרשאות: admin/secretary/laborant רואים הכל, אחרים רק 'all'+'student'
-visibleNotices = computed(() => {
-  const canSeeStaff = this.auth.hasPermission('students', 'view');
+visibleNotices = computed(() => {  const canSeeStaff = this.auth.hasPermission('students', 'view');
   return this.notices().filter(n =>
     n.visibility === 'all' ||
     n.visibility === 'student' ||
@@ -1087,7 +1147,8 @@ year: current.year || '',
 parallel: current.parallel || '',
 marital_status: current.marital_status || '',
 married_name:   current.married_name   || '',
-personal_phone: current.personal_phone || ''
+personal_phone: current.personal_phone || '',
+wedding_date:   current.wedding_date   || ''
 };
 this.editingExtraFields = this.extraFields().map((field) => ({ ...field }));
 this.newExtraField = { key: '', value: '' };

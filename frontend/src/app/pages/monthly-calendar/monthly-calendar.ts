@@ -50,14 +50,15 @@ function toHebrewYear(year: number): string {
 }
 
 // ── Types ────────────────────────────────────────────────────
-type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams';
+type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams' | 'weddings';
 
 interface CalendarItem {
-  kind: 'loan' | 'task' | 'event' | 'exam';
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
   loan?: Loan;
   task?: PersonalTask;
   event?: CalendarEvent;
   exam?: any;
+  wedding?: any;
   completed?: boolean;
 }
 
@@ -70,6 +71,7 @@ interface CalendarDay {
   tasks: PersonalTask[];
   calendarEvents: CalendarEvent[];
   exams: any[];
+  weddings: any[];
 }
 
 // ── Context-menu ─────────────────────────────────────────────
@@ -338,6 +340,11 @@ interface CtxMenu {
     לוח מבחנים
     <span class="chip-badge" *ngIf="monthBadge('exams') as n">{{ n }}</span>
   </button>
+  <button type="button" class="layer-chip wedding-chip" [class.active]="has('weddings')"
+          (click)="toggleLayer('weddings')">
+    💍 חתונות
+    <span class="chip-badge" *ngIf="monthBadge('weddings') as n">{{ n }}</span>
+  </button>
 </nav>
 
 <!-- Sheet sub-tabs (only when schedule active) -->
@@ -375,6 +382,7 @@ interface CtxMenu {
   </span>
   <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
   <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
+  <span class="legend-item" *ngIf="has('weddings')">💍 חתונה</span>
   <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
 </div>
 
@@ -506,6 +514,21 @@ interface CtxMenu {
       <div class="exam-row-btns">
         <a [routerLink]="['/exams', exam.id, 'edit']" class="btn-quick">עריכה</a>
         <a [routerLink]="['/exams', exam.id, 'print']" class="btn-quick">הדפסה</a>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- Weddings -->
+  <ng-container *ngIf="has('weddings') && selectedDayWeddings().length">
+    <h3 class="layer-title">💍 חתונות</h3>
+    <div *ngFor="let s of selectedDayWeddings()" class="detail-row wedding-row">
+      <span class="wedding-heart">💍</span>
+      <div class="detail-main">
+        <a [routerLink]="['/students', s.id_number]"><strong>{{ s.name }}</strong></a>
+        <span>
+          {{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}
+          <span *ngIf="s.married_name"> ← {{ s.married_name }}</span>
+        </span>
       </div>
     </div>
   </ng-container>
@@ -656,6 +679,10 @@ interface CtxMenu {
     .completed-dot  { background: #10b981; }
     .exam-dot       { background: #e11d48; }
     .event-sample-dot { background: #0891b2; }
+    .wedding-chip.active { background: linear-gradient(135deg, #ec4899, #f97316); border-color: #ec4899; }
+    .wedding-chip:not(.active):hover { border-color: #ec4899; color: #ec4899; background: #fdf2f8; }
+    .wedding-row { background: linear-gradient(135deg, #fdf2f8, var(--surface)); border-color: #f9a8d4 !important; }
+    .wedding-heart { font-size: 1.1rem; flex-shrink: 0; }
 
     /* ── Calendar grid ── */
     .month-card {
@@ -819,12 +846,14 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly selectedDayTasks  = computed(() => this.tasksForDate(this.selectedDate()));
   readonly selectedDayEvents = computed(() => this.eventsForDate(this.selectedDate()));
   readonly selectedDayExams  = computed(() => this.examsForDate(this.selectedDate()));
+  readonly selectedDayWeddings = computed(() => this.weddingsForDate(this.selectedDate()));
 
   readonly selectedDayCount = computed(() =>
-    (this.has('equipment') ? this.selectedDayLoans().length  : 0) +
-    (this.has('personal')  ? this.selectedDayTasks().length  : 0) +
-    (this.has('schedule')  ? this.selectedDayEvents().length : 0) +
-    (this.has('exams')     ? this.selectedDayExams().length  : 0)
+    (this.has('equipment') ? this.selectedDayLoans().length   : 0) +
+    (this.has('personal')  ? this.selectedDayTasks().length   : 0) +
+    (this.has('schedule')  ? this.selectedDayEvents().length  : 0) +
+    (this.has('exams')     ? this.selectedDayExams().length   : 0) +
+    (this.has('weddings')  ? this.selectedDayWeddings().length : 0)
   );
 
   readonly selectedDateLabel = computed(() => this.formatDateLabel(this.selectedDate()));
@@ -933,6 +962,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     if (layer === 'personal')  return cells.reduce((s, c) => s + c.tasks.length, 0);
     if (layer === 'schedule')  return cells.reduce((s, c) => s + c.calendarEvents.length, 0);
     if (layer === 'exams')     return cells.reduce((s, c) => s + c.exams.length, 0);
+    if (layer === 'weddings')  return cells.reduce((s, c) => s + c.weddings.length, 0);
     return 0;
   }
 
@@ -950,6 +980,12 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   private examsForDate(date: string): any[] {
     return this.exams().filter(e => e.exam_date === date);
+  }
+
+  private weddingsForDate(date: string): any[] {
+    return this.allStudents().filter(s =>
+      s.marital_status === 'מאורסת' && s.wedding_date === date
+    );
   }
 
   private eventsForDate(date: string): CalendarEvent[] {
@@ -971,6 +1007,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       ...(this.has('personal')  ? day.tasks.map((task): CalendarItem => ({ kind: 'task', task, completed: task.completed })) : []),
       ...(this.has('schedule')  ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : []),
       ...(this.has('exams')     ? day.exams.map((exam): CalendarItem => ({ kind: 'exam', exam })) : []),
+      ...(this.has('weddings')  ? day.weddings.map((wedding): CalendarItem => ({ kind: 'wedding', wedding })) : []),
     ];
   }
 
@@ -989,6 +1026,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         gregorianDay: gr.getDate(), gregorianMonth: gr.getMonth() + 1,
         loans: this.loansForDate(date), tasks: this.tasksForDate(date),
         calendarEvents: this.eventsForDate(date), exams: this.examsForDate(date),
+        weddings: this.weddingsForDate(date),
       });
     }
     while (cells.length % 7 !== 0) cells.push(null);

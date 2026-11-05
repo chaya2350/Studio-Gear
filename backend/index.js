@@ -1502,6 +1502,7 @@ if (!studentCols.includes('extra_data')) db.exec("ALTER TABLE students ADD COLUM
 if (!studentCols.includes('marital_status')) db.exec('ALTER TABLE students ADD COLUMN marital_status TEXT');
 if (!studentCols.includes('married_name'))   db.exec('ALTER TABLE students ADD COLUMN married_name TEXT');
 if (!studentCols.includes('personal_phone')) db.exec('ALTER TABLE students ADD COLUMN personal_phone TEXT');
+if (!studentCols.includes('wedding_date'))   db.exec('ALTER TABLE students ADD COLUMN wedding_date TEXT');
 
 function parseExtraData(rawValue) {
   if (!rawValue) return {};
@@ -1696,13 +1697,16 @@ app.put('/api/students/:id_number', (req, res) => {
   const maritalStatus = optionalText(req.body?.marital_status, existing.marital_status);
   const marriedName   = optionalText(req.body?.married_name,   existing.married_name);
   const personalPhone = optionalText(req.body?.personal_phone, existing.personal_phone);
+  const weddingDate   = req.body?.wedding_date !== undefined
+    ? (String(req.body.wedding_date || '').trim() || null)
+    : (existing.wedding_date ?? null);
 
   const result = db.prepare(`
     UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?,
-      marital_status = ?, married_name = ?, personal_phone = ?
+      marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?
     WHERE id_number = ?
   `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData),
-         maritalStatus, marriedName, personalPhone, req.params.id_number);  res.json({ success: true });
+         maritalStatus, marriedName, personalPhone, weddingDate, req.params.id_number);  res.json({ success: true });
 });
 
 // העלאת תמונת פרופיל לתלמידה
