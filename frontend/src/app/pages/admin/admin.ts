@@ -1188,7 +1188,11 @@ loadTrackNames() {
     next: students => {
       const names = [...new Set(
         students
-          .map((s: any) => (s.track || '').trim())
+          .map((s: any) => {
+            const track = (s.track || '').trim();
+            // קח רק את המסלול הראשי (לפני ה-/)
+            return track.split('/')[0].trim();
+          })
           .filter(Boolean)
       )];
       mergeNames(names);
