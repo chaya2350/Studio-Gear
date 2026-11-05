@@ -256,46 +256,81 @@ class="section-tab"
 <app-tracks *ngIf="activeSection() === 'tracks'"></app-tracks>
 
 <!-- הוספת תלמידה ידנית — admin ומזכירות בלבד -->
-<div *ngIf="activeSection() === 'students' && canAddStudent()" class="card" style="max-width:560px; margin-bottom:16px;">
-  <div class="section-title">➕ הוספת תלמידה ידנית</div>
+<div *ngIf="activeSection() === 'students' && canAddStudent()" class="card" style="max-width:760px; margin-bottom:16px;">
+  <div class="section-title">➕ רישום תלמידה חדשה</div>
+
+  <!-- זהות ושם -->
+  <div class="reg-section-title">זהות</div>
   <div class="form-row">
-    <div class="form-group">
-      <label>ת.ז. *</label>
-      <input [(ngModel)]="newStudentDraft.id_number" placeholder="7–9 ספרות" maxlength="9">
-    </div>
-    <div class="form-group">
-      <label>שם מלא *</label>
-      <input [(ngModel)]="newStudentDraft.name" placeholder="שם פרטי ומשפחה">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label>מסלול</label>
-      <input [(ngModel)]="newStudentDraft.track" placeholder="למשל: מוסיקה">
-    </div>
-    <div class="form-group">
-      <label>שנה</label>
-      <input [(ngModel)]="newStudentDraft.year" placeholder="א, ב, ג...">
-    </div>
+    <div class="form-group"><label>ת.ז. *</label><input [(ngModel)]="newStudentDraft.id_number" placeholder="7–9 ספרות" maxlength="9"></div>
+    <div class="form-group"><label>שם משפחה *</label><input [(ngModel)]="newStudentDraft.name" placeholder="שם משפחה"></div>
+    <div class="form-group"><label>שם פרטי *</label><input [(ngModel)]="newStudentDraft.first_name" placeholder="שם פרטי"></div>
+    <div class="form-group"><label>שם חיבה</label><input [(ngModel)]="newStudentDraft.nickname" placeholder="שם חיבה"></div>
   </div>
   <div class="form-row">
-    <div class="form-group">
-      <label>מקבילה</label>
-      <input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3...">
+    <div class="form-group"><label>ת. לידה לועזי</label><input type="date" [(ngModel)]="newStudentDraft.birth_date"></div>
+    <div class="form-group"><label>ת. לידה עברי</label><input [(ngModel)]="newStudentDraft.birth_date_hebrew" placeholder="כ״ה חשוון תשפ״ז"></div>
+    <div class="form-group"><label>ארץ לידה</label><input [(ngModel)]="newStudentDraft.birth_country" placeholder="ישראל"></div>
+    <div class="form-group"><label>זהות פקטיבי</label><input [(ngModel)]="newStudentDraft.fake_id" placeholder="מס׳ זהות פקטיבי"></div>
+  </div>
+
+  <!-- כיתה ומסלול -->
+  <div class="reg-section-title">כיתה ומסלול</div>
+  <div class="form-row">
+    <div class="form-group"><label>כיתה (שנה)</label><input [(ngModel)]="newStudentDraft.year" placeholder="ה, ו..."></div>
+    <div class="form-group"><label>מקבילה</label><input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3..."></div>
+    <div class="form-group"><label>מגמה</label><input [(ngModel)]="newStudentDraft.track" placeholder="מגמה"></div>
+    <div class="form-group"><label>התמחות 1</label><input [(ngModel)]="newStudentDraft.specialization1" placeholder="התמחות ראשונה"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>התמחות 2</label><input [(ngModel)]="newStudentDraft.specialization2" placeholder="התמחות שנייה"></div>
+    <div class="form-group"><label>אופציה ב</label><input [(ngModel)]="newStudentDraft.option_b" placeholder="אופציה ב"></div>
+    <div class="form-group"><label>הוראה</label><input [(ngModel)]="newStudentDraft.teaching" placeholder="הוראה"></div>
+    <div class="form-group"><label>מדפית / פרח</label><input [(ngModel)]="newStudentDraft.practice_teaching" placeholder="מדפית/פרח"></div>
+  </div>
+
+  <!-- כתובת -->
+  <div class="reg-section-title">כתובת ויצירת קשר</div>
+  <div class="form-row">
+    <div class="form-group"><label>כתובת</label><input [(ngModel)]="newStudentDraft.address" placeholder="שם רחוב"></div>
+    <div class="form-group"><label>מספר בית</label><input [(ngModel)]="newStudentDraft.house_number" placeholder="מספר"></div>
+    <div class="form-group"><label>עיר</label><input [(ngModel)]="newStudentDraft.city" placeholder="עיר"></div>
+    <div class="form-group"><label>מיקוד</label><input [(ngModel)]="newStudentDraft.zip" placeholder="מיקוד"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>טלפון בית</label><input [(ngModel)]="newStudentDraft.phone" placeholder="02-0000000"></div>
+    <div class="form-group"><label>נייד אישי</label><input [(ngModel)]="newStudentDraft.personal_phone" placeholder="050-0000000"></div>
+  </div>
+
+  <!-- הורים -->
+  <div class="reg-section-title">הורים</div>
+  <div class="form-row">
+    <div class="form-group"><label>שם האב</label><input [(ngModel)]="newStudentDraft.father_name" placeholder="שם האב"></div>
+    <div class="form-group"><label>נייד אבא</label><input [(ngModel)]="newStudentDraft.father_phone" placeholder="050-0000000"></div>
+    <div class="form-group"><label>אבא חוץ</label><input [(ngModel)]="newStudentDraft.father_external" placeholder="קישור חוץ"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>שם האם</label><input [(ngModel)]="newStudentDraft.mother_name" placeholder="שם האמא"></div>
+    <div class="form-group"><label>נייד אמא</label><input [(ngModel)]="newStudentDraft.mother_phone" placeholder="050-0000000"></div>
+    <div class="form-group"><label>אמא חוץ</label><input [(ngModel)]="newStudentDraft.mother_external" placeholder="קישור חוץ"></div>
+  </div>
+
+  <!-- סטטוס ורישום -->
+  <div class="reg-section-title">סטטוס ורישום</div>
+  <div class="form-row">
+    <div class="form-group"><label>סטטוס</label>
+      <select [(ngModel)]="newStudentDraft.marital_status">
+        <option value="">רווקה</option>
+        <option value="מאורסת">מאורסת</option>
+        <option value="נשואה">נשואה</option>
+      </select>
     </div>
-    <div class="form-group">
-      <label>טלפון</label>
-      <input [(ngModel)]="newStudentDraft.phone" placeholder="050-0000000">
-    </div>
+    <div class="form-group"><label>מס. רישום</label><input [(ngModel)]="newStudentDraft.reg_number" placeholder="מספר רישום"></div>
+    <div class="form-group"><label>דמי רישום</label><input [(ngModel)]="newStudentDraft.reg_fee" placeholder="סכום"></div>
+    <div class="form-group"><label>א. תשלום רשום</label><input [(ngModel)]="newStudentDraft.payment_confirmed" placeholder="אמצעי תשלום"></div>
   </div>
-  <div class="form-group">
-    <label>כתובת</label>
-    <input [(ngModel)]="newStudentDraft.address" placeholder="רחוב, עיר">
-  </div>
-  <div class="form-group">
-    <label>תאריך לידה</label>
-    <input type="date" [(ngModel)]="newStudentDraft.birth_date">
-  </div>
+  <div class="form-group" style="max-width:100%"><label>הערות</label><textarea [(ngModel)]="newStudentDraft.notes" rows="2" placeholder="הערות נוספות"></textarea></div>
+
   <div *ngIf="addStudentError()" class="alert alert-error" style="margin:0 0 10px;" role="alert">{{ addStudentError() }}</div>
   <button class="btn btn-primary"
     [disabled]="addingStudent() || !newStudentDraft.id_number.trim() || !newStudentDraft.name.trim()"
@@ -721,6 +756,12 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 /* Teachers tab */
 .teachers-admin { max-width: 640px; }
 .import-hint { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.7; }
+/* Registration form */
+.reg-section-title {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--primary); margin: 16px 0 8px; padding-bottom: 4px;
+  border-bottom: 2px solid var(--primary-light);
+}
 .teacher-add-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: flex-end; }
 @media (max-width: 700px) { .teacher-add-form { grid-template-columns: 1fr; } }
 .field-label { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); display: grid; gap: 5px; }
@@ -837,7 +878,14 @@ typedConfirmationInput = signal('');
 // ── הוספת תלמידה ידנית ──
 addingStudent = signal(false);
 addStudentError = signal('');
-newStudentDraft = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '', birth_date: '' };
+newStudentDraft = {
+  id_number: '', name: '', first_name: '', nickname: '', phone: '', track: '', year: '', parallel: '',
+  address: '', house_number: '', city: '', zip: '', birth_date: '', birth_date_hebrew: '', birth_country: '',
+  personal_phone: '', father_name: '', father_phone: '', father_external: '',
+  mother_name: '', mother_phone: '', mother_external: '',
+  specialization1: '', specialization2: '', option_b: '', teaching: '', practice_teaching: '',
+  marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
+};
 
 canAddStudent() {
   return this.auth.hasPermission('students', 'change');
@@ -848,9 +896,40 @@ saveNewStudent() {
   if (!d.id_number.trim() || !d.name.trim()) return;
   this.addingStudent.set(true);
   this.addStudentError.set('');
+
+  // בניית שם מלא: שם משפחה + שם פרטי
+  const fullName = [d.name.trim(), d.first_name.trim()].filter(Boolean).join(' ');
+
+  // שדות נוספים ל-extra_data
+  const extraData: Record<string, string> = {};
+  const addExtra = (key: string, val: string) => { if (val.trim()) extraData[key] = val.trim(); };
+  addExtra('שם פרטי', d.first_name);
+  addExtra('שם חיבה', d.nickname);
+  addExtra('ת. לידה עברי', d.birth_date_hebrew);
+  addExtra('ארץ לידה', d.birth_country);
+  addExtra('מספר בית', d.house_number);
+  addExtra('עיר', d.city);
+  addExtra('מיקוד', d.zip);
+  addExtra('שם האב', d.father_name);
+  addExtra('נייד אבא', d.father_phone);
+  addExtra('אבא חוץ', d.father_external);
+  addExtra('שם האם', d.mother_name);
+  addExtra('נייד אמא', d.mother_phone);
+  addExtra('אמא חוץ', d.mother_external);
+  addExtra('התמחות 1', d.specialization1);
+  addExtra('התמחות 2', d.specialization2);
+  addExtra('אופציה ב', d.option_b);
+  addExtra('הוראה', d.teaching);
+  addExtra('מדפית', d.practice_teaching);
+  addExtra('מס. רישום', d.reg_number);
+  addExtra('דמי רישום', d.reg_fee);
+  addExtra('א. תשלום רשום', d.payment_confirmed);
+  addExtra('הערות', d.notes);
+  addExtra('זהות פקטיבי', d.fake_id);
+
   this.api.createStudent({
     id_number: d.id_number.trim(),
-    name: d.name.trim(),
+    name: fullName,
     phone: d.phone.trim() || undefined,
     track: d.track.trim() || undefined,
     year: d.year.trim() || undefined,
@@ -858,9 +937,25 @@ saveNewStudent() {
     address: d.address.trim() || undefined,
     birth_date: d.birth_date.trim() || undefined,
   }).subscribe({
-    next: () => {
+    next: (res) => {
+      // עדכון extra_data, personal_phone, marital_status בנפרד
+      if (Object.keys(extraData).length || d.personal_phone || d.marital_status) {
+        const payload: any = { name: fullName };
+        if (d.personal_phone) payload.personal_phone = d.personal_phone.trim();
+        if (d.marital_status) payload.marital_status = d.marital_status;
+        if (Object.keys(extraData).length) payload.extra_data = extraData;
+        this.api.updateStudent(res.id_number, payload).subscribe();
+      }
       this.addingStudent.set(false);
-      this.newStudentDraft = { id_number: '', name: '', phone: '', track: '', year: '', parallel: '', address: '', birth_date: '' };
+      const emptyDraft = {
+        id_number: '', name: '', first_name: '', nickname: '', phone: '', track: '', year: '', parallel: '',
+        address: '', house_number: '', city: '', zip: '', birth_date: '', birth_date_hebrew: '', birth_country: '',
+        personal_phone: '', father_name: '', father_phone: '', father_external: '',
+        mother_name: '', mother_phone: '', mother_external: '',
+        specialization1: '', specialization2: '', option_b: '', teaching: '', practice_teaching: '',
+        marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
+      };
+      this.newStudentDraft = emptyDraft;
       this.loadTotal();
       this.addStudentError.set('✓ התלמידה נוספה בהצלחה');
     },

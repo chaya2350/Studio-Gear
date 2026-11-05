@@ -599,6 +599,7 @@ interface GanttRow {
           {{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}
           <span *ngIf="s.married_name"> ← {{ s.married_name }}</span>
         </span>
+        <span *ngIf="s.wedding_venue" style="font-size:0.75rem;color:var(--text-muted)">📍 {{ s.wedding_venue }}</span>
       </div>
     </div>
   </ng-container>

@@ -145,6 +145,10 @@ template: `
     <span>📅 {{ hebrewWeddingDate }}</span>
   </div>
 </div>
+<label class="field" *ngIf="studentDraft.marital_status === 'מאורסת' || studentDraft.marital_status === 'נשואה'">
+  <span>📍 מקום חתונה / אולם</span>
+  <input name="wedding_venue" [(ngModel)]="studentDraft.wedding_venue" placeholder="שם האולם / עיר">
+</label>
 </section>
 
 <section class="edit-section">
@@ -240,6 +244,10 @@ template: `
 <div class="info-row" *ngIf="student()!.wedding_date">
 <span class="info-label">💍 תאריך חתונה</span>
 <span class="info-value">{{ formatWeddingDate(student()!.wedding_date!) }}</span>
+</div>
+<div class="info-row" *ngIf="student()!.wedding_venue">
+<span class="info-label">📍 מקום חתונה</span>
+<span class="info-value">{{ student()!.wedding_venue }}</span>
 </div>
 </div>
 
@@ -859,7 +867,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '' };
+studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -1148,7 +1156,8 @@ parallel: current.parallel || '',
 marital_status: current.marital_status || '',
 married_name:   current.married_name   || '',
 personal_phone: current.personal_phone || '',
-wedding_date:   current.wedding_date   || ''
+wedding_date:   current.wedding_date   || '',
+wedding_venue:  current.wedding_venue  || ''
 };
 this.editingExtraFields = this.extraFields().map((field) => ({ ...field }));
 this.newExtraField = { key: '', value: '' };

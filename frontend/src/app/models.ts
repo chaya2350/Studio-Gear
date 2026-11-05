@@ -74,6 +74,7 @@ export interface Student {
   married_name?: string;
   personal_phone?: string;
   wedding_date?: string;
+  wedding_venue?: string;
 }
 
 export interface Teacher {
