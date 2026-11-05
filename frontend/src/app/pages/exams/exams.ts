@@ -85,7 +85,7 @@ template: `
     </div>
     <p *ngIf="error()" class="hint" style="color:var(--danger); margin:0 0 8px;">{{ error() }}</p>
     <div class="modal-actions">
-      <button type="button" class="btn btn-primary" [disabled]="!newExam.name.trim() || saving()" (click)="saveExam()">
+      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="saveExam()">
         {{ saving() ? 'שומר...' : 'שמור מבחן' }}
       </button>
       <button type="button" class="btn btn-secondary" (click)="creating.set(false); error.set('')">ביטול</button>
@@ -303,7 +303,10 @@ this.creating.set(true);
 }
 
 saveExam() {
-if (!this.newExam.name.trim()) return;
+if (!this.newExam.name.trim()) {
+  this.error.set('יש להזין שם למבחן');
+  return;
+}
 this.error.set('');
 this.saving.set(true);
 const examData: any = {
