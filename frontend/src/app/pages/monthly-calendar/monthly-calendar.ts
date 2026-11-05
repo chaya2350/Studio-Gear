@@ -298,6 +298,23 @@ interface CtxMenu {
   </div>
 </div>
 
+<div *ngIf="taskToDelete() as task" class="modal-backdrop" (click)="cancelDeleteTask()">
+  <section class="modal-card delete-task-dialog" role="alertdialog" aria-modal="true"
+           aria-labelledby="delete-task-title" (click)="$event.stopPropagation()">
+    <div class="delete-task-icon" aria-hidden="true">!</div>
+    <h2 id="delete-task-title" class="modal-title">מחיקת משימה</h2>
+    <p class="delete-task-copy">למחוק את המשימה הזו?</p>
+    <strong class="delete-task-name">{{ task.title }}</strong>
+    <p *ngIf="deleteTaskError()" class="delete-task-error" role="alert">{{ deleteTaskError() }}</p>
+    <div class="modal-actions delete-task-actions">
+      <button type="button" class="btn btn-danger" [disabled]="deletingTaskId() !== null" (click)="confirmDeleteTask()">
+        {{ deletingTaskId() === task.id ? 'מוחקת...' : 'מחקי משימה' }}
+      </button>
+      <button type="button" class="btn btn-secondary" [disabled]="deletingTaskId() !== null" (click)="cancelDeleteTask()">ביטול</button>
+    </div>
+  </section>
+</div>
+
 
 <div class="page-header">
   <div>
@@ -545,6 +562,14 @@ interface CtxMenu {
       font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px;
     }
     .modal-actions { display: flex; gap: 8px; }
+    .delete-task-dialog { position: relative; gap: 10px; text-align: center; border: 1px solid var(--border); animation: delete-dialog-enter 150ms ease-out; }
+    .delete-task-icon { display: grid; place-items: center; width: 38px; height: 38px; margin: 0 auto; border-radius: 50%; background: #fff1f0; color: #b42318; font-size: 1.25rem; font-weight: 900; }
+    .delete-task-dialog .modal-title { margin: 0; color: var(--text); font-size: 1.05rem; }
+    .delete-task-copy { color: var(--text-muted); font-size: .88rem; }
+    .delete-task-name { padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); overflow-wrap: anywhere; }
+    .delete-task-error { color: var(--danger); font-size: .85rem; }
+    .delete-task-actions { justify-content: center; margin-top: 4px; }
+    @keyframes delete-dialog-enter { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
     .form-group { display: flex; flex-direction: column; gap: 4px;
       label { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); }
       input, select { height: 38px; padding: 0 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font: inherit; background: var(--surface); }
@@ -861,6 +886,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly eventDetailOpen = signal(false);
   readonly selectedEvent   = signal<CalendarEvent | null>(null);
   readonly editingEvent    = signal(false);
+  readonly taskToDelete = signal<PersonalTask | null>(null);
+  readonly deletingTaskId = signal<number | null>(null);
+  readonly deleteTaskError = signal('');
   editEventDraft = {
     title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
     class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: ''
@@ -1158,10 +1186,31 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   }
 
   deleteTask(task: PersonalTask) {
-    if (!confirm(`למחוק את המשימה "${task.title}"?`)) return;
+    this.taskToDelete.set(task);
+    this.deleteTaskError.set('');
+  }
+
+  cancelDeleteTask() {
+    if (this.deletingTaskId() !== null) return;
+    this.taskToDelete.set(null);
+    this.deleteTaskError.set('');
+  }
+
+  confirmDeleteTask() {
+    const task = this.taskToDelete();
+    if (!task || this.deletingTaskId() !== null) return;
+    this.deletingTaskId.set(task.id);
+    this.deleteTaskError.set('');
     this.messages.deleteTask(task.id).subscribe({
-      next: () => this.tasks.update(ts => ts.filter(t => t.id !== task.id)),
-      error: e => this.loadError = e.error?.error || 'מחיקה נכשלה'
+      next: () => {
+        this.tasks.update(ts => ts.filter(t => t.id !== task.id));
+        this.deletingTaskId.set(null);
+        this.taskToDelete.set(null);
+      },
+      error: e => {
+        this.deletingTaskId.set(null);
+        this.deleteTaskError.set(e.error?.error || 'מחיקת המשימה נכשלה');
+      }
     });
   }
 
