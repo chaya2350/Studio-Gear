@@ -9,6 +9,7 @@ const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
 const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
+const { generateIsraeliHolidayEvents } = require('./calendar-holidays');
 const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
@@ -813,6 +814,30 @@ app.post('/api/calendar-events/import', xlsxUpload.single('file'), async (req, r
     sheets: parsed.sheetCount,
     warnings: parsed.warnings
   });
+});
+
+app.post('/api/calendar-events/holidays', async (req, res) => {
+  const throughDate = getSchoolYearEnd();
+  const startDate = `${Number(throughDate.slice(0, 4)) - 1}-09-01`;
+  try {
+    const holidays = await generateIsraeliHolidayEvents(startDate, throughDate);
+    const addHolidays = db.transaction(events => {
+      const insert = db.prepare(`
+        INSERT INTO calendar_events (title, event_date, hebrew_year, category, source_sheet, created_at, all_day)
+        VALUES (?, ?, ?, ?, 'חגים אוטומטיים', datetime('now'), 1)
+        ON CONFLICT (event_date, title, category, source_sheet) DO NOTHING
+      `);
+      let added = 0;
+      for (const event of events) {
+        added += insert.run(event.title, event.event_date, event.hebrew_year, event.category).changes;
+      }
+      return added;
+    });
+    res.json({ added: addHolidays(holidays), through_date: throughDate });
+  } catch (error) {
+    console.error('Israeli holiday generation failed:', error);
+    res.status(500).json({ error: 'הוספת החגים האוטומטית נכשלה' });
+  }
 });
 
 function logActivity(userId, action, itemType, itemId, details = '') {

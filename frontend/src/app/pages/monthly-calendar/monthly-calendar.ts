@@ -81,6 +81,18 @@ interface CtxMenu {
   date: string;
 }
 
+// ── Gantt ────────────────────────────────────────────────────
+interface GanttRow {
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
+  label: string;
+  sublabel: string;
+  color: string;
+  leftPct: number;
+  widthPct: number;
+  date: string;
+  icon: string;
+}
+
 @Component({
   selector: 'app-monthly-calendar',
   imports: [CommonModule, RouterLink, FormsModule],
@@ -332,6 +344,10 @@ interface CtxMenu {
     <span>{{ gregorianRangeLabel() }}</span>
   </div>
   <button type="button" class="today-btn" (click)="goToToday()" title="קפוץ להיום">היום</button>
+  <div class="view-toggle">
+    <button type="button" [class.active]="viewMode()==='grid'" (click)="viewMode.set('grid')" title="תצוגת לוח">▦</button>
+    <button type="button" [class.active]="viewMode()==='gantt'" (click)="viewMode.set('gantt')" title="תצוגת גאנט">▬</button>
+  </div>
   <button type="button" class="month-nav" (click)="changeMonth(1)" aria-label="החודש הבא">›</button>
 </div>
 
@@ -377,9 +393,12 @@ interface CtxMenu {
 <!-- Upload panel (admin/secretary, schedule active) -->
 <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
   <label class="upload-button" [class.uploading]="uploading">
-    <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
+    <input type="file" accept=".xlsx" [disabled]="uploading || addingHolidays" (change)="onCalendarFileSelected($event)">
     {{ uploading ? 'מעלה ומייבאת...' : 'העלאת לוח שנה מאקסל' }}
   </label>
+  <button type="button" class="upload-button" [disabled]="uploading || addingHolidays" (click)="addIsraeliHolidays()">
+    {{ addingHolidays ? 'מוסיפה...' : 'הוספת חגי ישראל לשנת הלימודים' }}
+  </button>
   <span class="upload-help">קובץ Excel ‎.xlsx — אירועים מהגיליונות יישמרו בלוח האירועים</span>
   <p *ngIf="uploadMessage" class="upload-success" role="status">{{ uploadMessage }}</p>
   <p *ngIf="uploadError"   class="upload-error"   role="alert">{{ uploadError }}</p>
@@ -404,7 +423,7 @@ interface CtxMenu {
 </div>
 
 <!-- ── Calendar grid ── -->
-<section class="month-card" [attr.aria-label]="'לוח חודש ' + monthName()">
+<section *ngIf="viewMode()==='grid'" class="month-card" [attr.aria-label]="'לוח חודש ' + monthName()">
   <div class="month-grid">
     <span *ngFor="let dayName of dayNames" class="weekday">{{ dayName }}</span>
 
@@ -457,6 +476,40 @@ interface CtxMenu {
         </span>
       </button>
     </ng-container>
+  </div>
+</section>
+
+<!-- ── Gantt view ── -->
+<section *ngIf="viewMode()==='gantt'" class="gantt-card">
+  <div class="gantt-header">
+    <div class="gantt-label-col"></div>
+    <div class="gantt-timeline">
+      <span *ngFor="let d of ganttDays()" class="gantt-day-tick"
+            [class.today]="d === today"
+            [style.width]="(100 / ganttDays().length) + '%'">
+        {{ formatGanttDay(d) }}
+      </span>
+    </div>
+  </div>
+
+  <p *ngIf="!ganttRows().length" class="empty-state">אין פריטים להצגה בחודש זה</p>
+
+  <div *ngFor="let row of ganttRows()" class="gantt-row">
+    <div class="gantt-label-col" [title]="row.label">
+      <span class="gantt-icon">{{ row.icon }}</span>
+      <span class="gantt-label">{{ row.label }}</span>
+      <span *ngIf="row.sublabel" class="gantt-sublabel">{{ row.sublabel }}</span>
+    </div>
+    <div class="gantt-timeline">
+      <!-- today line -->
+      <div *ngIf="ganttTodayPct() >= 0" class="gantt-today-line"
+           [style.left]="ganttTodayPct() + '%'"></div>
+      <div class="gantt-bar"
+           [style.left]="row.leftPct + '%'"
+           [style.width]="row.widthPct + '%'"
+           [style.background]="row.color"
+           [title]="row.label + (row.sublabel ? ' · ' + row.sublabel : '')"></div>
+    </div>
   </div>
 </section>
 
@@ -672,7 +725,9 @@ interface CtxMenu {
       display: inline-flex; align-items: center; gap: 8px;
       min-height: 36px; padding: 7px 14px; border-radius: 8px;
       background: var(--primary); color: white; cursor: pointer; font-weight: 700; font-size: 0.88rem;
+      border: 0; font: inherit;
       &.uploading { opacity: .65; cursor: wait; }
+      &:disabled { opacity: .65; cursor: wait; }
       input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
     }
     .upload-help { color: var(--text-muted); font-size: 0.78rem; }
@@ -827,6 +882,59 @@ interface CtxMenu {
     .empty-state { color: var(--text-muted); font-size: 0.85rem; }
     .calendar-error { color: var(--danger); font-size: 0.85rem; margin-bottom: 10px; }
 
+    /* ── View toggle ── */
+    .view-toggle {
+      display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+      button {
+        width: 32px; height: 32px; border: none; background: var(--surface);
+        color: var(--text-muted); font-size: 1rem; cursor: pointer;
+        &:hover { background: var(--primary-light); color: var(--primary); }
+        &.active { background: var(--primary); color: white; }
+      }
+    }
+
+    /* ── Gantt ── */
+    .gantt-card {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); box-shadow: var(--shadow-sm);
+      overflow-x: auto;
+    }
+    .gantt-header {
+      display: flex; position: sticky; top: 0; z-index: 2;
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+    }
+    .gantt-label-col {
+      flex: 0 0 180px; min-width: 180px; padding: 6px 10px;
+      display: flex; align-items: center; gap: 6px; overflow: hidden;
+      border-left: 1px solid var(--border);
+    }
+    .gantt-icon { flex-shrink: 0; font-size: 0.85rem; }
+    .gantt-label { font-size: 0.78rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gantt-sublabel { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gantt-timeline {
+      flex: 1; position: relative; display: flex; min-width: 0;
+    }
+    .gantt-day-tick {
+      flex-shrink: 0; text-align: center; font-size: 0.62rem; color: var(--text-muted);
+      padding: 6px 0; border-left: 1px solid var(--border);
+      &.today { color: var(--primary); font-weight: 700; background: var(--primary-light); }
+    }
+    .gantt-row {
+      display: flex; border-bottom: 1px solid var(--border);
+      min-height: 34px;
+      &:hover { background: var(--surface-2); }
+    }
+    .gantt-bar {
+      position: absolute; top: 6px; height: calc(100% - 12px);
+      border-radius: 4px; opacity: 0.85; min-width: 4px;
+      transition: opacity 0.15s;
+      &:hover { opacity: 1; }
+    }
+    .gantt-today-line {
+      position: absolute; top: 0; bottom: 0; width: 2px;
+      background: var(--primary); opacity: 0.5; z-index: 1; pointer-events: none;
+    }
+
     @media (max-width: 560px) {
       .month-card { padding: 6px; }
       .calendar-day, .empty-day { min-height: 62px; padding: 4px; }
@@ -851,6 +959,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly displayedMonth = signal(this._init.getMonth());
   readonly selectedDate   = signal(this.today);
 
+  // ── View mode: grid or gantt ──
+  readonly viewMode = signal<'grid' | 'gantt'>('grid');
+
   // ── Data ──
   readonly loans          = signal<Loan[]>([]);
   readonly tasks          = signal<PersonalTask[]>([]);
@@ -863,6 +974,103 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly calendarSheets = computed(() =>
     [...new Set(this.calendarEvents().map(e => e.source_sheet))].sort((a,b) => a.localeCompare(b,'he'))
   );
+
+  // ── Gantt: dates in displayed month + flattened rows ──
+  readonly ganttDays = computed(() => {
+    const cells = this.monthCells().filter((c): c is CalendarDay => c !== null);
+    return cells.map(c => c.date);
+  });
+
+  readonly ganttRows = computed(() => {
+    const days = this.ganttDays();
+    if (!days.length) return [];
+    const total = days.length;
+
+    const rows: GanttRow[] = [];
+
+    // Loans (spans: loan_date → expected_return)
+    if (this.has('equipment')) {
+      for (const loan of this.loans()) {
+        if (loan.actual_return) continue;
+        if (loan.category === 'מצלמות אישיות' || loan.category === 'מחשב נייד') continue;
+        const startIdx = days.findIndex(d => d >= loan.loan_date);
+        if (startIdx < 0) continue;
+        const endIdx = days.findIndex(d => d >= loan.expected_return);
+        const start = startIdx;
+        const end = endIdx < 0 ? total - 1 : Math.min(total - 1, endIdx);
+        rows.push({
+          kind: 'loan', label: loan.equipment_name || 'ציוד', sublabel: loan.borrower_name,
+          color: this.loanColor(loan),
+          leftPct: (start / total) * 100, widthPct: ((end - start + 1) / total) * 100,
+          date: loan.loan_date, icon: '💻'
+        });
+      }
+    }
+
+    // Tasks (single day)
+    if (this.has('personal')) {
+      for (const task of this.tasks()) {
+        const idx = days.indexOf(task.due_date);
+        if (idx < 0) continue;
+        const color = task.completed ? '#10b981' : task.visibility === 'public' ? '#f59e0b' : task.visibility === 'shared' ? '#8b5cf6' : '#6366f1';
+        rows.push({
+          kind: 'task', label: task.title, sublabel: task.visibility === 'public' ? 'ציבורי' : task.visibility === 'shared' ? 'משותף' : '',
+          color, leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
+          date: task.due_date, icon: task.completed ? '✓' : '📋'
+        });
+      }
+    }
+
+    // Events (single day)
+    if (this.has('schedule')) {
+      const sheet = this.selectedSourceSheet();
+      const seen = new Set<string>();
+      for (const ev of this.calendarEvents()) {
+        if (sheet !== null && ev.source_sheet !== sheet) continue;
+        const key = `${ev.source_sheet}\x00${ev.title}\x00${ev.category}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const idx = days.indexOf(ev.event_date);
+        if (idx < 0) continue;
+        rows.push({
+          kind: 'event', label: ev.title, sublabel: ev.category,
+          color: this.categoryToColor(ev.category),
+          leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
+          date: ev.event_date, icon: '📅'
+        });
+      }
+    }
+
+    // Exams (single day)
+    if (this.has('exams')) {
+      for (const exam of this.exams()) {
+        const idx = days.indexOf(exam.exam_date);
+        if (idx < 0) continue;
+        rows.push({
+          kind: 'exam', label: exam.name, sublabel: exam.track || '',
+          color: '#e11d48', leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
+          date: exam.exam_date, icon: '📝'
+        });
+      }
+    }
+
+    // Weddings (single day)
+    if (this.has('weddings')) {
+      for (const w of this.weddingsForDate('')) {
+        // weddings are handled via monthCells; skip if not directly available
+      }
+    }
+
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    return rows;
+  });
+
+  readonly ganttTodayPct = computed(() => {
+    const days = this.ganttDays();
+    if (!days.length) return -1;
+    const idx = days.indexOf(this.today);
+    return idx >= 0 ? (idx / days.length) * 100 : -1;
+  });
 
   // ── Computed cells ──
   readonly monthCells = computed(() => this.buildMonthCells());
@@ -909,6 +1117,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   uploadError   = '';
   uploadMessage = '';
   uploading     = false;
+  addingHolidays = false;
   updatingTaskId: number | null = null;
 
   // ── Event detail ──
@@ -1376,7 +1585,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
+    if (!file || this.addingHolidays) return;
     this.uploading = true; this.uploadError = ''; this.uploadMessage = '';
     this.api.importCalendarWorkbook(file).subscribe({
       next: r => {
@@ -1386,6 +1595,24 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
       },
       error: e => { this.uploading = false; this.uploadError = e.error?.error || 'ייבוא נכשל'; }
+    });
+  }
+
+  addIsraeliHolidays() {
+    if (this.uploading || this.addingHolidays) return;
+    this.addingHolidays = true; this.uploadError = ''; this.uploadMessage = '';
+    this.api.addIsraeliHolidays().subscribe({
+      next: result => {
+        this.addingHolidays = false;
+        this.uploadMessage = result.added
+          ? `נוספו ${result.added} חגי ישראל עד ${this.formatShortDate(result.through_date)}.`
+          : 'חגי ישראל כבר קיימים בלוח השנה.';
+        this.api.getCalendarEvents().subscribe(events => this.calendarEvents.set(events));
+      },
+      error: error => {
+        this.addingHolidays = false;
+        this.uploadError = error.error?.error || 'הוספת החגים נכשלה';
+      }
     });
   }
 
@@ -1443,6 +1670,11 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   private toDateString(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  }
+
+  formatGanttDay(date: string): string {
+    const d = new Date(`${date}T12:00:00`);
+    return `${d.getDate()}/${d.getMonth() + 1}`;
   }
 
   private isValidDate(v: string): boolean {
