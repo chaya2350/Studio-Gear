@@ -73,6 +73,7 @@ export interface Student {
   marital_status?: string;
   married_name?: string;
   personal_phone?: string;
+  wedding_date?: string;
 }
 
 export interface Teacher {

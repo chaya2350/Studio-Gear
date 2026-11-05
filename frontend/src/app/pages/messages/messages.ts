@@ -81,7 +81,9 @@ placeholder="כתבי הודעה..."></textarea>
 <div class="message-bubble">
 <div class="message-heading">
 <div>
-<strong>{{ message.sender_id === auth.user()?.id ? 'את ל־' + message.recipient_name : 'מאת ' + message.sender_name }}</strong>
+<strong>{{ message.sender_id === auth.user()?.id
+  ? (message.group_id ? 'את ל: ' + message.recipient_name : 'את ל־' + message.recipient_name)
+  : 'מאת ' + message.sender_name }}</strong>
 <span>{{ message.created_at | date:'dd/MM/yyyy HH:mm' }}{{ message.edited_at ? ' (נערך)' : '' }}</span>
 </div>
 <div style="display:flex;gap:6px;align-items:center">
@@ -308,16 +310,34 @@ this.changeDetector.markForCheck();
 
 visibleMessages(): DirectMessage[] {
 const userId = this.auth.user()?.id;
-return this.messages.filter(message => {
-if (this.selectedConversationId !== null &&
-message.sender_id !== this.selectedConversationId &&
-message.recipient_id !== this.selectedConversationId) return false;
-if (this.view === 'inbox') return message.recipient_id === userId;
-if (this.view === 'sent') return message.sender_id === userId;
-return true;
-}).sort((first, second) =>
-second.created_at.localeCompare(first.created_at) || second.id - first.id
-);
+
+// סנן לפי שיחה ותצוגה
+const filtered = this.messages.filter(message => {
+  if (this.selectedConversationId !== null &&
+    message.sender_id !== this.selectedConversationId &&
+    message.recipient_id !== this.selectedConversationId) return false;
+  if (this.view === 'inbox') return message.recipient_id === userId;
+  if (this.view === 'sent') return message.sender_id === userId;
+  return true;
+});
+
+// מיזוג הודעות קבוצתיות — כשנשלחה ל-N אנשים, להציג רק פעם אחת
+const seenGroups = new Set<string>();
+const result: DirectMessage[] = [];
+for (const msg of filtered) {
+  if (msg.group_id && msg.sender_id === userId) {
+    if (seenGroups.has(msg.group_id)) continue; // כבר הוספנו אחת מהקבוצה
+    seenGroups.add(msg.group_id);
+    // בנה שם מרוכב של כל הנמענים בקבוצה
+    const groupMessages = this.messages.filter(m => m.group_id === msg.group_id && m.sender_id === userId);
+    const recipientNames = [...new Set(groupMessages.map(m => m.recipient_name))].join(', ');
+    result.push({ ...msg, recipient_name: recipientNames });
+  } else {
+    result.push(msg);
+  }
+}
+
+return result.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
 }
 
 conversationUsers(): MessageUser[] {

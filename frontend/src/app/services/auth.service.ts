@@ -11,6 +11,7 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   role_name?: string;
+  coordinator_track?: string;
   permissions?: Record<string, Record<PermissionAction, boolean>>;
 }
 
