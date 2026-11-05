@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 
 @Component({
@@ -14,6 +15,10 @@ template: `
 <div class="hero-icon"></div>
 <h1>חיפוש תלמידות לפי שם / ת.ז.</h1>
 <p class="subtitle">הקלד שם או ת.ז. לחיפוש תלמידה</p>
+</div>
+
+<div *ngIf="coordinatorTrack" class="coordinator-banner">
+  👩‍💼 מוצגות תלמידות מסלול <strong>{{ coordinatorTrack }}</strong> בלבד
 </div>
 
 
@@ -106,6 +111,10 @@ autofocus
 styles: [`
 .search-page { max-width: 480px; margin: 60px auto 0; display: flex; flex-direction: column; align-items: center; gap: 32px; }
 .search-hero { text-align: center; }
+.coordinator-banner {
+  width: 100%; background: #fef3c7; border: 1px solid #fde68a; border-radius: var(--radius-sm);
+  padding: 10px 14px; font-size: 0.85rem; color: #92400e; text-align: center;
+}
 .hero-icon { font-size: 3.5rem; margin-bottom: 12px; filter: drop-shadow(0 4px 12px rgba(13,148,136,0.2)); }
 h1 { margin: 0 0 8px; font-size: 1.6rem; }
 .subtitle { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
@@ -248,7 +257,12 @@ suggestions = signal<Student[]>([]);
 selected = signal<Student | null>(null);
 today = new Date().toISOString().split('T')[0];
 
-constructor(private api: ApiService) {}
+constructor(private api: ApiService, public auth: AuthService) {}
+
+get coordinatorTrack(): string | null {
+  const u = this.auth.user();
+  return u?.role === 'coordinator' ? (u.coordinator_track || null) : null;
+}
 
 onInput() {
 this.selected.set(null);

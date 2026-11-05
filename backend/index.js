@@ -133,7 +133,7 @@ function authenticate(req, res, next) {
   if (!token) return res.status(401).json({ error: 'נדרשת התחברות' });
 
   const user = db.prepare(`
-    SELECT u.id, u.name, u.email, u.role
+    SELECT u.id, u.name, u.email, u.role, u.coordinator_track
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1
   `).get(createHash('sha256').update(token).digest('hex'), new Date().toISOString());
@@ -201,7 +201,7 @@ app.post('/api/auth/login', (req, res) => {
   db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
     .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
   appendSessionCookie(res, token, sessionDurationSeconds);
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, role_name: getRoleName(user.role), permissions: getUserPermissions(user.role) });
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, coordinator_track: user.coordinator_track || null, role_name: getRoleName(user.role), permissions: getUserPermissions(user.role) });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -1242,7 +1242,7 @@ app.get('/api/auth/me', (req, res) => {
 
 app.get('/api/users', (req, res) => {
   res.json(db.prepare(`
-    SELECT u.id, u.name, u.email, u.role, r.name AS role_name, u.active, u.created_at
+    SELECT u.id, u.name, u.email, u.role, r.name AS role_name, u.active, u.created_at, u.coordinator_track
     FROM users u LEFT JOIN system_roles r ON r.role_key = u.role ORDER BY u.name
   `).all());
 });
@@ -1299,7 +1299,8 @@ app.put('/api/users/:id', (req, res) => {
     if (activeAdmins <= 1) return res.status(400).json({ error: 'חייבת להישאר לפחות מנהלת מערכת פעילה אחת' });
   }
 
-  db.prepare('UPDATE users SET role = ?, active = ? WHERE id = ?').run(role, Number(active), id);
+  db.prepare('UPDATE users SET role = ?, active = ?, coordinator_track = ? WHERE id = ?')
+    .run(role, Number(active), role === 'coordinator' ? (req.body?.coordinator_track || null) : null, id);
   if (!active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   res.json({ success: true });
 });
@@ -1500,6 +1501,10 @@ db.exec(`
 const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
 if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 if (!messageCols.includes('group_id'))  db.exec('ALTER TABLE messages ADD COLUMN group_id TEXT');
+
+// Migration: coordinator_track לטבלת users
+const userColsCheck = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+if (!userColsCheck.includes('coordinator_track')) db.exec('ALTER TABLE users ADD COLUMN coordinator_track TEXT');
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
 const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
 if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
@@ -1536,12 +1541,18 @@ function mapStudentRow(row) {
 
 app.get('/api/students', (req, res) => {
   const { q } = req.query;
+  // מרכזת מסלול רואה רק את התלמידות של המסלול שלה
+  const coordinatorTrack = req.user.role === 'coordinator' ? (req.user.coordinator_track || null) : null;
+
   if (q) {
-    const rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
+    let rows = db.prepare(`SELECT * FROM students WHERE id_number LIKE ? OR name LIKE ? LIMIT 20`)
       .all(`%${q}%`, `%${q}%`);
+    if (coordinatorTrack) rows = rows.filter(s => (s.track || '').includes(coordinatorTrack));
     return res.json(rows.map(mapStudentRow));
   }
-  res.json(db.prepare('SELECT * FROM students ORDER BY name').all().map(mapStudentRow));
+  let rows = db.prepare('SELECT * FROM students ORDER BY name').all();
+  if (coordinatorTrack) rows = rows.filter(s => (s.track || '').includes(coordinatorTrack));
+  res.json(rows.map(mapStudentRow));
 });
 
 // חיפוש גלובלי: תלמידות, ציוד, קודי מבחן, מורות, דפים, ארועים ומבחנים
@@ -1550,8 +1561,13 @@ app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] });
   const like = `%${q}%`;
+  const coordinatorTrack = req.user.role === 'coordinator' ? (req.user.coordinator_track || null) : null;
   const students = permissions.students?.view
-    ? db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow)
+    ? (() => {
+        let rows = db.prepare('SELECT id_number, name, track, year FROM students WHERE name LIKE ? OR id_number LIKE ? LIMIT 5').all(like, like).map(mapStudentRow);
+        if (coordinatorTrack) rows = rows.filter(s => (s.track || '').includes(coordinatorTrack));
+        return rows;
+      })()
     : [];
   const equipment = permissions.equipment?.view
     ? db.prepare('SELECT id, name, category, barcode FROM equipment WHERE name LIKE ? OR barcode LIKE ? LIMIT 5').all(like, like)

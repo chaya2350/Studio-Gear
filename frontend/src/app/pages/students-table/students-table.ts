@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
 
@@ -48,6 +49,11 @@ interface TableStudent {
     <button class="btn btn-secondary" (click)="exportExcel()" [disabled]="!filtered().length">⬇ ייצוא Excel</button>
     <button class="btn btn-secondary" (click)="printTable()" [disabled]="!filtered().length">🖨 הדפסה</button>
   </div>
+</div>
+
+<!-- banner מרכזת -->
+<div *ngIf="coordinatorTrack" class="alert alert-warning" style="margin-bottom:14px;">
+  👩‍💼 מוצגות תלמידות מסלול <strong>{{ coordinatorTrack }}</strong> בלבד
 </div>
 
 <!-- פילטרים -->
@@ -335,7 +341,13 @@ export class StudentsTableComponent implements OnInit {
     });
   });
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, public auth: AuthService) {}
+
+  // מרכזת מסלול רואה רק את המסלול שלה
+  get coordinatorTrack(): string | null {
+    const u = this.auth.user();
+    return u?.role === 'coordinator' ? (u.coordinator_track || null) : null;
+  }
 
   ngOnInit() {
     this.api.getStudentClasses().subscribe(c => this.allClasses.set(c));
