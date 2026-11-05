@@ -165,6 +165,36 @@ interface CtxMenu {
       <label>קטגוריה</label>
       <input [(ngModel)]="newEvent.category" placeholder="לדוגמה: חג, טיול, בחינות...">
     </div>
+    <div class="form-group">
+      <label class="event-all-day"><input type="checkbox" [(ngModel)]="newEvent.all_day"> כל היום</label>
+    </div>
+    <div class="form-row" *ngIf="!newEvent.all_day">
+      <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="newEvent.start_time"></div>
+      <div class="form-group"><label>עד שעה</label><input type="time" [(ngModel)]="newEvent.end_time"></div>
+    </div>
+    <div class="form-group">
+      <label>על אילו כיתות האירוע משפיע?</label>
+      <select [(ngModel)]="newEvent.class_scope">
+        <option value="all">כל הכיתות</option>
+        <option value="grade">שכבה ה או ו</option>
+        <option value="class">כיתה ספציפית</option>
+      </select>
+    </div>
+    <div class="form-row" *ngIf="newEvent.class_scope !== 'all'">
+      <div class="form-group">
+        <label>{{ newEvent.class_scope === 'grade' ? 'שכבה' : 'שנת כיתה' }}</label>
+        <select [(ngModel)]="newEvent.class_year" (ngModelChange)="newEvent.class_parallel = ''">
+          <option value="ה">ה</option><option value="ו">ו</option>
+        </select>
+      </div>
+      <div class="form-group" *ngIf="newEvent.class_scope === 'class'">
+        <label>מקבילה</label>
+        <select [(ngModel)]="newEvent.class_parallel">
+          <option value="">בחירת כיתה</option>
+          <option *ngFor="let parallel of eventParallels(newEvent.class_year)" [value]="parallel">{{ newEvent.class_year }}{{ parallel }}</option>
+        </select>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" [disabled]="!newEvent.title.trim()" (click)="saveEvent()">שמור</button>
       <button class="btn btn-secondary" (click)="closeDialogs()">ביטול</button>
@@ -189,6 +219,10 @@ interface CtxMenu {
           <span class="event-detail-label">קטגוריה</span>
           <span class="event-category-chip" [style.background]="schoolEventColor(selectedEvent()!) + '22'" [style.color]="schoolEventColor(selectedEvent()!)">{{ selectedEvent()!.category }}</span>
         </div>
+        <ng-container *ngIf="selectedEvent()!.source_sheet === 'ידני'">
+          <div class="event-info-row"><span class="event-detail-label">שעות</span><span>{{ eventTimeLabel(selectedEvent()!) }}</span></div>
+          <div class="event-info-row"><span class="event-detail-label">כיתות</span><span>{{ eventAudienceLabel(selectedEvent()!) }}</span></div>
+        </ng-container>
         <div class="event-info-row" *ngIf="selectedEvent()!.source_sheet">
           <span class="event-detail-label">מקור</span>
           <span>{{ selectedEvent()!.source_sheet === 'ידני' ? 'נוסף ידנית' : selectedEvent()!.source_sheet }}</span>
@@ -210,6 +244,36 @@ interface CtxMenu {
       <div class="form-group">
         <label>קטגוריה</label>
         <input [(ngModel)]="editEventDraft.category" placeholder="לדוגמה: חג, טיול, בחינות...">
+      </div>
+      <div class="form-group">
+        <label class="event-all-day"><input type="checkbox" [(ngModel)]="editEventDraft.all_day"> כל היום</label>
+      </div>
+      <div class="form-row" *ngIf="!editEventDraft.all_day">
+        <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="editEventDraft.start_time"></div>
+        <div class="form-group"><label>עד שעה</label><input type="time" [(ngModel)]="editEventDraft.end_time"></div>
+      </div>
+      <div class="form-group">
+        <label>על אילו כיתות האירוע משפיע?</label>
+        <select [(ngModel)]="editEventDraft.class_scope">
+          <option value="all">כל הכיתות</option>
+          <option value="grade">שכבה ה או ו</option>
+          <option value="class">כיתה ספציפית</option>
+        </select>
+      </div>
+      <div class="form-row" *ngIf="editEventDraft.class_scope !== 'all'">
+        <div class="form-group">
+          <label>{{ editEventDraft.class_scope === 'grade' ? 'שכבה' : 'שנת כיתה' }}</label>
+          <select [(ngModel)]="editEventDraft.class_year" (ngModelChange)="editEventDraft.class_parallel = ''">
+            <option value="ה">ה</option><option value="ו">ו</option>
+          </select>
+        </div>
+        <div class="form-group" *ngIf="editEventDraft.class_scope === 'class'">
+          <label>מקבילה</label>
+          <select [(ngModel)]="editEventDraft.class_parallel">
+            <option value="">בחירת כיתה</option>
+            <option *ngFor="let parallel of eventParallels(editEventDraft.class_year)" [value]="parallel">{{ editEventDraft.class_year }}{{ parallel }}</option>
+          </select>
+        </div>
       </div>
       <p *ngIf="dialogError()" class="hint" style="color:var(--danger)">{{ dialogError() }}</p>
       <div class="modal-actions">
@@ -294,7 +358,7 @@ interface CtxMenu {
     <span class="legend-dot public-task-dot"></span> משימה ציבורית
     <span class="legend-dot completed-dot"></span> בוצעה
   </span>
-  <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
+  <span class="legend-item" *ngFor="let cat of eventLegend()"><span class="legend-dot" [style.background]="cat.color"></span> {{ cat.name }}</span>
   <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
   <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
 </div>
@@ -742,7 +806,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   newTask  = { title: '', visibility: 'private' as 'private' | 'public' };
   newExam  = { name: '', track: '', year: '' };
-  newEvent = { title: '', category: '' };
+  newEvent = {
+    title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
+    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: ''
+  };
 
   // ── Upload / misc ──
   loadError     = '';
@@ -755,11 +822,14 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly eventDetailOpen = signal(false);
   readonly selectedEvent   = signal<CalendarEvent | null>(null);
   readonly editingEvent    = signal(false);
-  editEventDraft = { title: '', category: '' };
+  editEventDraft = {
+    title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
+    class_scope: 'all' as 'all' | 'grade' | 'class', class_year: 'ה', class_parallel: ''
+  };
 
   private colorMap = new Map<number, string>();
   private readonly colors = ['#0d9488','#0891b2','#f59e0b','#6366f1','#ec4899','#14b8a6','#8b5cf6','#f97316','#06b6d4','#84cc16'];
-  private readonly eventColors = ['#0d9488','#0891b2','#f59e0b','#6366f1','#ec4899','#14b8a6','#8b5cf6','#84cc16'];
+  private readonly eventColors = ['#0891b2','#f59e0b','#6366f1','#ec4899','#14b8a6','#8b5cf6','#f97316','#84cc16','#06b6d4','#ef4444'];
   private readonly destroy$ = new Subject<void>();
 
   toStudyYear = toStudyYear;
@@ -947,7 +1017,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
     this.editingEvent.set(false);
-    this.newEvent = { title: '', category: '' };
+    this.newEvent = {
+      title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
+      class_scope: 'all', class_year: 'ה', class_parallel: ''
+    };
     this.dialogError.set('');
     this.addEventOpen.set(true);
   }
@@ -1001,7 +1074,13 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       title,
       event_date: this.selectedDate(),
       category: this.newEvent.category.trim() || 'כללי',
-      source_sheet: 'ידני'
+      source_sheet: 'ידני',
+      all_day: this.newEvent.all_day,
+      start_time: this.newEvent.start_time,
+      end_time: this.newEvent.end_time,
+      class_scope: this.newEvent.class_scope,
+      class_year: this.newEvent.class_scope === 'all' ? '' : this.newEvent.class_year,
+      class_parallel: this.newEvent.class_scope === 'class' ? this.newEvent.class_parallel : ''
     }).subscribe({
       next: () => {
         this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
@@ -1045,9 +1124,37 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   }
 
   schoolEventColor(ev: CalendarEvent): string {
-    const cats = [...new Set(this.calendarEvents().map(e => e.category))];
-    const i = cats.indexOf(ev.category);
-    return this.eventColors[(i < 0 ? 0 : i) % this.eventColors.length];
+    let hash = 0;
+    for (const c of ev.category || '') hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+    return this.eventColors[hash % this.eventColors.length];
+  }
+
+  categoryToColor(category: string): string {
+    let hash = 0;
+    for (const c of category || '') hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+    return this.eventColors[hash % this.eventColors.length];
+  }
+
+  eventLegend = computed(() => {
+    const cats = [...new Set(this.calendarEvents().map(e => e.category))].sort();
+    return cats.map(cat => ({ name: cat, color: this.categoryToColor(cat) }));
+  });
+
+  eventParallels(year: string): string[] {
+    return [...new Set(this.allStudents()
+      .filter(student => student.year === year && student.parallel)
+      .map(student => String(student.parallel)))].sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
+  }
+
+  eventTimeLabel(event: CalendarEvent): string {
+    return event.all_day ? 'כל היום' : `${event.start_time || ''}–${event.end_time || ''}`;
+  }
+
+  eventAudienceLabel(event: CalendarEvent): string {
+    if (event.class_scope === 'all') return 'כל הכיתות';
+    if (event.class_scope === 'grade') return `שכבה ${event.class_year}`;
+    if (event.class_scope === 'class') return `כיתה ${event.class_year}${event.class_parallel}`;
+    return 'לא הוגדר';
   }
 
   dotColor(item: CalendarItem): string | null {
@@ -1082,30 +1189,35 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   startEditEvent() {
     const ev = this.selectedEvent();
     if (!ev) return;
-    this.editEventDraft = { title: ev.title, category: ev.category };
+    this.editEventDraft = {
+      title: ev.title, category: ev.category, all_day: ev.class_scope === 'none' || !!ev.all_day,
+      start_time: ev.start_time || '08:00', end_time: ev.end_time || '09:00',
+      class_scope: ev.class_scope === 'none' ? 'all' : ev.class_scope,
+      class_year: ev.class_year || 'ה', class_parallel: ev.class_parallel || ''
+    };
     this.editingEvent.set(true);
   }
 
   saveEditEvent() {
     const ev = this.selectedEvent();
     if (!ev || !this.editEventDraft.title.trim()) return;
-    // מחיקת הישן והוספת החדש (פשוט יותר מ-PUT)
-    this.api.deleteCalendarEvent(ev.id).subscribe({
+    this.api.updateCalendarEvent(ev.id, {
+      title: this.editEventDraft.title.trim(),
+      event_date: ev.event_date,
+      category: this.editEventDraft.category.trim() || 'כללי',
+      notes: ev.notes || '',
+      all_day: this.editEventDraft.all_day,
+      start_time: this.editEventDraft.start_time,
+      end_time: this.editEventDraft.end_time,
+      class_scope: this.editEventDraft.class_scope,
+      class_year: this.editEventDraft.class_scope === 'all' ? '' : this.editEventDraft.class_year,
+      class_parallel: this.editEventDraft.class_scope === 'class' ? this.editEventDraft.class_parallel : ''
+    }).subscribe({
       next: () => {
-        this.api.createCalendarEvent({
-          title: this.editEventDraft.title.trim(),
-          event_date: ev.event_date,
-          category: this.editEventDraft.category.trim() || 'כללי',
-          source_sheet: 'ידני'
-        }).subscribe({
-          next: () => {
-            this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
-            this.closeEventDetail();
-          },
-          error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
-        });
+        this.api.getCalendarEvents().subscribe(v => this.calendarEvents.set(v));
+        this.closeEventDetail();
       },
-      error: e => this.dialogError.set(e.error?.error || 'מחיקה נכשלה')
+      error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
     });
   }
 

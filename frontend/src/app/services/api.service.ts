@@ -10,6 +10,12 @@ export interface CalendarEvent {
   category: string;
   source_sheet: string;
   notes: string;
+  all_day: number;
+  start_time: string | null;
+  end_time: string | null;
+  class_scope: 'none' | 'all' | 'grade' | 'class';
+  class_year: string | null;
+  class_parallel: string | null;
 }
 
 export interface CalendarImportResult {
@@ -111,10 +117,18 @@ export class ApiService {
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
   getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
   getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
-  createCalendarEvent(data: { title: string; event_date: string; category: string; source_sheet: string }) {
+  createCalendarEvent(data: {
+    title: string; event_date: string; category: string; source_sheet: string;
+    all_day: boolean; start_time: string; end_time: string;
+    class_scope: 'all' | 'grade' | 'class'; class_year: string; class_parallel: string;
+  }) {
     return this.http.post<{ id: number }>(`${this.base}/calendar-events`, data);
   }
-  updateCalendarEvent(id: number, data: { title?: string; event_date?: string; category?: string; notes: string }) {
+  updateCalendarEvent(id: number, data: {
+    title?: string; event_date?: string; category?: string; notes: string;
+    all_day?: boolean; start_time?: string; end_time?: string;
+    class_scope?: 'all' | 'grade' | 'class'; class_year?: string; class_parallel?: string;
+  }) {
     return this.http.put<{ success: boolean }>(`${this.base}/calendar-events/${id}`, data);
   }
   deleteCalendarEvent(id: number) { return this.http.delete(`${this.base}/calendar-events/${id}`); }
@@ -268,7 +282,7 @@ export class ApiService {
       instruction: Record<string, Record<string, { start: string; end: string }>>;
     }>(`${this.base}/schedule/kodesh-availability`);
   }
-  getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
+  getSchedule(week?: string) { return this.http.get<{week_start:string; slots:any[]; events: CalendarEvent[]}>(`${this.base}/schedule${week ? '?week=' + week : ''}`); }
   createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number }>(`${this.base}/schedule`, data); }
   updateScheduleSlot(id: number, data: { teacher_id: number; start_time: string; end_time: string | null; subject: string | null; allow_conflicts?: boolean }) {
     return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);

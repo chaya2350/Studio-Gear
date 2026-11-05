@@ -114,6 +114,18 @@ function formatGregorianDate(dateStr: string): string {
             {{ ev.category }}
           </span>
         </div>
+        <ng-container *ngIf="ev.source_sheet === 'ידני'">
+          <div class="info-row">
+            <span class="info-label">שעות</span>
+            <span class="info-value">{{ ev.all_day ? 'כל היום' : (ev.start_time || '') + '–' + (ev.end_time || '') }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">כיתות</span>
+            <span class="info-value">
+              {{ ev.class_scope === 'all' ? 'כל הכיתות' : ev.class_scope === 'grade' ? 'שכבה ' + ev.class_year : ev.class_scope === 'class' ? 'כיתה ' + ev.class_year + ev.class_parallel : 'לא הוגדר' }}
+            </span>
+          </div>
+        </ng-container>
         <div class="info-row">
           <span class="info-label">מקור</span>
           <span class="info-value">{{ ev.source_sheet === 'ידני' ? 'נוסף ידנית' : ev.source_sheet }}</span>

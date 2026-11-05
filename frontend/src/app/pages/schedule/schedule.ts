@@ -175,33 +175,32 @@ function formatHebrewDayHeading(dateStr: string): string {
                   [ngClass]="'period-' + entry.availability"
                   [attr.aria-disabled]="entry.availability !== 'kodesh'">
                 <ng-container *ngIf="entry.availability === 'kodesh'; else unavailablePeriod">
-                  <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)"
-                       class="day-lesson">
-                    <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
-                       [style.--teacher-color]="teacherColor(slot.teacher_id)">
-                      {{ slot.teacher_name }}
-                    </a>
-                    <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
-                      {{ slot.subject || slot.teacher_subject }}
-                    </span>
-                    <div class="day-lesson-actions">
-                      <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
-                              title="עריכת שיעור" aria-label="עריכת שיעור">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
-                      </button>
-                      <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
-                              title="מחיקת שיעור" aria-label="מחיקת שיעור">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
-                      </button>
+                  <ng-container *ngIf="eventForPeriod(addDays(weekStart(), selectedDay()), entry.row.classYear, entry.row.classParallel, entry.period) as event; else dayLesson">
+                    <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
+                  </ng-container>
+                  <ng-template #dayLesson>
+                    <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)" class="day-lesson">
+                      <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
+                         [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
+                      <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                      <div class="day-lesson-actions">
+                        <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)" title="עריכת שיעור" aria-label="עריכת שיעור">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+                        </button>
+                        <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <button *ngIf="!slotsForPeriod(entry.row.byDay[selectedDay()], entry.period).length"
-                          class="day-add-lesson"
-                          (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)"
-                          aria-label="הוספת שיעור קודש">+</button>
+                    <button *ngIf="!slotsForPeriod(entry.row.byDay[selectedDay()], entry.period).length" class="day-add-lesson"
+                            (click)="openAddSlot(selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period)" aria-label="הוספת שיעור קודש">+</button>
+                  </ng-template>
                 </ng-container>
                 <ng-template #unavailablePeriod>
-                  <span class="day-period-label">{{ periodAvailabilityLabel(entry.availability) }}</span>
+                  <ng-container *ngIf="eventForPeriod(addDays(weekStart(), selectedDay()), entry.row.classYear, entry.row.classParallel, entry.period) as event; else unavailableDayLabel">
+                    <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
+                  </ng-container>
+                  <ng-template #unavailableDayLabel><span class="day-period-label">{{ periodAvailabilityLabel(entry.availability) }}</span></ng-template>
                 </ng-template>
               </td>
             </tr>
@@ -246,33 +245,32 @@ function formatHebrewDayHeading(dateStr: string): string {
                     [attr.aria-disabled]="cell?.availability !== 'kodesh'">
                   <ng-container *ngIf="cell as periodCell">
                     <ng-container *ngIf="periodCell.availability === 'kodesh'; else unavailableClassPeriod">
-                      <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)"
-                           class="day-lesson">
-                        <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
-                           [style.--teacher-color]="teacherColor(slot.teacher_id)">
-                          {{ slot.teacher_name }}
-                        </a>
-                        <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">
-                          {{ slot.subject || slot.teacher_subject }}
-                        </span>
-                        <div class="day-lesson-actions">
-                          <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)"
-                                  title="עריכת שיעור" aria-label="עריכת שיעור">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
-                          </button>
-                          <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)"
-                                  title="מחיקת שיעור" aria-label="מחיקת שיעור">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
-                          </button>
+                      <ng-container *ngIf="eventForPeriod(addDays(weekStart(), periodCell.day), selectedClass.classYear, selectedClass.classParallel, periodCell.period) as event; else classDayLesson">
+                        <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
+                      </ng-container>
+                      <ng-template #classDayLesson>
+                        <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)" class="day-lesson">
+                          <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
+                             [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
+                          <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                          <div class="day-lesson-actions">
+                            <button type="button" class="slot-icon-btn slot-icon-edit" (click)="startEditSlot(slot)" title="עריכת שיעור" aria-label="עריכת שיעור">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+                            </button>
+                            <button type="button" class="slot-icon-btn slot-icon-delete" (click)="deleteSlot(slot.id)" title="מחיקת שיעור" aria-label="מחיקת שיעור">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <button *ngIf="!slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period).length"
-                              class="day-add-lesson"
-                              (click)="openAddSlot(periodCell.day, selectedClass.classYear, selectedClass.classParallel, periodCell.period)"
-                              aria-label="הוספת שיעור קודש">+</button>
+                        <button *ngIf="!slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period).length" class="day-add-lesson"
+                                (click)="openAddSlot(periodCell.day, selectedClass.classYear, selectedClass.classParallel, periodCell.period)" aria-label="הוספת שיעור קודש">+</button>
+                      </ng-template>
                     </ng-container>
                     <ng-template #unavailableClassPeriod>
-                      <span class="day-period-label">{{ periodAvailabilityLabel(periodCell.availability) }}</span>
+                      <ng-container *ngIf="eventForPeriod(addDays(weekStart(), periodCell.day), selectedClass.classYear, selectedClass.classParallel, periodCell.period) as event; else unavailableClassLabel">
+                        <div class="day-school-event">{{ event.title }}<small>{{ event.category }}</small></div>
+                      </ng-container>
+                      <ng-template #unavailableClassLabel><span class="day-period-label">{{ periodAvailabilityLabel(periodCell.availability) }}</span></ng-template>
                     </ng-template>
                   </ng-container>
                 </td>
@@ -589,6 +587,11 @@ function formatHebrewDayHeading(dateStr: string): string {
 .schedule-table-wrap { box-shadow: var(--shadow-sm); background: var(--surface); }
 .schedule-table { min-width: 100%; }
 .schedule-table th small { display: block; margin-top: 3px; font-size: 0.72rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.day-school-event {
+  display: grid; gap: 3px; padding: 6px; border: 1px solid #f0c66e; border-radius: 6px;
+  background: #fff5d9; color: #694d12; font-size: 0.76rem; font-weight: 700;
+}
+.day-school-event small { font-size: 0.67rem; font-weight: 500; }
 .class-schedule-table { min-width: 900px; }
 .class-schedule-table .class-heading { width: 90px; text-align: center; }
 .class-schedule-cell { min-width: 145px; vertical-align: top !important; padding: 8px !important; }
@@ -751,6 +754,7 @@ export class ScheduleComponent implements OnInit {
   teachers = signal<any[]>([]);
   teacherSearch = signal('');
   slots = signal<any[]>([]);
+  events = signal<any[]>([]);
   activeTab = signal<'grid' | 'teachers' | 'manage'>('grid');
   scheduleView = signal<'days' | 'classes'>('classes');
   selectedDay = signal(0);
@@ -928,6 +932,19 @@ export class ScheduleComponent implements OnInit {
     );
   }
 
+  eventForPeriod(date: string, classYear: string, classParallel: string, period: any) {
+    return this.events().find(event => {
+      if (event.event_date !== date) return false;
+      if (event.class_scope === 'grade' && event.class_year !== classYear) return false;
+      if (event.class_scope === 'class' &&
+          (event.class_year !== classYear || String(event.class_parallel) !== String(classParallel))) return false;
+      if (event.class_scope !== 'all' && event.class_scope !== 'grade' && event.class_scope !== 'class') return false;
+      if (event.all_day) return true;
+      return Boolean(event.start_time && event.end_time &&
+        event.start_time < period.end_time && event.end_time > period.start_time);
+    }) || null;
+  }
+
   pickPeriod(target: any, id: string) {
     const p = this.periods().find(x => String(x.id) === String(id));
     target.period_id = id;
@@ -957,7 +974,7 @@ export class ScheduleComponent implements OnInit {
   loadSchedule() {
     this.loading.set(true);
     this.api.getSchedule(this._weekStart()).subscribe({
-      next: r => { this.slots.set(r.slots); this.loading.set(false); },
+      next: r => { this.slots.set(r.slots); this.events.set(r.events || []); this.loading.set(false); },
       error: () => this.loading.set(false)
     });
   }
