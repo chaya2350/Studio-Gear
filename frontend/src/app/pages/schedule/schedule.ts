@@ -329,6 +329,14 @@ function formatHebrewDayHeading(dateStr: string): string {
         <span>מקצוע (אופציונלי)</span>
         <input [(ngModel)]="newSlot.subject" placeholder="אם שונה מהמורה">
       </label>
+      <label class="field">
+        <span>תוקף השיעור</span>
+        <select [(ngModel)]="newSlot.change_scope">
+          <option value="">בחירת תוקף</option>
+          <option value="once">רק השבוע</option>
+          <option value="permanent">קבוע עד סוף שנת הלימודים</option>
+        </select>
+      </label>
     </div>
 
     <!-- Specialization lesson form (placeholder) -->
@@ -450,6 +458,13 @@ function formatHebrewDayHeading(dateStr: string): string {
       אין שעה זמינה שמתאימה לכל הכיתות שנבחרו ביום זה
     </p>
     <label>מקצוע: <input [(ngModel)]="quickAddSlot.subject" placeholder="מקצוע"></label>
+    <label>תוקף השיעור:
+      <select [(ngModel)]="quickAddSlot.change_scope">
+        <option value="">בחירת תוקף</option>
+        <option value="once">רק השבוע</option>
+        <option value="permanent">קבוע עד סוף שנת הלימודים</option>
+      </select>
+    </label>
     <div class="form-actions">
       <button class="btn btn-primary" [disabled]="savingQuickSlot()" (click)="saveQuickSlot()">
         {{ savingQuickSlot() ? 'שומר...' : 'הוסף' }}
@@ -750,7 +765,7 @@ export class ScheduleComponent implements OnInit {
   lessonType = signal<'class' | 'specialization'>('class');
 
   // Slot CRUD
-  newSlot: any = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
+  newSlot: any = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '', change_scope: '' };
   savingSlot = signal(false);
   slotError = signal('');
   slotSuccess = signal('');
@@ -1081,7 +1096,7 @@ export class ScheduleComponent implements OnInit {
       period_id: period ? String(period.id) : '',
       start_time: period?.start_time || '',
       end_time: period?.end_time || '',
-      subject: ''
+      subject: '', change_scope: ''
     };
     this.quickSlotError.set('');
   }
@@ -1219,8 +1234,8 @@ export class ScheduleComponent implements OnInit {
   saveQuickSlot() {
     const q = this.quickAddSlot;
     const selectedRows = this.gridRows().filter(row => q?.classKeys.includes(this.quickClassKey(row)));
-    if (!q?.teacher_id || !selectedRows.length || !q.start_time) {
-      this.quickSlotError.set('בחרי מורה, כיתה אחת לפחות ושעה'); return;
+    if (!q?.teacher_id || !selectedRows.length || !q.start_time || !q.change_scope) {
+      this.quickSlotError.set('בחרי מורה, כיתה אחת לפחות, שעה ותוקף'); return;
     }
     if (!this.quickKodeshPeriods().some(period =>
       period.start_time === q.start_time && period.end_time === q.end_time
@@ -1235,6 +1250,7 @@ export class ScheduleComponent implements OnInit {
       start_time: q.start_time,
       end_time: q.end_time || null,
       subject: q.subject || null,
+      change_scope: q.change_scope,
       week_start: this._weekStart()
     };
     this.savingQuickSlot.set(true);
@@ -1259,8 +1275,8 @@ export class ScheduleComponent implements OnInit {
 
   createSlot() {
     const s = this.newSlot;
-    if (!s.teacher_id || !s.class_key || s.day_of_week === '' || !s.start_time) {
-      this.slotError.set('יש למלא: מורה, כיתה, יום, שיעור'); return;
+    if (!s.teacher_id || !s.class_key || s.day_of_week === '' || !s.start_time || !s.change_scope) {
+      this.slotError.set('יש למלא: מורה, כיתה, יום, שיעור ותוקף'); return;
     }
     const [class_year, class_parallel] = String(s.class_key).split('_');
     if (!this.kodeshPeriodsForYear(class_year, s.day_of_week).some(period =>
@@ -1279,7 +1295,7 @@ export class ScheduleComponent implements OnInit {
       () => {
         this.savingSlot.set(false);
         this.slotSuccess.set('שיעור נוסף בהצלחה');
-        this.newSlot = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '' };
+        this.newSlot = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '', change_scope: '' };
         this.loadSchedule();
       },
       e => { this.savingSlot.set(false); this.slotError.set(e.error?.error || 'שגיאה'); },

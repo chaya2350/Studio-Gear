@@ -36,8 +36,9 @@ export interface PersonalTask {
   completed: boolean;
   completed_at: string | null;
   created_at: string;
-  visibility: 'private' | 'public';
+  visibility: 'private' | 'public' | 'shared';
   creator_name?: string;
+  shared_with?: { id: number; name: string }[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -80,8 +81,8 @@ export class MessagesService {
     return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/completion`, { completed });
   }
 
-  createTask(title: string, due_date: string, visibility: 'private' | 'public'): Observable<PersonalTask> {
-    return this.http.post<PersonalTask>('/api/tasks', { title, due_date, visibility });
+  createTask(title: string, due_date: string, visibility: 'private' | 'public' | 'shared', shared_user_ids?: number[]): Observable<PersonalTask> {
+    return this.http.post<PersonalTask>('/api/tasks', { title, due_date, visibility, shared_user_ids });
   }
 
   rescheduleTask(taskId: number, due_date: string): Observable<{ success: boolean }> {

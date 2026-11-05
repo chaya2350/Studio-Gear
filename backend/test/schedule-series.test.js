@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
-const { collectFutureScheduleOccurrences } = require('../schedule-series');
+const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('../schedule-series');
 
 function createDatabase() {
   const db = new Database(':memory:');
@@ -39,6 +39,20 @@ function addSlot(db, { teacher = 1, week, series = null, scope = null }) {
     VALUES (?, 'ה', '1', 1, '08:30', '09:10', 'הלכה', ?, ?, ?)
   `).run(teacher, week, series, scope).lastInsertRowid;
 }
+
+test('one-time additions return only the selected week', () => {
+  assert.deepEqual(scheduleOccurrenceWeeks({
+    startWeek: '2026-11-01', dayOfWeek: 1, scope: 'once',
+    currentWeek: '2026-11-01', throughDate: '2027-08-31'
+  }), ['2026-11-01']);
+});
+
+test('permanent additions include future weeks through the exact end date', () => {
+  assert.deepEqual(scheduleOccurrenceWeeks({
+    startWeek: '2026-11-01', dayOfWeek: 1, scope: 'permanent',
+    currentWeek: '2026-11-01', throughDate: '2026-11-15'
+  }), ['2026-11-01', '2026-11-08']);
+});
 
 test('plans missing future occurrences for a permanent series update', () => {
   const db = createDatabase();

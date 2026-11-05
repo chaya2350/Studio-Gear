@@ -51,4 +51,20 @@ function collectFutureScheduleOccurrences(db, { sourceSlot, seriesId, weeks }) {
   return { targets, error: '' };
 }
 
-module.exports = { collectFutureScheduleOccurrences };
+function addDays(dateStr, days) {
+  const date = new Date(`${dateStr}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function scheduleOccurrenceWeeks({ startWeek, dayOfWeek, scope, currentWeek, throughDate }) {
+  if (scope === 'once') return [startWeek];
+  const weeks = [];
+  const firstWeek = startWeek < currentWeek ? currentWeek : startWeek;
+  for (let week = firstWeek; addDays(week, Number(dayOfWeek)) <= throughDate; week = addDays(week, 7)) {
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+module.exports = { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks };

@@ -8,7 +8,7 @@ import { HDate, months } from '@hebcal/core';
 import { ApiService, CalendarEvent } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Loan } from '../../models';
-import { MessagesService, PersonalTask } from '../../services/messages.service';
+import { MessagesService, PersonalTask, MessageUser } from '../../services/messages.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
 
@@ -104,14 +104,28 @@ interface CtxMenu {
     <div class="form-group">
       <label>מי יכול לראות?</label>
       <div class="visibility-toggle">
-        <button [class.active]="newTask.visibility==='private'" (click)="newTask.visibility='private'">
+        <button [class.active]="newTask.visibility==='private'" (click)="newTask.visibility='private'; showUserPicker.set(false)">
            רק אני
         </button>
-        <button [class.active]="newTask.visibility==='public'" (click)="newTask.visibility='public'">
+        <button [class.active]="newTask.visibility==='public'" (click)="newTask.visibility='public'; showUserPicker.set(false)">
            כולם
         </button>
+        <button [class.active]="newTask.visibility==='shared'" (click)="newTask.visibility='shared'; showUserPicker.set(true)">
+          👥 נבחרים
+        </button>
       </div>
-      <p class="hint">משימה ציבורית תראה לכל הצוות בלוח האישי שלהם</p>
+      <div *ngIf="showUserPicker()" class="share-picker">
+        <div *ngIf="!taskUsers().length" class="hint">טוען רשימת משתמשות...</div>
+        <label *ngFor="let u of taskUsers()" class="share-option">
+          <input type="checkbox" [checked]="newTask.sharedUserIds.includes(u.id)"
+                 (change)="toggleSharedUser(u.id)">
+          <span>{{ u.name }}</span>
+        </label>
+        <p *ngIf="taskUsers().length && !newTask.sharedUserIds.length" class="hint">בחרי לפחות איש אחד</p>
+      </div>
+      <p class="hint" *ngIf="newTask.visibility==='private'">משימה ציבורית תראה לכל הצוות בלוח האישי שלהם</p>
+      <p class="hint" *ngIf="newTask.visibility==='public'">משימה ציבורית תראה לכל הצוות בלוח האישי שלהם</p>
+      <p class="hint" *ngIf="newTask.visibility==='shared'">רק האנשים שתבחרי יראו את המשימה</p>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" [disabled]="!newTask.title.trim()" (click)="saveTask()">שמור</button>
@@ -409,7 +423,7 @@ interface CtxMenu {
         <span *ngIf="visibleItems(cd).length" class="day-tooltip" role="tooltip">
           <span *ngFor="let item of visibleItems(cd)">
             <ng-container *ngIf="item.kind==='loan'">{{ item.loan?.equipment_name }} · {{ item.loan?.borrower_name }}</ng-container>
-            <ng-container *ngIf="item.kind==='task'">{{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span></ng-container>
+            <ng-container *ngIf="item.kind==='task'">{{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span><span *ngIf="item.task?.visibility==='shared'"> (👥 {{ item.task?.creator_name }})</span></ng-container>
             <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
             <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
           </span>
@@ -458,6 +472,7 @@ interface CtxMenu {
       <div class="detail-main">
         <span class="task-title">{{ task.title }}</span>
         <span *ngIf="task.visibility==='public'" class="task-public-badge">🌐 ציבורי · {{ task.creator_name }}</span>
+        <span *ngIf="task.visibility==='shared'" class="task-shared-badge">👥 {{ (task.shared_with || []).map(u => u.name).join(', ') || 'משותף' }} · {{ task.creator_name }}</span>
       </div>
       <button *ngIf="task.user_id === currentUserId()" class="del-task-btn" title="מחק" (click)="deleteTask(task)">✕</button>
     </div>
@@ -536,6 +551,11 @@ interface CtxMenu {
     .visibility-toggle { display: flex; gap: 6px;
       button { flex: 1; padding: 8px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer;
         &.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); } }
+    }
+    .share-picker { margin-top: 8px; max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; background: var(--surface-2); }
+    .share-option { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 0.85rem; cursor: pointer; border-radius: 6px;
+      &:hover { background: var(--surface); }
+      input { margin: 0; }
     }
     .hint { font-size: 0.75rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
 
@@ -718,6 +738,7 @@ interface CtxMenu {
     .detail-row.completed .task-title { color: var(--text-muted); text-decoration: line-through; }
     .task-title { overflow-wrap: anywhere; font-size: 0.88rem; }
     .task-public-badge { font-size: 0.72rem; color: #b45309; background: #fef3c7; padding: 1px 6px; border-radius: 20px; }
+    .task-shared-badge { font-size: 0.72rem; color: #6366f1; background: #e0e7ff; padding: 1px 6px; border-radius: 20px; }
     .del-task-btn {
       border: none; background: transparent; cursor: pointer; font-size: 0.85rem;
       color: var(--text-muted); padding: 4px; border-radius: 4px;
@@ -817,7 +838,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly addEventOpen = signal(false);
   readonly dialogError  = signal('');
 
-  newTask  = { title: '', visibility: 'private' as 'private' | 'public' };
+  newTask = { title: '', visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
+  taskUsers = signal<MessageUser[]>([]);
+  showUserPicker = signal(false);
   newExam  = { name: '', track: '', year: '' };
   newEvent = {
     title: '', category: '', all_day: true, start_time: '08:00', end_time: '09:00',
@@ -1011,11 +1034,22 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddTask() {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
-    this.newTask = { title: '', visibility: 'private' };
+    this.newTask = { title: '', visibility: 'private', sharedUserIds: [] };
+    this.showUserPicker.set(false);
     this.dialogError.set('');
     this.addTaskOpen.set(true);
+    if (!this.taskUsers().length) {
+      this.messages.getUsers().subscribe({ next: u => this.taskUsers.set(u), error: () => {} });
+    }
   }
   openAddTaskForSelected() { this.openAddTask(); }
+
+  toggleSharedUser(userId: number) {
+    const ids = this.newTask.sharedUserIds;
+    const idx = ids.indexOf(userId);
+    if (idx >= 0) ids.splice(idx, 1);
+    else ids.push(userId);
+  }
 
   openAddExam() {
     this.ctxMenu.set(null);
@@ -1050,7 +1084,12 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   saveTask() {
     const title = this.newTask.title.trim();
     if (!title) return;
-    this.messages.createTask(title, this.selectedDate(), this.newTask.visibility).subscribe({
+    this.messages.createTask(
+      title,
+      this.selectedDate(),
+      this.newTask.visibility,
+      this.newTask.visibility === 'shared' ? this.newTask.sharedUserIds : undefined
+    ).subscribe({
       next: task => {
         this.tasks.update(ts => [...ts, task]);
         this.closeDialogs();

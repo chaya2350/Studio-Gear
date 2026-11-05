@@ -402,10 +402,11 @@ class="section-tab"
       <label class="field-label">תחום / התמחות
         <select [(ngModel)]="newTeacherSpecialization" class="admin-input">
           <option value="">ללא תחום מיוחד</option>
-          <option value="קודש">קודש</option>
-          <option value="רכזת קודש">רכזת קודש</option>
-          <option value="רכזת חינוכית">רכזת חינוכית</option>
+          <option *ngFor="let specialization of specializationOptions()" [value]="specialization">{{ specialization }}</option>
+          <option [value]="NEW_SPECIALIZATION">+ הוספת תחום חדש</option>
         </select>
+        <input *ngIf="newTeacherSpecialization === NEW_SPECIALIZATION"
+               [(ngModel)]="newTeacherSpecializationText" class="admin-input" placeholder="שם התחום החדש">
       </label>
       <label class="field-label">מייל
         <input [(ngModel)]="newTeacherEmail" placeholder="מייל (אופציונלי)" class="admin-input">
@@ -545,6 +546,7 @@ class="section-tab"
           <div class="teacher-list-info">
             <strong>{{ t.name }}</strong>
             <span *ngIf="t.subject" class="teacher-meta">{{ t.subject }}</span>
+            <span *ngIf="t.specialization" class="teacher-meta">תחום: {{ t.specialization }}</span>
             <span *ngIf="t.email" class="teacher-meta">{{ t.email }}</span>
             <span *ngIf="t.phone" class="teacher-meta">{{ t.phone }}</span>
           </div>
@@ -556,6 +558,13 @@ class="section-tab"
         <ng-container *ngIf="editingTeacherId() === t.id">
           <input [(ngModel)]="editTeacherDraft.name" class="inline-input" placeholder="שם">
           <input [(ngModel)]="editTeacherDraft.subject" class="inline-input" placeholder="מקצוע">
+          <select [(ngModel)]="editTeacherDraft.specialization" class="inline-input" aria-label="תחום או התמחות">
+            <option value="">ללא תחום מיוחד</option>
+            <option *ngFor="let specialization of specializationOptions()" [value]="specialization">{{ specialization }}</option>
+            <option [value]="NEW_SPECIALIZATION">+ הוספת תחום חדש</option>
+          </select>
+          <input *ngIf="editTeacherDraft.specialization === NEW_SPECIALIZATION"
+                 [(ngModel)]="editTeacherSpecializationText" class="inline-input" placeholder="שם התחום החדש">
           <input [(ngModel)]="editTeacherDraft.email" class="inline-input" placeholder="מייל">
           <input [(ngModel)]="editTeacherDraft.phone" class="inline-input" placeholder="טלפון">
           <button class="btn btn-primary btn-xs" (click)="saveTeacher(t.id)">שמור</button>
@@ -773,6 +782,7 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 `]
 })
 export class AdminComponent {
+readonly NEW_SPECIALIZATION = '__new_specialization__';
 dragging = signal(false);
 importing = signal(false);
 results = signal<{
@@ -1181,12 +1191,14 @@ teachers = signal<any[]>([]);
 newTeacherName = '';
 newTeacherSubject = '';
 newTeacherSpecialization = '';
+newTeacherSpecializationText = '';
 newTeacherEmail = '';
 newTeacherPhone = '';
 savingTeacher = signal(false);
 teacherMsg = signal<string | null>(null);
 editingTeacherId = signal(0);
-editTeacherDraft = { name: '', subject: '', email: '', phone: '' };
+editTeacherDraft = { name: '', subject: '', specialization: '', email: '', phone: '' };
+editTeacherSpecializationText = '';
 draggingTeachers = signal(false);
 importingTeachers = signal(false);
 teacherImportResult = signal<{ imported: number; skipped: number } | null>(null);
@@ -1237,20 +1249,33 @@ loadTeachers() {
   this.api.getTeachers().subscribe({ next: t => this.teachers.set(t), error: () => {} });
 }
 
+specializationOptions(): string[] {
+  return [...new Set([
+    'קודש', 'רכזת קודש', 'רכזת חינוכית',
+    ...this.teachers().map(teacher => String(teacher.specialization || '').trim()).filter(Boolean)
+  ])].sort((a, b) => a.localeCompare(b, 'he'));
+}
+
 createTeacher() {
   if (!this.newTeacherName.trim()) { this.teacherMsg.set('שגיאה: שם המורה הוא שדה חובה'); return; }
+  if (this.newTeacherSpecialization === this.NEW_SPECIALIZATION && !this.newTeacherSpecializationText.trim()) {
+    this.teacherMsg.set('שגיאה: יש להזין שם לתחום החדש'); return;
+  }
   this.savingTeacher.set(true); this.teacherMsg.set(null);
   this.api.createTeacher({
     name: this.newTeacherName.trim(),
     subject: this.newTeacherSubject.trim() || undefined,
-    specialization: this.newTeacherSpecialization || undefined,
+    specialization: (this.newTeacherSpecialization === this.NEW_SPECIALIZATION
+      ? this.newTeacherSpecializationText.trim()
+      : this.newTeacherSpecialization) || undefined,
     email: this.newTeacherEmail.trim() || undefined,
     phone: this.newTeacherPhone.trim() || undefined,
   }).subscribe({
     next: () => {
       this.savingTeacher.set(false);
       this.teacherMsg.set(`✓ המורה "${this.newTeacherName}" נוספה`);
-      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherSpecialization = ''; this.newTeacherEmail = ''; this.newTeacherPhone = '';
+      this.newTeacherName = ''; this.newTeacherSubject = ''; this.newTeacherSpecialization = '';
+      this.newTeacherSpecializationText = ''; this.newTeacherEmail = ''; this.newTeacherPhone = '';
       this.loadTeachers();
     },
     error: e => { this.savingTeacher.set(false); this.teacherMsg.set('שגיאה: ' + (e.error?.error || 'לא ניתן להוסיף')); }
@@ -1259,12 +1284,22 @@ createTeacher() {
 
 startEditTeacher(t: any) {
   this.editingTeacherId.set(t.id);
-  this.editTeacherDraft = { name: t.name, subject: t.subject || '', email: t.email || '', phone: t.phone || '' };
+  this.editTeacherDraft = { name: t.name, subject: t.subject || '', specialization: t.specialization || '', email: t.email || '', phone: t.phone || '' };
+  this.editTeacherSpecializationText = '';
 }
 
 saveTeacher(id: number) {
-  this.api.updateTeacher(id, this.editTeacherDraft).subscribe({
-    next: () => { this.editingTeacherId.set(0); this.loadTeachers(); },
+  if (this.editTeacherDraft.specialization === this.NEW_SPECIALIZATION && !this.editTeacherSpecializationText.trim()) {
+    alert('יש להזין שם לתחום החדש'); return;
+  }
+  const data = {
+    ...this.editTeacherDraft,
+    specialization: this.editTeacherDraft.specialization === this.NEW_SPECIALIZATION
+      ? this.editTeacherSpecializationText.trim()
+      : this.editTeacherDraft.specialization
+  };
+  this.api.updateTeacher(id, data).subscribe({
+    next: () => { this.editingTeacherId.set(0); this.editTeacherSpecializationText = ''; this.loadTeachers(); },
     error: e => alert(e.error?.error || 'שגיאה')
   });
 }

@@ -15,7 +15,7 @@ const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profi
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { copyScheduleAcrossYear } = require('./schedule-year-copy');
 const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-conflicts');
-const { collectFutureScheduleOccurrences } = require('./schedule-series');
+const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
@@ -467,6 +467,15 @@ if (srcCol && srcCol.notnull === 1) {
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS personal_tasks_user_source_message_unique_idx
   ON personal_tasks(user_id, source_message_id)
+`);
+
+// Task shares — allows sharing a personal task with specific users
+db.exec(`
+  CREATE TABLE IF NOT EXISTS task_shares (
+    task_id INTEGER NOT NULL REFERENCES personal_tasks(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, user_id)
+  );
 `);
 
 function pageRow(row, userId) {
@@ -1085,36 +1094,71 @@ app.get('/api/tasks', (req, res) => {
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt
     JOIN users u ON u.id = pt.user_id
-    WHERE (pt.user_id = ? OR pt.visibility = 'public')
+    WHERE (pt.user_id = ? OR pt.visibility = 'public'
+      OR pt.id IN (SELECT task_id FROM task_shares WHERE user_id = ?))
       AND (? IS NULL OR pt.due_date >= ?) AND (? IS NULL OR pt.due_date <= ?)
     ORDER BY pt.due_date, pt.completed_at IS NOT NULL, pt.id DESC
-  `).all(req.user.id, fromDate, fromDate, toDate, toDate);
-  res.json(tasks.map(task => ({ ...task, completed: Boolean(task.completed) })));
+  `).all(req.user.id, req.user.id, fromDate, fromDate, toDate, toDate);
+  const enriched = tasks.map(task => {
+    if (task.visibility === 'shared') {
+      const sharedWith = db.prepare(`
+        SELECT u.id, u.name FROM task_shares ts JOIN users u ON u.id = ts.user_id WHERE ts.task_id = ?
+      `).all(task.id);
+      return { ...task, shared_with: sharedWith, completed: Boolean(task.completed) };
+    }
+    return { ...task, completed: Boolean(task.completed) };
+  });
+  res.json(enriched);
 });
 
 // יצירת משימה ישירות (ללא הודעה) — לשימוש מלוח השנה
 app.post('/api/tasks', (req, res) => {
   const title = String(req.body?.title || '').trim();
   const dueDate = req.body?.due_date;
-  const visibility = req.body?.visibility === 'public' ? 'public' : 'private';
+  const rawVisibility = String(req.body?.visibility || 'private');
+  const visibility = ['private', 'public', 'shared'].includes(rawVisibility) ? rawVisibility : 'private';
+  const sharedUserIds = Array.isArray(req.body?.shared_user_ids)
+    ? [...new Set(req.body.shared_user_ids.map(Number).filter(n => Number.isFinite(n) && n > 0))]
+    : [];
   if (!title || title.length > 200) return res.status(400).json({ error: 'כותרת המשימה חסרה או ארוכה מדי' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
     Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
     new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
     return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
   }
-  const result = db.prepare(`
-    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, visibility, created_at)
-    VALUES (?, NULL, ?, ?, ?, ?)
-  `).run(req.user.id, title, dueDate, visibility, new Date().toISOString());
+
+  const tx = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, visibility, created_at)
+      VALUES (?, NULL, ?, ?, ?, ?)
+    `).run(req.user.id, title, dueDate, visibility, new Date().toISOString());
+
+    const taskId = result.lastInsertRowid;
+    const validShares = visibility === 'shared' && sharedUserIds.length
+      ? sharedUserIds.filter(uid => db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(uid))
+      : [];
+    if (validShares.length) {
+      const shareStmt = db.prepare('INSERT OR IGNORE INTO task_shares (task_id, user_id) VALUES (?, ?)');
+      for (const uid of validShares) shareStmt.run(taskId, uid);
+    }
+    return taskId;
+  });
+
+  const taskId = tx();
   const task = db.prepare(`
     SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
       pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt JOIN users u ON u.id = pt.user_id
     WHERE pt.id = ?
-  `).get(result.lastInsertRowid);
-  res.status(201).json({ ...task, completed: Boolean(task.completed) });
+  `).get(taskId);
+  let sharedWith = [];
+  if (task.visibility === 'shared') {
+    sharedWith = db.prepare(`
+      SELECT u.id, u.name FROM task_shares ts JOIN users u ON u.id = ts.user_id WHERE ts.task_id = ?
+    `).all(taskId);
+  }
+  res.status(201).json({ ...task, shared_with: sharedWith, completed: Boolean(task.completed) });
 });
 
 // עדכון תאריך משימה (גרירה בלוח)
@@ -3550,11 +3594,13 @@ function currentScheduleWeek() {
 }
 
 function weeksForScheduleChange(weekStart, dayOfWeek, scope) {
-  if (scope === 'once') return [weekStart];
-  const weeks = [];
-  const firstWeek = weekStart < currentScheduleWeek() ? currentScheduleWeek() : weekStart;
-  for (let week = firstWeek; addDays(week, Number(dayOfWeek)) <= getSchoolYearEnd(); week = addDays(week, 7)) weeks.push(week);
-  return weeks;
+  return scheduleOccurrenceWeeks({
+    startWeek: weekStart,
+    dayOfWeek,
+    scope,
+    currentWeek: currentScheduleWeek(),
+    throughDate: getSchoolYearEnd()
+  });
 }
 
 function teacherName(teacherId) {
@@ -3589,7 +3635,17 @@ app.post('/api/schedule', (req, res) => {
       !classes.length || classes.some(c => !c?.class_year || !c?.class_parallel)) {
     return res.status(400).json({ error: 'שדות חסרים: מורה, כיתה, יום, שעה, שבוע' });
   }
-  const weeks = [week_start];
+  const changeScope = req.body?.change_scope;
+  if (!['once', 'permanent'].includes(changeScope)) {
+    return res.status(400).json({ error: 'יש לבחור אם השיעור הוא רק לשבוע זה או קבוע' });
+  }
+  if (changeScope === 'permanent' && week_start < currentScheduleWeek()) {
+    return res.status(400).json({ error: 'הוספה קבועה מתחילה מהשבוע הנוכחי או משבוע עתידי' });
+  }
+  if (changeScope === 'permanent' && addDays(week_start, Number(day_of_week)) > getSchoolYearEnd()) {
+    return res.status(400).json({ error: 'תאריך ההתחלה מאוחר מסוף שנת הלימודים' });
+  }
+  const weeks = weeksForScheduleChange(week_start, day_of_week, changeScope);
   const classKeys = classes.map(c => `${String(c.class_year)}_${String(c.class_parallel)}`);
   if (new Set(classKeys).size !== classKeys.length) {
     return res.status(400).json({ error: 'כיתה נבחרה יותר מפעם אחת' });
