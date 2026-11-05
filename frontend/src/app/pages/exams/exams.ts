@@ -315,8 +315,10 @@ examData.year = this.newExam.year.trim() || undefined;
 this.api.createExam(examData).subscribe({
 next: (result) => {
 const codeParams: any = {};
-if (this.newExam.filterMode === 'class') {
-  codeParams.parallel = examData.parallel || undefined;
+if (this.newExam.filterMode === 'class' && examData.parallel) {
+  codeParams.parallel = examData.parallel;
+} else if (this.newExam.filterMode === 'class' && !examData.parallel) {
+  // לא נבחרה כיתה ספציפית — ניצור ברקודים לכל התלמידות
 } else {
   if (examData.track) codeParams.track = examData.track;
   if (examData.year)  codeParams.year  = examData.year;
