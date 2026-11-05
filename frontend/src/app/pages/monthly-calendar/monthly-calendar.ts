@@ -453,12 +453,15 @@ interface GanttRow {
         <!-- Mixed: dots -->
         <span *ngIf="visibleItems(cd).length && !onlyScheduleOrExams()"
               class="event-markers" aria-hidden="true">
-          <span *ngFor="let item of visibleItems(cd).slice(0,4)" class="event-dot"
-                [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
-                [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
-                [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
-                [class.completed-dot]="item.kind==='task' && item.completed"
-                [style.background]="dotColor(item)"></span>
+          <ng-container *ngFor="let item of visibleItems(cd).slice(0,4)">
+            <span *ngIf="item.kind !== 'wedding'" class="event-dot"
+                  [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
+                  [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
+                  [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
+                  [class.completed-dot]="item.kind==='task' && item.completed"
+                  [style.background]="dotColor(item)"></span>
+            <span *ngIf="item.kind === 'wedding'" class="wedding-dot-icon" title="{{ item.wedding?.name }}">💍</span>
+          </ng-container>
           <span *ngIf="visibleItems(cd).length > 4" class="more-events">+{{ visibleItems(cd).length-4 }}</span>
         </span>
 
@@ -469,6 +472,7 @@ interface GanttRow {
             <ng-container *ngIf="item.kind==='task'">{{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span><span *ngIf="item.task?.visibility==='shared'"> (👥 {{ item.task?.creator_name }})</span></ng-container>
             <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
             <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
+            <ng-container *ngIf="item.kind==='wedding'">💍 {{ item.wedding?.name }}{{ item.wedding?.wedding_venue ? ' · 📍' + item.wedding?.wedding_venue : '' }}</ng-container>
           </span>
         </span>
       </button>
@@ -594,7 +598,7 @@ interface GanttRow {
         <a [routerLink]="['/students', s.id_number]"><strong>{{ s.name }}</strong></a>
         <span>{{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
         <span *ngIf="s.wedding_venue" class="wedding-venue-label">📍 {{ s.wedding_venue }}</span>
-        <span *ngIf="!s.wedding_venue" class="wedding-venue-label" style="color:var(--border)">📍 מקום לא הוזן</span>
+        <span *ngIf="!s.wedding_venue" class="wedding-venue-label no-venue">📍 מקום לא הוזן</span>
       </div>
     </div>
   </ng-container>
@@ -759,7 +763,9 @@ interface GanttRow {
     .wedding-chip:not(.active):hover { border-color: #ec4899; color: #ec4899; background: #fdf2f8; }
     .wedding-row { background: linear-gradient(135deg, #fdf2f8, var(--surface)); border-color: #f9a8d4 !important; }
     .wedding-heart { font-size: 1.1rem; flex-shrink: 0; }
-    .wedding-venue-label { font-size: 0.75rem; color: var(--text-muted); display: block; }
+    .wedding-venue-label { font-size: 0.75rem; color: #be185d; font-weight: 700; display: block; }
+    .wedding-venue-label.no-venue { color: var(--text-muted); font-weight: 400; font-style: italic; }
+    .wedding-dot-icon { font-size: 0.75rem; line-height: 1; flex-shrink: 0; }
 
     /* ── Calendar grid ── */
     .month-card {
