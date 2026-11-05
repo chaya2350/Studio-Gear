@@ -370,6 +370,7 @@ interface CtxMenu {
   <span class="legend-item" *ngIf="has('personal')">
     <span class="legend-dot task-dot"></span> משימה פרטית
     <span class="legend-dot public-task-dot"></span> משימה ציבורית
+    <span class="legend-dot shared-task-dot"></span> משימה משותפת
     <span class="legend-dot completed-dot"></span> בוצעה
   </span>
   <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
@@ -414,6 +415,7 @@ interface CtxMenu {
           <span *ngFor="let item of visibleItems(cd).slice(0,4)" class="event-dot"
                 [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
                 [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
+                [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
                 [class.completed-dot]="item.kind==='task' && item.completed"
                 [style.background]="dotColor(item)"></span>
           <span *ngIf="visibleItems(cd).length > 4" class="more-events">+{{ visibleItems(cd).length-4 }}</span>
@@ -650,6 +652,7 @@ interface CtxMenu {
     .equipment-dot  { background: #0d9488; }
     .task-dot       { background: #6366f1; }
     .public-task-dot{ background: #f59e0b; }
+    .shared-task-dot{ background: #8b5cf6; }
     .completed-dot  { background: #10b981; }
     .exam-dot       { background: #e11d48; }
     .event-sample-dot { background: #0891b2; }
