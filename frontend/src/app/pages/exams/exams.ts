@@ -311,7 +311,14 @@ this.api.createExam(examData).subscribe({
 next: (result) => {
 this.creating.set(false);
 this.loadExams();
-this.api.generateExamCodes(result.id, examData.parallel ? { parallel: examData.parallel } : { track: examData.track, year: examData.year }).subscribe({
+const codeParams: any = {};
+if (this.newExam.filterMode === 'class') {
+  codeParams.parallel = examData.parallel || undefined;
+} else {
+  if (examData.track) codeParams.track = examData.track;
+  if (examData.year)  codeParams.year  = examData.year;
+}
+this.api.generateExamCodes(result.id, codeParams).subscribe({
 next: (r) => {
 this.message.set(`המבחן נשמר ונוצרו ברקודים ל-${r.created} תלמידות.`);
 this.loadExams();

@@ -175,7 +175,13 @@ class="section-tab"
 <div class="user-form">
 <input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
 <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
-<input [(ngModel)]="newUser.password" type="password" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
+<div class="password-input-wrap" style="flex:1; min-width:120px;">
+  <input [(ngModel)]="newUser.password" [type]="showNewUserPassword() ? 'text' : 'password'" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
+  <button class="password-visibility" type="button" (click)="showNewUserPassword.update(v => !v)">
+    <svg *ngIf="!showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+    <svg *ngIf="showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+  </button>
+</div>
 <select [(ngModel)]="newUser.role" aria-label="תפקיד">
 <option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
 </select>
@@ -974,6 +980,7 @@ error: error => this.userError.set(error.error?.error || 'לא ניתן ליצו
 passwordTarget = signal<UserAccount | null>(null);
 newPassword = signal('');
 showNewPassword = signal(false);
+showNewUserPassword = signal(false);
 
 // עריכת פרטי משתמשת
 editingUser = signal<UserAccount | null>(null);
