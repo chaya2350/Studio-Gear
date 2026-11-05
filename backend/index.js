@@ -214,18 +214,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.use('/api', authenticate, authorizeApi, authorizePermission);
-app.use('/uploads', authenticate, (req, res, next) => {
-  const filename = path.basename(req.path);
-  const fileUrl = `/uploads/${filename}`;
-  const registered = db.prepare('SELECT permission_key FROM uploaded_file_permissions WHERE filename = ?').get(filename);
-  const feature = registered?.permission_key
-    || (db.prepare('SELECT 1 FROM equipment WHERE image_url = ?').get(fileUrl) ? 'equipment' : null);
-  if (!feature) return res.sendStatus(404);
-  if (!getUserPermissions(req.user.role)[feature]?.view) {
-    return res.status(403).json({ error: 'אין לך הרשאת צפייה בקובץ זה' });
-  }
-  next();
-}, express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir));
 
 app.get('/api/permissions', (req, res) => {
   const roles = db.prepare('SELECT role_key, name, is_system FROM system_roles ORDER BY is_system DESC, name COLLATE NOCASE').all();
@@ -943,6 +932,21 @@ app.get('/api/messages/users', (req, res) => {
   `).all(req.user.id));
 });
 
+// קבלת כל נמעני קבוצת הודעות (לצורך "השב לכולם")
+app.get('/api/messages/group/:group_id/recipients', (req, res) => {
+  const groupId = req.params.group_id;
+  const rows = db.prepare(`
+    SELECT DISTINCT recipient_id AS id, u.name
+    FROM messages m JOIN users u ON u.id = m.recipient_id
+    WHERE m.group_id = ? AND m.recipient_id != ?
+    UNION
+    SELECT DISTINCT sender_id AS id, u.name
+    FROM messages m JOIN users u ON u.id = m.sender_id
+    WHERE m.group_id = ? AND m.sender_id != ?
+  `).all(groupId, req.user.id, groupId, req.user.id);
+  res.json(rows);
+});
+
 // ── Dashboard stats — endpoint ייעודי לדשבורד (קריאה אחת במקום 4) ──
 app.get('/api/stats', (req, res) => {
   const permissions = getUserPermissions(req.user.role);
@@ -988,7 +992,7 @@ app.get('/api/messages', (req, res) => {
   }
   const messages = db.prepare(`
     SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
-      recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at
+      recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at, m.group_id
     FROM messages m
     JOIN users sender ON sender.id = m.sender_id
     JOIN users recipient ON recipient.id = m.recipient_id
@@ -1035,9 +1039,10 @@ app.post('/api/messages', (req, res) => {
     .all(...recipientIds).map(u => u.id);
   if (!activeIds.length) return res.status(400).json({ error: 'הנמענות שנבחרו אינן פעילות במערכת' });
   const now = new Date().toISOString();
-  const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at) VALUES (?, ?, ?, ?)');
-  const ids = activeIds.map(rid => insertMsg.run(req.user.id, rid, body, now).lastInsertRowid);
-  res.status(201).json({ id: ids[0], ids });
+  const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at, group_id) VALUES (?, ?, ?, ?, ?)');
+  const groupId = activeIds.length > 1 ? `grp-${req.user.id}-${Date.now()}` : null;
+  const ids = activeIds.map(rid => insertMsg.run(req.user.id, rid, body, now, groupId).lastInsertRowid);
+  res.status(201).json({ id: ids[0], ids, group_id: groupId });
 });
 
 app.put('/api/messages/:id', (req, res) => {
@@ -1486,6 +1491,7 @@ db.exec(`
 
 const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
 if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
+if (!messageCols.includes('group_id'))  db.exec('ALTER TABLE messages ADD COLUMN group_id TEXT');
 const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
 const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
 if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');

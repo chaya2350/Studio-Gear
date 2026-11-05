@@ -26,6 +26,7 @@ export interface DirectMessage {
   edited_at: string | null;
   read_at: string | null;
   reactions: MessageReaction[];
+  group_id: string | null;
 }
 
 export interface PersonalTask {
@@ -92,6 +93,10 @@ export class MessagesService {
 
   rescheduleTask(taskId: number, due_date: string): Observable<{ success: boolean }> {
     return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/due-date`, { due_date });
+  }
+
+  getGroupRecipients(groupId: string): Observable<{id: number; name: string}[]> {
+    return this.http.get<{id: number; name: string}[]>(`/api/messages/group/${encodeURIComponent(groupId)}/recipients`);
   }
 
   deleteTask(taskId: number): Observable<{ success: boolean }> {

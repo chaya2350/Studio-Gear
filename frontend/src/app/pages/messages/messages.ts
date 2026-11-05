@@ -86,7 +86,9 @@ placeholder="כתבי הודעה..."></textarea>
 </div>
 <div style="display:flex;gap:6px;align-items:center">
 <button class="reply-button" type="button" (click)="startEdit(message)">✏️</button>
-<button class="reply-button" type="button" (click)="reply(message)">השיבי ↩</button>
+<button class="reply-button" type="button" (click)="reply(message)">
+  {{ message.group_id ? 'השב לכולם ↩' : 'השיבי ↩' }}
+</button>
 </div>
 </div>
 <ng-container *ngIf="editingMessageId === message.id; else showBody">
@@ -410,8 +412,29 @@ const currentId = this.auth.user()?.id;
 const recipientId = message.sender_id === currentId ? message.recipient_id : message.sender_id;
 const recipient = this.users.find(user => user.id === recipientId);
 if (!recipient) { this.sendError = 'המשתמשת אינה פעילה עוד במערכת'; return; }
-this.recipientIds = [recipient.id];
-this.replyToName = recipient.name;
+
+// אם יש group_id — מציעים השב לכולם
+if (message.group_id) {
+  this.messagesApi.getGroupRecipients(message.group_id).subscribe({
+    next: (others) => {
+      const allIds = [recipient.id, ...others.map(o => o.id).filter(id => id !== recipient.id)];
+      this.recipientIds = allIds;
+      this.replyToName = allIds.length > 1
+        ? `${recipient.name} ועוד ${allIds.length - 1}`
+        : recipient.name;
+      this.sendError = '';
+      this.sendSuccess = '';
+      this.changeDetector.markForCheck();
+    },
+    error: () => {
+      this.recipientIds = [recipient.id];
+      this.replyToName = recipient.name;
+    }
+  });
+} else {
+  this.recipientIds = [recipient.id];
+  this.replyToName = recipient.name;
+}
 this.sendError = '';
 this.sendSuccess = '';
 }
