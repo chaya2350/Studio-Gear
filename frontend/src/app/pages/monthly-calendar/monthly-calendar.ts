@@ -287,16 +287,25 @@ interface CtxMenu {
 <p *ngIf="!layers().size"  class="empty-state">בחרי לפחות לוח אחד להצגה</p>
 
 <!-- Legend -->
-<div class="calendar-legend">
-  <span class="legend-item" *ngIf="has('equipment')"><span class="legend-dot equipment-dot"></span> ציוד מושאל</span>
-  <span class="legend-item" *ngIf="has('personal')">
-    <span class="legend-dot task-dot"></span> משימה פרטית
-    <span class="legend-dot public-task-dot"></span> משימה ציבורית
-    <span class="legend-dot completed-dot"></span> בוצעה
-  </span>
-  <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
-  <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
-  <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
+<div class="calendar-legend-wrap">
+  <button type="button" class="legend-toggle" (click)="legendOpen.set(!legendOpen())">
+    <span>מקרא</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"
+         [style.transform]="legendOpen() ? 'rotate(180deg)' : 'rotate(0)'" style="transition:transform .2s">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </button>
+  <div *ngIf="legendOpen()" class="calendar-legend">
+    <span class="legend-item" *ngIf="has('equipment')"><span class="legend-dot equipment-dot"></span> ציוד מושאל</span>
+    <span class="legend-item" *ngIf="has('personal')">
+      <span class="legend-dot task-dot"></span> משימה פרטית
+      <span class="legend-dot public-task-dot"></span> משימה ציבורית
+      <span class="legend-dot completed-dot"></span> בוצעה
+    </span>
+    <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
+    <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
+    <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
+  </div>
 </div>
 
 <!-- ── Calendar grid ── -->
@@ -546,9 +555,19 @@ interface CtxMenu {
     .upload-error   { flex-basis: 100%; margin: 0; font-size: 0.83rem; color: var(--danger); }
 
     /* ── Legend ── */
+    .calendar-legend-wrap { margin: 0 0 12px; }
+    .legend-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 5px 12px; font: inherit; font-size: 0.78rem; font-weight: 700;
+      color: var(--text-muted); cursor: pointer;
+      &:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    }
     .calendar-legend {
       display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-      margin: 0 0 12px; color: var(--text-muted); font-size: 0.78rem;
+      margin: 8px 0 0; padding: 10px 12px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text-muted); font-size: 0.78rem;
     }
     .legend-item { display: inline-flex; align-items: center; gap: 5px; }
     .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -733,6 +752,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   // ── Context menu ──
   readonly ctxMenu = signal<CtxMenu | null>(null);
+
+  // ── Legend collapse ──
+  readonly legendOpen = signal(false);
 
   // ── Dialogs ──
   readonly addTaskOpen  = signal(false);
@@ -987,8 +1009,6 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         this.api.getExams().subscribe(v => this.exams.set(v));
         this.closeDialogs();
         if (!this.has('exams')) this.toggleLayer('exams');
-        // ניווט לטאב מבחנים
-        this.router.navigate(['/calendar/exams'], { queryParams: { date: this.selectedDate() } });
       },
       error: e => this.dialogError.set(e.error?.error || 'שמירה נכשלה')
     });

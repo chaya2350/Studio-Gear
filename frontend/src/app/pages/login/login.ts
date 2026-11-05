@@ -26,14 +26,20 @@ required
 </div>
 <div class="form-group">
 <label for="password">סיסמה</label>
+<div class="password-wrap">
 <input
 id="password"
 name="password"
-type="password"
+[type]="showPassword ? 'text' : 'password'"
 [(ngModel)]="password"
 autocomplete="current-password"
 required
 />
+<button type="button" class="eye-btn" (click)="showPassword=!showPassword" [attr.aria-label]="showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'">
+  <svg *ngIf="!showPassword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+  <svg *ngIf="showPassword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+</button>
+</div>
 </div>
 <div *ngIf="error()" class="alert alert-error" role="alert"> {{ error() }}</div>
 <button class="btn btn-primary" type="submit" [disabled]="loading()">
@@ -87,6 +93,16 @@ box-shadow: var(--shadow-lg);
 .form-group {
 margin-bottom: 14px;
 }
+.password-wrap {
+  position: relative; display: flex; align-items: center;
+  input { width: 100%; padding-left: 40px; }
+}
+.eye-btn {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px;
+  display: flex; align-items: center;
+  &:hover { color: var(--primary); }
+}
 button {
 width: 100%;
 margin-top: 6px;
@@ -98,6 +114,7 @@ justify-content: center;
 export class LoginComponent {
 email = '';
 password = '';
+showPassword = false;
 loading = signal(false);
 error = signal('');
 

@@ -395,6 +395,34 @@ if (!requestCols.includes('granted_seen_at')) db.exec('ALTER TABLE page_access_r
 const calEventCols = db.prepare('PRAGMA table_info(calendar_events)').all().map(c => c.name);
 if (!calEventCols.includes('notes')) db.exec("ALTER TABLE calendar_events ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
 
+// תיק סרוק — מסמכים של תלמידה
+db.exec(`
+  CREATE TABLE IF NOT EXISTS student_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_number TEXT NOT NULL REFERENCES students(id_number) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    file_url  TEXT NOT NULL,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS student_documents_student_idx ON student_documents(id_number);
+`);
+
+// לוח מודעות לתלמידה
+db.exec(`
+  CREATE TABLE IF NOT EXISTS student_notices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_number TEXT NOT NULL REFERENCES students(id_number) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    notice_date TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'staff' CHECK (visibility IN ('staff','student','all')),
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS student_notices_student_idx ON student_notices(id_number);
+`);
+
 // Migration: personal_tasks — הוספת עמודת visibility וביטול חובת source_message_id
 const taskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
 if (!taskCols.includes('visibility')) db.exec("ALTER TABLE personal_tasks ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
@@ -1593,6 +1621,72 @@ app.get('/api/students/:id_number/details', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
   res.json(mapStudentRow(student));
+});
+
+// ── תיק סרוק (מסמכים) ──────────────────────────────────────
+app.get('/api/students/:id_number/documents', (req, res) => {
+  const docs = db.prepare(`
+    SELECT d.id, d.file_name, d.file_url, d.created_at, u.name AS uploaded_by_name
+    FROM student_documents d LEFT JOIN users u ON u.id = d.uploaded_by
+    WHERE d.id_number = ? ORDER BY d.created_at DESC
+  `).all(req.params.id_number);
+  res.json(docs);
+});
+
+app.post('/api/students/:id_number/documents', xlsxUpload.single('file'), (req, res) => {
+  const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
+  const ALLOWED = ['application/pdf','image/jpeg','image/png','image/webp','image/gif',
+    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  if (!ALLOWED.includes(req.file.mimetype)) return res.status(400).json({ error: 'סוג קובץ לא מורשה' });
+  // שמירה ב-uploads
+  const ext = require('path').extname(req.file.originalname) || '';
+  const fname = `${Date.now()}-doc${ext}`;
+  require('fs').writeFileSync(require('path').join(uploadsDir, fname), req.file.buffer);
+  const fileUrl = `/uploads/${fname}`;
+  const result = db.prepare(`
+    INSERT INTO student_documents (id_number, file_name, file_url, uploaded_by) VALUES (?, ?, ?, ?)
+  `).run(req.params.id_number, req.file.originalname, fileUrl, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid, file_name: req.file.originalname, file_url: fileUrl });
+});
+
+app.delete('/api/students/:id_number/documents/:doc_id', (req, res) => {
+  db.prepare('DELETE FROM student_documents WHERE id = ? AND id_number = ?')
+    .run(Number(req.params.doc_id), req.params.id_number);
+  res.json({ success: true });
+});
+
+// ── לוח מודעות ──────────────────────────────────────────────
+app.get('/api/students/:id_number/notices', (req, res) => {
+  const notices = db.prepare(`
+    SELECT n.id, n.title, n.body, n.notice_date, n.visibility, n.created_at, u.name AS created_by_name
+    FROM student_notices n LEFT JOIN users u ON u.id = n.created_by
+    WHERE n.id_number = ? ORDER BY n.notice_date DESC, n.id DESC
+  `).all(req.params.id_number);
+  res.json(notices);
+});
+
+app.post('/api/students/:id_number/notices', (req, res) => {
+  const title = String(req.body?.title || '').trim();
+  const body  = String(req.body?.body  || '').trim();
+  const notice_date = req.body?.notice_date;
+  const visibility  = String(req.body?.visibility || 'staff');
+  if (!title) return res.status(400).json({ error: 'כותרת חסרה' });
+  if (!body)  return res.status(400).json({ error: 'תוכן חסר' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(notice_date || '')) return res.status(400).json({ error: 'תאריך לא תקין' });
+  if (!['staff','student','all'].includes(visibility)) return res.status(400).json({ error: 'נראות לא תקינה' });
+  const result = db.prepare(`
+    INSERT INTO student_notices (id_number, title, body, notice_date, visibility, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.params.id_number, title, body, notice_date, visibility, req.user.id);
+  res.status(201).json({ id: result.lastInsertRowid });
+});
+
+app.delete('/api/students/:id_number/notices/:notice_id', (req, res) => {
+  db.prepare('DELETE FROM student_notices WHERE id = ? AND id_number = ?')
+    .run(Number(req.params.notice_id), req.params.id_number);
+  res.json({ success: true });
 });
 
 app.delete('/api/students/:id_number', (req, res) => {
