@@ -399,7 +399,13 @@ error: (e) => this.error.set(e.error?.error || 'שליחת הבקשה נכשלה
 }
 return;
 }
-this.api.getPage(p.id).subscribe(page => this.viewingPage.set(page));
+this.api.getPage(p.id).subscribe(page => {
+  this.viewingPage.set(page);
+  // אם הגישה זה עתה אושרה — סמן שנפתחה (מנקה את badge "קיבלת גישה")
+  if (p.my_request_status === 'approved' && this.selectedTopic()) {
+    this.loadPages(this.selectedTopic()!.id);
+  }
+});
 }
 
 closePage() {
