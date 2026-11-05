@@ -1187,9 +1187,9 @@ loadTrackNames() {
   this.api.getStudents().subscribe({
     next: students => {
       const names = [...new Set(
-        students.flatMap((s: any) =>
-          (s.track || '').split(/[\/ ,،]+/).map((t: string) => t.trim()).filter(Boolean)
-        )
+        students
+          .map((s: any) => (s.track || '').trim())
+          .filter(Boolean)
       )];
       mergeNames(names);
     },
