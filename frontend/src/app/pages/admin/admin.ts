@@ -1172,28 +1172,37 @@ loadingTracks = signal(false);
 
 loadTrackNames() {
   this.loadingTracks.set(true);
-  const mergeNames = (extra: string[]) => {
-    const existing = this.trackNames();
-    const all = [...new Set([...existing, ...extra].filter(Boolean))].sort();
-    this.trackNames.set(all);
+
+  const normalize = (track: string): string =>
+    track.trim()
+      .split('/')[0]
+      .replace(/\s*[-–—]\s*ללא מיסים\s*/gi, '')
+      .replace(/\s*ללא מיסים\s*/gi, '')
+      .replace(/\s*[-–—]\s*$/g, '')
+      .trim();
+
+  const rawNames: string[] = [];
+  let pending = 2; // שני קריאות API
+
+  const finalize = () => {
+    pending--;
+    if (pending > 0) return;
+    const unique = [...new Set(rawNames.map(normalize).filter(Boolean))].sort();
+    this.trackNames.set(unique);
     this.loadingTracks.set(false);
   };
 
   this.api.getTracks().subscribe({
-    next: r => mergeNames(r.tracks.map((t: any) => t.name)),
-    error: () => { this.loadingTracks.set(false); }
+    next: r => { rawNames.push(...r.tracks.map((t: any) => t.name)); finalize(); },
+    error: () => finalize()
   });
 
   this.api.getStudents().subscribe({
     next: students => {
-      const names = [...new Set(
-        students
-          .map((s: any) => (s.track || '').trim())
-          .filter(Boolean)
-      )];
-      mergeNames(names);
+      rawNames.push(...students.map((s: any) => (s.track || '').trim().split('/')[0].trim()));
+      finalize();
     },
-    error: () => { this.loadingTracks.set(false); }
+    error: () => finalize()
   });
 }
 
