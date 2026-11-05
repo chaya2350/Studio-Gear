@@ -100,6 +100,10 @@ template: `
 <input name="phone" [(ngModel)]="studentDraft.phone">
 </label>
 <label class="field">
+<span>כתובת</span>
+<input name="address" [(ngModel)]="studentDraft.address">
+</label>
+<label class="field">
 <span>מסלול</span>
 <input name="track" [(ngModel)]="studentDraft.track">
 </label>
@@ -274,6 +278,67 @@ template: `
 </div>
 </div>
 
+<!-- ── לוח מודעות ── -->
+<div class="card notices-card">
+  <div class="section-title-row">
+    <div class="section-title">📋 לוח מודעות</div>
+    <button *ngIf="auth.hasPermission('students','change')"
+            class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;"
+            (click)="noticeFormOpen.set(!noticeFormOpen())">
+      {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
+    </button>
+  </div>
+
+  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','change')" class="notice-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label>כותרת *</label>
+        <input [(ngModel)]="newNotice.title" placeholder="כותרת המודעה">
+      </div>
+      <div class="form-group">
+        <label>תאריך *</label>
+        <input type="date" [(ngModel)]="newNotice.notice_date">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>תוכן *</label>
+      <textarea [(ngModel)]="newNotice.body" rows="3" placeholder="תוכן המודעה..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>מי רואה?</label>
+      <div class="visibility-chips">
+        <button type="button" [class.active]="newNotice.visibility==='staff'" (click)="newNotice.visibility='staff'">👩‍💼 צוות בלבד</button>
+        <button type="button" [class.active]="newNotice.visibility==='student'" (click)="newNotice.visibility='student'">👩‍🎓 תלמידה בלבד</button>
+        <button type="button" [class.active]="newNotice.visibility==='all'" (click)="newNotice.visibility='all'">🌐 כולם</button>
+      </div>
+    </div>
+    <p *ngIf="noticeError()" class="edit-error">{{ noticeError() }}</p>
+    <button class="btn btn-primary" [disabled]="savingNotice()" (click)="saveNotice()">
+      {{ savingNotice() ? 'שומר...' : 'הוסף מודעה' }}
+    </button>
+  </div>
+
+  <div *ngIf="!visibleNotices().length && !noticeFormOpen()" class="req-note">אין מודעות עדיין</div>
+
+  <div class="notices-board">
+    <div *ngFor="let n of visibleNotices()" class="notice-pin" [class]="'pin-' + n.visibility">
+      <div class="pin-dot"></div>
+      <div class="pin-body">
+        <div class="pin-header">
+          <span class="notice-vis-badge" [class]="'vis-' + n.visibility">
+            {{ n.visibility === 'staff' ? '👩‍💼 צוות' : n.visibility === 'student' ? '👩‍🎓 תלמידה' : '🌐 כולם' }}
+          </span>
+          <span class="notice-date">{{ n.notice_date }}</span>
+          <button *ngIf="auth.hasPermission('students','change')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+        </div>
+        <strong class="notice-title">{{ n.title }}</strong>
+        <p class="notice-body">{{ n.body }}</p>
+        <span *ngIf="n.created_by_name" class="doc-meta">{{ n.created_by_name }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card" *ngIf="activeLoans().length">
 <div class="section-title"> השאלות פעילות</div>
 <div *ngFor="let l of activeLoans()" class="loan-row active">
@@ -443,69 +508,6 @@ type="checkbox"
     <a [href]="doc.file_url" target="_blank" rel="noopener" class="doc-name">{{ doc.file_name }}</a>
     <span class="doc-meta">{{ doc.created_at | date:'dd/MM/yy' }} · {{ doc.uploaded_by_name || '' }}</span>
     <button class="doc-del" (click)="deleteDocument(doc)" title="מחיקה">✕</button>
-  </div>
-</div>
-
-<!-- ── לוח מודעות ── -->
-<div class="card" style="margin-top:20px;">
-  <div class="section-title-row">
-    <div class="section-title">📋 לוח מודעות</div>
-    <button *ngIf="auth.hasPermission('students','change')"
-            class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;"
-            (click)="noticeFormOpen.set(!noticeFormOpen())">
-      {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
-    </button>
-  </div>
-
-  <!-- טופס הוספה -->
-  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','change')" class="notice-form">
-    <div class="form-row">
-      <div class="form-group">
-        <label>כותרת *</label>
-        <input [(ngModel)]="newNotice.title" placeholder="כותרת המודעה">
-      </div>
-      <div class="form-group">
-        <label>תאריך *</label>
-        <input type="date" [(ngModel)]="newNotice.notice_date">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>תוכן *</label>
-      <textarea [(ngModel)]="newNotice.body" rows="3" placeholder="תוכן המודעה..."></textarea>
-    </div>
-    <div class="form-group">
-      <label>מי רואה?</label>
-      <div class="visibility-chips">
-        <button type="button" [class.active]="newNotice.visibility==='staff'" (click)="newNotice.visibility='staff'">👩‍💼 צוות בלבד</button>
-        <button type="button" [class.active]="newNotice.visibility==='student'" (click)="newNotice.visibility='student'">👩‍🎓 תלמידה בלבד</button>
-        <button type="button" [class.active]="newNotice.visibility==='all'" (click)="newNotice.visibility='all'">🌐 כולם</button>
-      </div>
-    </div>
-    <p *ngIf="noticeError()" class="edit-error">{{ noticeError() }}</p>
-    <button class="btn btn-primary" [disabled]="savingNotice()" (click)="saveNotice()">
-      {{ savingNotice() ? 'שומר...' : 'הוסף מודעה' }}
-    </button>
-  </div>
-
-  <!-- רשימת מודעות -->
-  <div *ngIf="!visibleNotices().length && !noticeFormOpen()" class="req-note">אין מודעות עדיין</div>
-
-  <div class="notices-board">
-    <div *ngFor="let n of visibleNotices()" class="notice-pin" [class]="'pin-' + n.visibility">
-      <div class="pin-dot"></div>
-      <div class="pin-body">
-        <div class="pin-header">
-          <span class="notice-vis-badge" [class]="'vis-' + n.visibility">
-            {{ n.visibility === 'staff' ? '👩‍💼 צוות' : n.visibility === 'student' ? '👩‍🎓 תלמידה' : '🌐 כולם' }}
-          </span>
-          <span class="notice-date">{{ n.notice_date }}</span>
-          <button *ngIf="auth.hasPermission('students','change')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
-        </div>
-        <strong class="notice-title">{{ n.title }}</strong>
-        <p class="notice-body">{{ n.body }}</p>
-        <span *ngIf="n.created_by_name" class="doc-meta">{{ n.created_by_name }}</span>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -867,7 +869,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
+studentDraft = { name: '', phone: '', address: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -1149,6 +1151,7 @@ if (!current) return;
 this.studentDraft = {
 name: current.name,
 phone: current.phone || '',
+address: current.address || '',
 phone_code: current.phone_code || '',
 track: current.track || '',
 year: current.year || '',

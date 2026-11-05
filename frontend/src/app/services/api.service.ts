@@ -174,7 +174,7 @@ export class ApiService {
   updateStudentPhoto(id_number: string, photo_url: string) {
     return this.http.patch<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id_number)}/photo`, { photo_url });
   }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & { parallel?: string }) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & Partial<Pick<Student, 'address' | 'marital_status' | 'married_name' | 'personal_phone' | 'wedding_date' | 'wedding_venue'>> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
   }
   deleteStudent(id_number: string) {
