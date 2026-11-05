@@ -277,16 +277,46 @@ class="section-tab"
   <!-- כיתה ומסלול -->
   <div class="reg-section-title">כיתה ומסלול</div>
   <div class="form-row">
-    <div class="form-group"><label>כיתה (שנה)</label><input [(ngModel)]="newStudentDraft.year" placeholder="ה, ו..."></div>
+    <div class="form-group"><label>כיתה (שנה)</label>
+      <select [(ngModel)]="newStudentDraft.year">
+        <option value="">בחרי כיתה</option>
+        <option value="ד">ד</option>
+        <option value="ה">ה</option>
+        <option value="ו">ו</option>
+      </select>
+    </div>
     <div class="form-group"><label>מקבילה</label><input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3..."></div>
     <div class="form-group"><label>מגמה</label><input [(ngModel)]="newStudentDraft.track" placeholder="מגמה"></div>
     <div class="form-group"><label>התמחות 1</label><input [(ngModel)]="newStudentDraft.specialization1" placeholder="התמחות ראשונה"></div>
   </div>
   <div class="form-row">
     <div class="form-group"><label>התמחות 2</label><input [(ngModel)]="newStudentDraft.specialization2" placeholder="התמחות שנייה"></div>
-    <div class="form-group"><label>אופציה ב</label><input [(ngModel)]="newStudentDraft.option_b" placeholder="אופציה ב"></div>
-    <div class="form-group"><label>הוראה</label><input [(ngModel)]="newStudentDraft.teaching" placeholder="הוראה"></div>
-    <div class="form-group"><label>מדפית / פרח</label><input [(ngModel)]="newStudentDraft.practice_teaching" placeholder="מדפית/פרח"></div>
+    <div class="form-group">
+      <label>אופציה ב</label>
+      <div class="check-field">
+        <select [(ngModel)]="newStudentDraft.option_b" style="flex:1">
+          <option value="">—</option>
+          <option value="א">א</option>
+          <option value="ב">ב</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>הוראה</label>
+      <div class="check-field">
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="newStudentDraft.teaching"> ✓ כן
+        </label>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>פרח</label>
+      <div class="check-field">
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="newStudentDraft.practice_teaching"> ✓ כן
+        </label>
+      </div>
+    </div>
   </div>
 
   <!-- כתובת -->
@@ -307,12 +337,12 @@ class="section-tab"
   <div class="form-row">
     <div class="form-group"><label>שם האב</label><input [(ngModel)]="newStudentDraft.father_name" placeholder="שם האב"></div>
     <div class="form-group"><label>נייד אבא</label><input [(ngModel)]="newStudentDraft.father_phone" placeholder="050-0000000"></div>
-    <div class="form-group"><label>אבא חוץ</label><input [(ngModel)]="newStudentDraft.father_external" placeholder="קישור חוץ"></div>
+    <div class="form-group"><label>ארץ לידה אב</label><input [(ngModel)]="newStudentDraft.father_external" placeholder="ישראל"></div>
   </div>
   <div class="form-row">
     <div class="form-group"><label>שם האם</label><input [(ngModel)]="newStudentDraft.mother_name" placeholder="שם האמא"></div>
     <div class="form-group"><label>נייד אמא</label><input [(ngModel)]="newStudentDraft.mother_phone" placeholder="050-0000000"></div>
-    <div class="form-group"><label>אמא חוץ</label><input [(ngModel)]="newStudentDraft.mother_external" placeholder="קישור חוץ"></div>
+    <div class="form-group"><label>ארץ לידה אם</label><input [(ngModel)]="newStudentDraft.mother_external" placeholder="ישראל"></div>
   </div>
 
   <!-- סטטוס ורישום -->
@@ -762,6 +792,10 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
   color: var(--primary); margin: 16px 0 8px; padding-bottom: 4px;
   border-bottom: 2px solid var(--primary-light);
 }
+.check-field { display: flex; align-items: center; height: 38px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text);
+  input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+}
 .teacher-add-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: flex-end; }
 @media (max-width: 700px) { .teacher-add-form { grid-template-columns: 1fr; } }
 .field-label { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); display: grid; gap: 5px; }
@@ -883,7 +917,7 @@ newStudentDraft = {
   address: '', house_number: '', city: '', zip: '', birth_date: '', birth_date_hebrew: '', birth_country: '',
   personal_phone: '', father_name: '', father_phone: '', father_external: '',
   mother_name: '', mother_phone: '', mother_external: '',
-  specialization1: '', specialization2: '', option_b: '', teaching: '', practice_teaching: '',
+  specialization1: '', specialization2: '', option_b: '', teaching: false, practice_teaching: false,
   marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
 };
 
@@ -915,12 +949,12 @@ saveNewStudent() {
   addExtra('אבא חוץ', d.father_external);
   addExtra('שם האם', d.mother_name);
   addExtra('נייד אמא', d.mother_phone);
-  addExtra('אמא חוץ', d.mother_external);
+  addExtra('ארץ לידה אם', d.mother_external);
   addExtra('התמחות 1', d.specialization1);
   addExtra('התמחות 2', d.specialization2);
-  addExtra('אופציה ב', d.option_b);
-  addExtra('הוראה', d.teaching);
-  addExtra('מדפית', d.practice_teaching);
+  addExtra('אופציה ב', String(d.option_b || ''));
+  if (d.teaching) extraData['הוראה'] = 'כן';
+  if (d.practice_teaching) extraData['פרח'] = 'כן';
   addExtra('מס. רישום', d.reg_number);
   addExtra('דמי רישום', d.reg_fee);
   addExtra('א. תשלום רשום', d.payment_confirmed);
@@ -952,7 +986,7 @@ saveNewStudent() {
         address: '', house_number: '', city: '', zip: '', birth_date: '', birth_date_hebrew: '', birth_country: '',
         personal_phone: '', father_name: '', father_phone: '', father_external: '',
         mother_name: '', mother_phone: '', mother_external: '',
-        specialization1: '', specialization2: '', option_b: '', teaching: '', practice_teaching: '',
+        specialization1: '', specialization2: '', option_b: '', teaching: false, practice_teaching: false,
         marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
       };
       this.newStudentDraft = emptyDraft;
