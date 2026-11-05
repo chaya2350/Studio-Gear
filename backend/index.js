@@ -698,7 +698,7 @@ app.post('/api/calendar-events', async (req, res) => {
     res.status(201).json({ id: result.lastInsertRowid });
   } catch (err) {
     console.error('calendar-events POST error:', err);
-    res.status(500).json({ error: 'שגיאה בשמירת האירוע: ' + (err.message || err) );
+    res.status(500).json({ error: 'שגיאה בשמירת האירוע: ' + (err.message || err) });
   }
 });
 
