@@ -1169,8 +1169,29 @@ this.http.get<UserAccount[]>('/api/users').subscribe(users => this.users.set(use
 trackNames = signal<string[]>([]);
 
 loadTrackNames() {
+  // נטען מסלולים מהתלמידות (מקור אמין) ומהגדרות המסלולים
+  const mergeNames = (extra: string[]) => {
+    const existing = this.trackNames();
+    const all = [...new Set([...existing, ...extra].filter(Boolean))].sort();
+    this.trackNames.set(all);
+  };
+
+  // מהגדרות המסלולים
   this.api.getTracks().subscribe({
-    next: r => this.trackNames.set(r.tracks.map((t: any) => t.name).sort()),
+    next: r => mergeNames(r.tracks.map((t: any) => t.name)),
+    error: () => {}
+  });
+
+  // מרשימת התלמידות — מקור אמין תמיד
+  this.api.getStudents().subscribe({
+    next: students => {
+      const names = [...new Set(
+        students.flatMap((s: any) =>
+          (s.track || '').split(/[\/ ,،]+/).map((t: string) => t.trim()).filter(Boolean)
+        )
+      )];
+      mergeNames(names);
+    },
     error: () => {}
   });
 }
