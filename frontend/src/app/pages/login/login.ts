@@ -95,10 +95,10 @@ margin-bottom: 14px;
 }
 .password-wrap {
   position: relative; display: flex; align-items: center;
-  input { width: 100%; padding-left: 40px; }
+  input { width: 100%; padding-right: 40px; padding-left: 12px; }
 }
 .eye-btn {
-  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px;
   display: flex; align-items: center;
   &:hover { color: var(--primary); }
