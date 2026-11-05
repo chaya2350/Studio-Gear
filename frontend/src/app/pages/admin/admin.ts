@@ -15,6 +15,7 @@ role: UserRole;
 role_name?: string;
 active: number;
 created_at: string;
+coordinator_track?: string | null;
 }
 
 @Component({
@@ -117,6 +118,13 @@ class="section-tab"
     <div class="form-group">
       <label>אימייל *</label>
       <input [(ngModel)]="editUserDraft.email" type="email" placeholder="כתובת אימייל" dir="ltr">
+    </div>
+    <div class="form-group" *ngIf="editingUser()!.role === 'coordinator'">
+      <label>מסלול מנוהל</label>
+      <select [(ngModel)]="editUserDraft.coordinator_track">
+        <option value="">— ללא מסלול —</option>
+        <option *ngFor="let t of trackNames()" [value]="t">{{ t }}</option>
+      </select>
     </div>
     <p *ngIf="userError()" class="alert alert-error" style="margin:0 0 8px;">{{ userError() }}</p>
     <div class="modal-actions">
@@ -226,6 +234,7 @@ class="section-tab"
 <div class="user-info">
 <strong>{{ user.name }}</strong>
 <span>{{ user.email }} · {{ user.active ? 'פעילה' : 'מושבתת' }}</span>
+<span *ngIf="user.role === 'coordinator' && user.coordinator_track" class="coordinator-track-badge">מסלול: {{ user.coordinator_track }}</span>
 </div>
 <select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
 [disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
@@ -631,6 +640,7 @@ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .user-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .user-info { display: grid; flex: 1; gap: 3px; }
 .user-info span { color: var(--text-muted); font-size: 0.78rem; }
+.coordinator-track-badge { background: var(--primary-light); color: var(--primary); padding: 1px 7px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; }
 .user-row select { max-width: 180px; }
 .user-error { margin-top: 12px; margin-bottom: 0; }
 .set-password {
@@ -713,6 +723,7 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
   width: min(420px, 95vw); box-shadow: 0 16px 40px rgba(0,0,0,.25);
   display: flex; flex-direction: column; gap: 12px;
 }
+.modal-card .form-group select { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font: inherit; font-size: 0.93rem; direction: rtl; background: var(--surface); color: var(--text); }
 .modal-title { font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
 .modal-actions { display: flex; gap: 8px; }
 .confirmation-backdrop { z-index: 910; padding: 16px; background: rgba(15, 23, 42, .58); }
@@ -836,6 +847,7 @@ if (auth.user()?.role === 'admin') {
 }
 this.loadTeachers();
 this.loadPeriods();
+this.loadTrackNames();
 }
 
 systemRoles(): SystemRole[] {
@@ -966,6 +978,15 @@ loadUsers() {
 this.http.get<UserAccount[]>('/api/users').subscribe(users => this.users.set(users));
 }
 
+trackNames = signal<string[]>([]);
+
+loadTrackNames() {
+  this.api.getTracks().subscribe({
+    next: r => this.trackNames.set(r.tracks.map((t: any) => t.name).sort()),
+    error: () => {}
+  });
+}
+
 createUser() {
 this.userError.set('');
 this.http.post('/api/users', this.newUser).subscribe({
@@ -984,11 +1005,11 @@ showNewUserPassword = signal(false);
 
 // עריכת פרטי משתמשת
 editingUser = signal<UserAccount | null>(null);
-editUserDraft = { name: '', email: '' };
+editUserDraft = { name: '', email: '', coordinator_track: '' };
 savingEditUser = signal(false);
 
 startEditUser(user: UserAccount) {
-  this.editUserDraft = { name: user.name, email: user.email };
+  this.editUserDraft = { name: user.name, email: user.email, coordinator_track: user.coordinator_track || '' };
   this.userError.set('');
   this.editingUser.set(user);
 }
@@ -1001,11 +1022,21 @@ saveEditUser() {
   if (!name || !email) { this.userError.set('שם ואימייל הם שדות חובה'); return; }
   this.savingEditUser.set(true);
   this.userError.set('');
+  // שמירת שם ואימייל
   this.http.patch(`/api/users/${user.id}`, { name, email }).subscribe({
     next: () => {
-      this.savingEditUser.set(false);
-      this.editingUser.set(null);
-      this.loadUsers();
+      // אם רכזת מסלול — שמירת המסלול גם כן
+      if (user.role === 'coordinator') {
+        const track = this.editUserDraft.coordinator_track || null;
+        this.http.put(`/api/users/${user.id}`, { role: user.role, active: !!user.active, coordinator_track: track }).subscribe({
+          next: () => { this.savingEditUser.set(false); this.editingUser.set(null); this.loadUsers(); },
+          error: (e: any) => { this.savingEditUser.set(false); this.userError.set(e.error?.error || 'שגיאה בעדכון המסלול'); }
+        });
+      } else {
+        this.savingEditUser.set(false);
+        this.editingUser.set(null);
+        this.loadUsers();
+      }
     },
     error: (e: any) => {
       this.savingEditUser.set(false);
@@ -1114,7 +1145,8 @@ confirmTypedAction() {
 
 updateUser(user: UserAccount, role: UserRole, active: boolean) {
 this.userError.set('');
-this.http.put(`/api/users/${user.id}`, { role, active }).subscribe({
+const coordinatorTrack = role === 'coordinator' ? (user.coordinator_track || null) : null;
+this.http.put(`/api/users/${user.id}`, { role, active, coordinator_track: coordinatorTrack }).subscribe({
 next: () => this.loadUsers(),
 error: error => {
 this.userError.set(error.error?.error || 'לא ניתן לעדכן את החשבון');
@@ -1122,6 +1154,7 @@ this.loadUsers();
 }
 });
 }
+
 
 loadTotal() {
 this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.length));
