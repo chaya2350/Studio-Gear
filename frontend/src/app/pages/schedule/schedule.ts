@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { Observable } from 'rxjs';
+import { formatHebrewDate, todayLocalDate } from '../../hebrew-date';
 
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 const YEARS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו'];
@@ -60,6 +61,7 @@ function formatHebrewDayHeading(dateStr: string): string {
   selector: 'app-schedule',
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
+<div class="schedule-print-date">תאריך הדפסה: {{ printDate() }} · {{ formatHebrewDate(printDate()) }}</div>
 <div class="page-header schedule-page-header">
   <div>
     <h1>מערכת שעות</h1>
@@ -578,6 +580,8 @@ function formatHebrewDayHeading(dateStr: string): string {
 </div>
 `,
   styles: [`
+.schedule-print-date { display: none; }
+@media print { .schedule-print-date { display: block; text-align: left; font-size: 11pt; margin-bottom: 10px; } }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .schedule-page-header { margin-bottom: 8px; align-items: center; }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -835,6 +839,8 @@ function formatHebrewDayHeading(dateStr: string): string {
   `]
 })
 export class ScheduleComponent implements OnInit {
+  readonly formatHebrewDate = formatHebrewDate;
+  readonly printDate = todayLocalDate;
   readonly DAYS = DAYS;
   readonly YEARS = YEARS;
   readonly PARALLELS = PARALLELS;

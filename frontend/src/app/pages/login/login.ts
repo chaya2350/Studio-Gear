@@ -41,6 +41,7 @@ required
 </button>
 </div>
 </div>
+<label class="remember"><input type="checkbox" name="remember" [(ngModel)]="remember"> זכור אותי במכשיר זה</label>
 <div *ngIf="error()" class="alert alert-error" role="alert"> {{ error() }}</div>
 <button class="btn btn-primary" type="submit" [disabled]="loading()">
 {{ loading() ? 'מתחברת...' : 'התחברות' }}
@@ -104,6 +105,8 @@ margin-bottom: 14px;
   display: flex; align-items: center; justify-content: center;
   &:hover { color: var(--primary); }
 }
+.remember { display: flex; align-items: center; gap: 8px; margin: 14px 0; color: var(--text-muted); font-size: .9rem; }
+.remember input { width: auto; accent-color: var(--primary); }
 button {
 width: 100%;
 margin-top: 6px;
@@ -116,6 +119,7 @@ export class LoginComponent {
 email = '';
 password = '';
 showPassword = false;
+remember = false;
 loading = signal(false);
 error = signal('');
 
@@ -129,7 +133,7 @@ submit() {
 if (this.loading()) return;
 this.loading.set(true);
 this.error.set('');
-this.auth.login(this.email.trim(), this.password).subscribe({
+this.auth.login(this.email.trim(), this.password, this.remember).subscribe({
 next: () => {
 const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/';
 const destination =

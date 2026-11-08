@@ -160,6 +160,9 @@ export class ApiService {
   getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
 
   getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  addStudentWedding(id: string, date: string, venue: string) {
+    return this.http.post<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id)}/wedding`, { date, venue });
+  }
   createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
     return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
   }

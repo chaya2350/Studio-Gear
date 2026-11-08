@@ -40,6 +40,14 @@ template: `
 <label for="message-body">תוכן ההודעה</label>
 <textarea id="message-body" [(ngModel)]="body" rows="5" maxlength="4000"
 placeholder="כתבי הודעה..."></textarea>
+<label for="message-file">צירוף קובץ (עד 10MB)</label>
+<input id="message-file" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+       [disabled]="sending" (change)="selectAttachment($event)">
+<div *ngIf="attachment" class="attachment-selected">
+  {{ attachment.name }}
+  <button type="button" class="retry-button" [disabled]="sending" (click)="clearAttachment()">הסרת קובץ</button>
+</div>
+<small class="attachment-hint">תמונות, PDF, מסמכי Word, Excel וטקסט</small>
 <div class="compose-footer">
 <small>{{ body.length }}/4000</small>
 <button class="btn btn-primary" type="button" [disabled]="sending || usersLoading || !recipientIds.length || !body.trim()"
@@ -102,6 +110,9 @@ placeholder="כתבי הודעה..."></textarea>
 <p *ngIf="editError" class="alert alert-error">{{ editError }}</p>
 </ng-container>
 <ng-template #showBody><p class="message-body">{{ message.body }}</p></ng-template>
+<a *ngIf="message.attachment_name" class="attachment-link" [href]="'/api/messages/' + message.id + '/attachment'">
+  📎 הורדת קובץ: {{ message.attachment_name }}
+</a>
 <div class="message-actions">
 <div class="message-task">
 <a *ngIf="taskForMessage(message) as task" routerLink="/calendar/personal"
@@ -154,6 +165,9 @@ styles: [`
 label { display: block; margin: 14px 0 6px; font-weight: 700; font-size: 0.85rem; }
 select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: 10px 12px; font: inherit; }
 textarea { resize: vertical; line-height: 1.7; }
+.attachment-selected { margin-top: 8px; overflow-wrap: anywhere; font-size: .85rem; }
+.attachment-hint { display: block; color: var(--text-muted); margin-top: 6px; }
+.attachment-link { display: inline-block; margin: 8px 0; color: var(--primary); overflow-wrap: anywhere; }
 .compose-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; }
 .compose-footer small { color: var(--text-muted); }
 .reply-hint { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--primary); font-size: 0.85rem; }
@@ -207,6 +221,7 @@ users: MessageUser[] = [];
 messages: DirectMessage[] = [];
 recipientIds: number[] = [];
 body = '';
+attachment: File | null = null;
 view: MessageView = 'all';
 selectedConversationId: number | null = null;
 replyToName = '';
@@ -409,10 +424,11 @@ if (!this.recipientIds.length || !this.body.trim() || this.sending) return;
 this.sending = true;
 this.sendError = '';
 this.sendSuccess = '';
-this.messagesApi.sendMessage(this.recipientIds, this.body).subscribe({
+this.messagesApi.sendMessage(this.recipientIds, this.body, this.attachment).subscribe({
 next: () => {
 const names = this.recipientIds.map(id => this.users.find(u => u.id === id)?.name || '').filter(Boolean).join(', ');
 this.body = '';
+this.clearAttachment();
 this.replyToName = '';
 this.sendSuccess = `ההודעה נשלחה בהצלחה אל ${names}`;
 this.sending = false;
@@ -425,6 +441,24 @@ this.sendError = error.error?.error || 'לא ניתן לשלוח את ההודע
 this.changeDetector.markForCheck();
 }
 });
+}
+
+selectAttachment(event: Event) {
+const input = event.target as HTMLInputElement;
+const file = input.files?.[0] || null;
+if (file && file.size > 10 * 1024 * 1024) {
+  this.clearAttachment();
+  this.sendError = 'גודל הקובץ המרבי הוא 10MB';
+  return;
+}
+this.sendError = '';
+this.attachment = file;
+}
+
+clearAttachment() {
+this.attachment = null;
+const input = document.getElementById('message-file');
+if (input instanceof HTMLInputElement) input.value = '';
 }
 
 reply(message: DirectMessage) {

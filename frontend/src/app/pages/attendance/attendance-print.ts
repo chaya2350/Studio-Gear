@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { formatHebrewDate } from '../../hebrew-date';
 
 function getWeekStart(date: Date): string {
   const d = new Date(date);
@@ -129,7 +130,7 @@ function addDays(dateStr: string, days: number): string {
         <div class="print-header-left">
           <div class="print-info-line"><span class="print-label">מורה:</span> {{ sheet.teacher_name }}</div>
           <div class="print-info-line"><span class="print-label">כיתה:</span> {{ sheet.class_name }}</div>
-          <div class="print-info-line"><span class="print-label">שבוע:</span> {{ sheet.week_start }}</div>
+          <div class="print-info-line"><span class="print-label">שבוע:</span> {{ sheet.week_start }} · {{ formatHebrewDate(sheet.week_start) }}</div>
           <div *ngIf="sheet.change_from_teacher_name" class="print-info-line"><span class="print-label">מורה מתוכננת:</span> {{ sheet.change_from_teacher_name }}</div>
         </div>
       </div>
@@ -139,6 +140,7 @@ function addDays(dateStr: string, days: number): string {
         <div *ngFor="let day of sheet.days" class="print-day-cell">
           <div class="print-day-name">יום {{ day.day_name }}</div>
           <div class="print-day-date">{{ day.lesson_date }}</div>
+          <div class="print-day-date">{{ formatHebrewDate(day.lesson_date) }}</div>
           <div *ngIf="day.subject" class="print-day-subject">{{ day.subject }}</div>
           <div class="print-day-time" *ngIf="day.start_time">{{ day.start_time }}</div>
           <img class="print-barcode" [src]="getBarcodeUrl(day.barcode)" [alt]="day.barcode" crossorigin="anonymous">
@@ -334,6 +336,7 @@ function addDays(dateStr: string, days: number): string {
   `]
 })
 export class AttendancePrintComponent implements OnInit {
+  readonly formatHebrewDate = formatHebrewDate;
   loading = signal(false);
   sheets = signal<any[]>([]);
   changes = signal<any[]>([]);

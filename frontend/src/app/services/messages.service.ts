@@ -27,6 +27,7 @@ export interface DirectMessage {
   read_at: string | null;
   reactions: MessageReaction[];
   group_id: string | null;
+  attachment_name: string | null;
 }
 
 export interface PersonalTask {
@@ -63,8 +64,13 @@ export class MessagesService {
       .pipe(tap(({ count }) => this.unreadCount.set(count)));
   }
 
-  sendMessage(recipient_ids: number[], body: string): Observable<{ id: number; ids: number[] }> {
-    return this.http.post<{ id: number; ids: number[] }>('/api/messages', { recipient_ids, body });
+  sendMessage(recipient_ids: number[], body: string, attachment?: File | null): Observable<{ id: number; ids: number[] }> {
+    if (!attachment) return this.http.post<{ id: number; ids: number[] }>('/api/messages', { recipient_ids, body });
+    const data = new FormData();
+    data.append('recipient_ids', JSON.stringify(recipient_ids));
+    data.append('body', body);
+    data.append('attachment', attachment);
+    return this.http.post<{ id: number; ids: number[] }>('/api/messages', data);
   }
 
   editMessage(messageId: number, body: string): Observable<{ success: boolean }> {

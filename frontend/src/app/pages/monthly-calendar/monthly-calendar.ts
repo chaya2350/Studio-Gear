@@ -105,6 +105,30 @@ interface GanttRow {
   <button (click)="openAddTask()"> הוספת משימה</button>
   <button (click)="openAddExam()"> הוספת מבחן</button>
   <button (click)="openAddEvent()"> הוספת אירוע</button>
+  <button *ngIf="canAddWedding()" (click)="openAddWedding()">💍 הוספת חתונה</button>
+</div>
+
+<div *ngIf="addWeddingOpen()" class="modal-backdrop" (click)="closeDialogs()">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="wedding-title" (click)="$event.stopPropagation()">
+    <h2 id="wedding-title" class="modal-title">הוספת חתונה ל־{{ formatShortDate(selectedDate()) }}</h2>
+    <div class="form-group">
+      <label for="wedding-student">בחירת תלמידה *</label>
+      <select id="wedding-student" [(ngModel)]="weddingStudentId">
+        <option value="">בחרי תלמידה</option>
+        <option *ngFor="let student of allStudents()" [value]="student.id_number">{{ student.name }} · {{ student.id_number }}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="wedding-venue">מקום החתונה</label>
+      <input id="wedding-venue" [(ngModel)]="weddingVenue" maxlength="200">
+    </div>
+    <p>חתונה עתידית תסמן את התלמידה כמאורסת, וביום החתונה הסטטוס יעודכן לנשואה.</p>
+    <p *ngIf="dialogError()" class="alert alert-error" role="alert">{{ dialogError() }}</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" type="button" [disabled]="savingWedding() || !weddingStudentId" (click)="saveWedding()">שמירה</button>
+      <button class="btn btn-secondary" type="button" [disabled]="savingWedding()" (click)="closeDialogs()">ביטול</button>
+    </div>
+  </div>
 </div>
 
 <!-- Add-task dialog -->
@@ -552,6 +576,7 @@ interface GanttRow {
       <button class="btn-quick" (click)="openAddTaskForSelected()">+ משימה</button>
       <button class="btn-quick" (click)="openAddExamForSelected()">+ מבחן</button>
       <button class="btn-quick" (click)="openAddEventForSelected()">+ אירוע</button>
+      <button *ngIf="canAddWedding()" class="btn-quick" (click)="openAddWedding()">+ חתונה</button>
     </div>
   </div>
 
@@ -1120,6 +1145,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly addTaskOpen  = signal(false);
   readonly addExamOpen  = signal(false);
   readonly addEventOpen = signal(false);
+  readonly addWeddingOpen = signal(false);
+  readonly savingWedding = signal(false);
+  weddingStudentId = '';
+  weddingVenue = '';
   readonly dialogError  = signal('');
 
   newTask = { title: '', visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
@@ -1243,7 +1272,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   private weddingsForDate(date: string): any[] {
     return this.allStudents().filter(s =>
-      s.marital_status === 'מאורסת' && s.wedding_date === date
+      (s.marital_status === 'מאורסת' || s.marital_status === 'נשואה') && s.wedding_date === date
     );
   }
 
@@ -1321,7 +1350,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     ev.stopPropagation();
     this.selectDate(date);
     // מוודא שהתפריט לא יוצא מהמסך
-    const menuW = 200, menuH = 160;
+    const menuW = 200, menuH = 200;
     const x = ev.clientX + menuW > window.innerWidth  ? ev.clientX - menuW : ev.clientX;
     const y = ev.clientY + menuH > window.innerHeight ? ev.clientY - menuH : ev.clientY;
     this.ctxMenu.set({ x, y, date });
@@ -1374,10 +1403,50 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   }
   openAddEventForSelected() { this.openAddEvent(); }
 
+  canAddWedding() {
+    return this.auth.hasPermission('students') && this.auth.hasPermission('students', 'change');
+  }
+
+  openAddWedding() {
+    this.ctxMenu.set(null);
+    this.eventDetailOpen.set(false);
+    this.weddingStudentId = '';
+    this.weddingVenue = '';
+    this.dialogError.set('');
+    this.addWeddingOpen.set(true);
+    this.api.getStudents().subscribe({
+      next: students => this.allStudents.set(students),
+      error: () => this.dialogError.set('לא ניתן לטעון את רשימת התלמידות'),
+    });
+  }
+
+  saveWedding() {
+    if (!this.weddingStudentId || this.savingWedding()) return;
+    this.savingWedding.set(true);
+    this.dialogError.set('');
+    this.api.addStudentWedding(this.weddingStudentId, this.selectedDate(), this.weddingVenue).subscribe({
+      next: () => {
+        this.savingWedding.set(false);
+        this.closeDialogs();
+        if (!this.has('weddings')) this.toggleLayer('weddings');
+        this.api.getStudents().subscribe({
+          next: students => this.allStudents.set(students),
+          error: () => { this.loadError = 'החתונה נשמרה, אך טעינת התלמידות נכשלה. יש לרענן את הדף.'; },
+        });
+      },
+      error: error => {
+        this.savingWedding.set(false);
+        this.dialogError.set(error.error?.error || 'שמירת החתונה נכשלה');
+      },
+    });
+  }
+
   closeDialogs() {
+    if (this.savingWedding()) return;
     this.addTaskOpen.set(false);
     this.addExamOpen.set(false);
     this.addEventOpen.set(false);
+    this.addWeddingOpen.set(false);
     this.dialogError.set('');
   }
 

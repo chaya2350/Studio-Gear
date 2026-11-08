@@ -7,7 +7,7 @@ const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
-const { hashPassword, verifyPassword, initializeAuthSchema } = require('./auth-utils');
+const { hashPassword, verifyPassword, initializeAuthSchema, sessionCookie: makeSessionCookie, SESSION_SECONDS } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
 const { buildStudentUpdateNotice } = require('./student-update-notice');
@@ -23,6 +23,8 @@ const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
+const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
+const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
   PERMISSION_ACTIONS,
@@ -95,16 +97,12 @@ if (fs.existsSync(frontendDir)) {
 }
 
 const sessionCookie = 'studio_session';
-const sessionDurationSeconds = 7 * 24 * 60 * 60;
+const sessionDurationSeconds = SESSION_SECONDS;
 const certDirForCheck = process.env.STUDIO_CERT_DIR || path.join(__dirname, 'certs');
 const useHttps = fs.existsSync(path.join(certDirForCheck, 'key.pem')) && fs.existsSync(path.join(certDirForCheck, 'cert.pem'));
 
-function appendSessionCookie(res, value, maxAge) {
-  const secure = useHttps || process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.append(
-    'Set-Cookie',
-    `${sessionCookie}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`
-  );
+function appendSessionCookie(res, value, remember, clear = false) {
+  res.append('Set-Cookie', makeSessionCookie(value, remember, useHttps || process.env.NODE_ENV === 'production', clear));
 }
 
 function getSessionToken(req) {
@@ -203,7 +201,7 @@ app.post('/api/auth/login', (req, res) => {
   const expiresAt = new Date(Date.now() + sessionDurationSeconds * 1000).toISOString();
   db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
     .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
-  appendSessionCookie(res, token, sessionDurationSeconds);
+  appendSessionCookie(res, token, req.body?.remember === true);
   res.json({ id: user.id, name: user.name, email: user.email, role: user.role, coordinator_track: user.coordinator_track || null, role_name: getRoleName(user.role), permissions: getUserPermissions(user.role) });
 });
 
@@ -214,7 +212,7 @@ app.post('/api/auth/logout', (req, res) => {
     db.prepare('DELETE FROM sessions WHERE token_hash = ?')
       .run(createHash('sha256').update(token).digest('hex'));
   }
-  appendSessionCookie(res, '', 0);
+  appendSessionCookie(res, '', false, true);
   res.json({ success: true });
 });
 
@@ -1025,8 +1023,10 @@ app.get('/api/messages', (req, res) => {
   }
   const messages = db.prepare(`
     SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
-      recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at, m.group_id
+      recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at, m.group_id,
+      a.filename AS attachment_name
     FROM messages m
+    LEFT JOIN message_attachments a ON a.message_id = m.id
     JOIN users sender ON sender.id = m.sender_id
     JOIN users recipient ON recipient.id = m.recipient_id
     WHERE m.sender_id = ? OR m.recipient_id = ?
@@ -1055,7 +1055,17 @@ app.get('/api/messages', (req, res) => {
   res.json(messages.map(m => ({ ...m, reactions: reactionsMap.get(m.id) || [] })));
 });
 
-app.post('/api/messages', (req, res) => {
+app.get('/api/messages/:id/attachment', (req, res) => {
+  const attachment = findAttachment(db, req.params.id, req.user.id);
+  if (!attachment) return res.status(404).json({ error: 'הקובץ לא נמצא' });
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.attachment(attachment.filename);
+  res.type(attachment.content_type);
+  res.send(attachment.data);
+});
+
+app.post('/api/messages', attachmentUpload, (req, res) => {
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
   if (!body || body.length > 4000) {
     return res.status(400).json({ error: 'יש לכתוב הודעה עד 4000 תווים' });
@@ -1074,7 +1084,11 @@ app.post('/api/messages', (req, res) => {
   const now = new Date().toISOString();
   const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at, group_id) VALUES (?, ?, ?, ?, ?)');
   const groupId = activeIds.length > 1 ? `grp-${req.user.id}-${Date.now()}` : null;
-  const ids = activeIds.map(rid => insertMsg.run(req.user.id, rid, body, now, groupId).lastInsertRowid);
+  const ids = db.transaction(() => activeIds.map(rid => {
+    const id = insertMsg.run(req.user.id, rid, body, now, groupId).lastInsertRowid;
+    if (req.file) insertAttachment(db, id, req.file);
+    return id;
+  }))();
   res.status(201).json({ id: ids[0], ids, group_id: groupId });
 });
 
@@ -1526,6 +1540,7 @@ db.exec(`
 const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
 if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 if (!messageCols.includes('group_id'))  db.exec('ALTER TABLE messages ADD COLUMN group_id TEXT');
+initializeMessageAttachments(db);
 
 // Migration: coordinator_track לטבלת users
 const userColsCheck = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
@@ -1542,6 +1557,16 @@ if (!studentCols.includes('married_name'))   db.exec('ALTER TABLE students ADD C
 if (!studentCols.includes('personal_phone')) db.exec('ALTER TABLE students ADD COLUMN personal_phone TEXT');
 if (!studentCols.includes('wedding_date'))   db.exec('ALTER TABLE students ADD COLUMN wedding_date TEXT');
 if (!studentCols.includes('wedding_venue'))  db.exec('ALTER TABLE students ADD COLUMN wedding_venue TEXT');
+
+initializeWeddings(db);
+function refreshWeddingStatuses() {
+  updateDueWeddings(db, todayInIsrael());
+}
+refreshWeddingStatuses();
+setInterval(() => {
+  try { refreshWeddingStatuses(); }
+  catch (error) { console.error('Wedding status update failed:', error); }
+}, 60 * 1000).unref();
 
 function parseExtraData(rawValue) {
   if (!rawValue) return {};
@@ -1565,6 +1590,7 @@ function mapStudentRow(row) {
 }
 
 app.get('/api/students', (req, res) => {
+  refreshWeddingStatuses();
   const { q } = req.query;
   // role מנוהל (custom, לא system) עם coordinator_track — רואה רק את המסלול שלה
   const sysRoles = ['admin', 'secretary', 'laborant'];
@@ -1704,6 +1730,7 @@ app.get('/api/students/classes', (req, res) => {  const rows = db.prepare(`
 });
 
 app.get('/api/students/:id_number', (req, res) => {
+  refreshWeddingStatuses();
   const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'לא נמצא' });
   const loans = db.prepare(`
@@ -1713,6 +1740,23 @@ app.get('/api/students/:id_number', (req, res) => {
     ORDER BY l.loan_date DESC
   `).all(req.params.id_number);
   res.json({ ...mapStudentRow(student), loans });
+});
+
+app.post('/api/students/:id_number/wedding', (req, res) => {
+  const student = db.prepare('SELECT * FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  if (!['admin', 'secretary', 'laborant'].includes(req.user.role) && req.user.coordinator_track &&
+      !String(student.track || '').includes(req.user.coordinator_track)) {
+    return res.status(403).json({ error: 'אין הרשאה לעדכן תלמידה זו' });
+  }
+  try {
+    registerWedding(db, student, req.body?.date, req.body?.venue, todayInIsrael());
+    res.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && !error.code) return res.status(400).json({ error: error.message });
+    console.error('Wedding registration failed:', error);
+    res.status(500).json({ error: 'שמירת החתונה נכשלה' });
+  }
 });
 
 app.put('/api/students/:id_number', (req, res) => {
@@ -1768,6 +1812,9 @@ app.put('/api/students/:id_number', (req, res) => {
     WHERE id_number = ?
     `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), address,
       maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);
+    if (maritalStatus !== existing.marital_status || weddingDate !== existing.wedding_date) {
+      db.prepare('DELETE FROM scheduled_wedding_status WHERE id_number = ?').run(req.params.id_number);
+    }
     if (updateNotice) {
       db.prepare(`
         INSERT INTO student_notices (id_number, title, body, notice_date, visibility, created_by)

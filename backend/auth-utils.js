@@ -1,5 +1,12 @@
 const { randomBytes, scryptSync, timingSafeEqual } = require('crypto');
 
+const SESSION_SECONDS = 7 * 24 * 60 * 60;
+
+function sessionCookie(value, remember, secure, clear = false) {
+  const maxAge = clear ? '; Max-Age=0' : remember ? `; Max-Age=${SESSION_SECONDS}` : '';
+  return `studio_session=${value}; HttpOnly; SameSite=Strict; Path=/${maxAge}${secure ? '; Secure' : ''}`;
+}
+
 function initializeAuthSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -60,4 +67,4 @@ function verifyPassword(password, salt, expectedHash) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-module.exports = { hashPassword, initializeAuthSchema, verifyPassword };
+module.exports = { hashPassword, initializeAuthSchema, verifyPassword, sessionCookie, SESSION_SECONDS };
