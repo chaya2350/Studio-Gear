@@ -3,7 +3,7 @@ const readline = require('readline');
 const Database = require('better-sqlite3');
 const { hashPassword, initializeAuthSchema } = require('./auth-utils');
 
-const dataDir = process.env.STUDIO_DATA_DIR || process.cwd();
+const dataDir = process.env.STUDIO_DATA_DIR || __dirname;
 const db = new Database(path.join(dataDir, 'studio.db'));
 
 function ask(question) {

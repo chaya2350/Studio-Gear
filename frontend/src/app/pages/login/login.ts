@@ -95,12 +95,13 @@ margin-bottom: 14px;
 }
 .password-wrap {
   position: relative; display: flex; align-items: center;
-  input { width: 100%; padding-right: 40px; padding-left: 12px; }
+  input { width: 100%; padding-right: 12px; padding-left: 46px; }
 }
 .eye-btn {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px;
-  display: flex; align-items: center;
+  position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; margin: 0;
+  background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 0;
+  display: flex; align-items: center; justify-content: center;
   &:hover { color: var(--primary); }
 }
 button {

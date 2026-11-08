@@ -48,7 +48,7 @@ function copyScheduleWeekIfEmpty(db, {
         slot.start_time, slot.end_time, slot.subject, toWeek, seriesId
       );
       copied += result.changes;
-      onCopied({ ...slot, id: result.lastInsertRowid, series_id: seriesId, week_start: toWeek });
+      onCopied({ ...slot, id: result.lastInsertRowid, series_id: seriesId, week_start: toWeek }, slot.id);
     }
 
     return {

@@ -204,7 +204,7 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>מורות</span>
           </a>
-          <a *ngIf="auth.hasPermission('schedule')" routerLink="/schedule" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מערכת שעות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('schedule')" routerLink="/schedule" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="sidebar-item" [title]="sidebarCollapsed ? 'מערכת שעות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2"/>
               <line x1="16" y1="2" x2="16" y2="6"/>
@@ -215,6 +215,13 @@ import { filter, takeUntil } from 'rxjs/operators';
               <line x1="16" y1="10" x2="16" y2="20"/>
             </svg>
             <span>מערכת שעות</span>
+          </a>
+          <a *ngIf="auth.hasPermission('schedule')" routerLink="/schedule/rooms" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מפת חדרים' : ''" (click)="clearSearch()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M12 3v18M3 12h18"/>
+            </svg>
+            <span>מפת חדרים</span>
           </a>
 
           <!-- ── ציוד ── -->

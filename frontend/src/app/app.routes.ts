@@ -148,6 +148,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/schedule/schedule').then((m) => m.ScheduleComponent),
       },
       {
+        path: 'schedule/rooms',
+        loadComponent: () => import('./pages/room-map/room-map').then((m) => m.RoomMapComponent),
+      },
+      {
         path: 'schedule/print',
         loadComponent: () => import('./pages/attendance/attendance-print').then((m) => m.AttendancePrintComponent),
       },

@@ -36,6 +36,9 @@ imports: [CommonModule, FormsModule, RouterLink, StudentProfileCardComponent],
 template: `
 <div *ngIf="student()">
 <div class="page-header">
+<div class="student-actions">
+  <button class="btn btn-secondary" (click)="exportFormatOpen.set(true)" [disabled]="!gradeSheetReady()">ייצוא ציונים</button>
+</div>
 <div style="display:flex; align-items:center; gap:16px;">
 <a href="#" (click)="goBack($event)" class="back-btn">→</a>
 <div>
@@ -47,6 +50,19 @@ template: `
 </div>
 </div>
 
+<div *ngIf="exportFormatOpen()" class="modal-backdrop" (click)="exportFormatOpen.set(false)">
+  <div class="modal-card export-format-modal" role="dialog" aria-modal="true" aria-labelledby="export-format-title" (click)="$event.stopPropagation()">
+    <div class="modal-title" id="export-format-title">ייצוא גיליון ציונים</div>
+    <p>באיזה פורמט תרצי להוריד את הגיליון?</p>
+    <div class="export-format-actions">
+      <button class="btn btn-primary" (click)="printGradeSheet()">הדפסה / שמירה כ־PDF</button>
+      <button class="btn btn-secondary" (click)="exportGradeSheetExcel()">קובץ Excel</button>
+    </div>
+    <button class="btn btn-ghost" (click)="exportFormatOpen.set(false)">ביטול</button>
+  </div>
+</div>
+
+<p *ngIf="gradeSheetError()" class="edit-error" role="alert">{{ gradeSheetError() }}</p>
 <!-- Profile Card -->
 <app-student-profile-card
   [name]="student()!.name"
@@ -802,6 +818,9 @@ input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary)
   &.vis-all      { background: #dcfce7; color: #166534; }
 }
 .notice-body { font-size: 0.85rem; color: var(--text); line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.export-format-modal { width: min(440px, 94vw); }
+.export-format-modal p { margin: 8px 0 18px; color: var(--text-muted); }
+.export-format-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 1050px) {
 .quick-stats { grid-template-columns: 1fr; }
@@ -878,6 +897,10 @@ requirementError = signal('');
 savingRequirementId = signal<number | null>(null);
 exams = signal<any[]>([]);
 attendance = signal<any>(null);
+gradeSheetError = signal('');
+examsLoaded = signal(false);
+exportFormatOpen = signal(false);
+gradeSheetReady = computed(() => this.examsLoaded() && !!this.attendance());
 
 uploadingPhoto = signal(false);
 photoError = signal('');
@@ -963,6 +986,9 @@ this.loadStudent(id);
 }
 
 loadStudent(id: string) {
+this.examsLoaded.set(false);
+this.attendance.set(null);
+this.gradeSheetError.set('');
 this.api.getStudent(id).subscribe({
 next: s => {
   this.student.set(s);
@@ -1049,16 +1075,176 @@ deleteNotice(notice: any) {
 
 loadExams(id_number: string) {
 this.api.getStudentExams(id_number).subscribe({
-next: rows => this.exams.set(rows),
-error: () => this.exams.set([])
+next: rows => {
+  this.exams.set(rows);
+  this.examsLoaded.set(true);
+},
+error: () => this.gradeSheetError.set('לא ניתן לטעון את ציוני התלמידה. נסי שוב לפני ייצוא הגיליון.')
 });
 }
 
 loadAttendance(id_number: string) {
 this.api.getStudentAttendance(id_number).subscribe({
 next: att => this.attendance.set(att),
-error: () => this.attendance.set(null)
+error: () => {
+  this.attendance.set(null);
+  this.gradeSheetError.set('לא ניתן לטעון את נתוני הנוכחות. נסי שוב לפני ייצוא הגיליון.');
+}
 });
+}
+
+private gradeCategory(exam: any): 'קודש' | 'מסלול' {
+return exam.track ? 'מסלול' : 'קודש';
+}
+
+private attendanceCategory(subject: string): 'קודש' | 'מסלול' | 'תפילה' | null {
+const normalized = subject.toLocaleLowerCase('he');
+if (/תפילה|שחרית|מנחה|ערבית/.test(normalized)) return 'תפילה';
+if (/קודש|גמרא|תנ.?ך|הלכה|חסידות|יהדות/.test(normalized)) return 'קודש';
+const tracks = (this.student()?.track || '').split(/[,/|]/).map(track => track.trim()).filter(Boolean);
+if (/מסלול/.test(normalized) || tracks.some(track => normalized.includes(track.toLocaleLowerCase('he')))) return 'מסלול';
+return null;
+}
+
+private attendanceSummary() {
+const summaries: Record<string, { total: number; absent: number; late: number }> = {
+  קודש: { total: 0, absent: 0, late: 0 },
+  מסלול: { total: 0, absent: 0, late: 0 },
+  תפילה: { total: 0, absent: 0, late: 0 },
+};
+const unclassified: any[] = [];
+for (const subject of this.attendance()?.by_subject || []) {
+  const category = this.attendanceCategory(String(subject.subject || ''));
+  if (!category) {
+    unclassified.push(subject);
+    continue;
+  }
+  summaries[category].total += Number(subject.total) || 0;
+  summaries[category].absent += Number(subject.absent) || 0;
+  summaries[category].late += Number(subject.late) || 0;
+}
+return { summaries, unclassified };
+}
+
+async exportGradeSheetExcel() {
+const student = this.student();
+if (!student || !this.attendance()) return;
+this.exportFormatOpen.set(false);
+try {
+const { default: ExcelJS } = await import('exceljs');
+const gradeRows: (string | number)[][] = [
+  ['מבחן', 'סוג ציון', 'תאריך', 'ציון'],
+  ...this.exams().map(exam => [exam.exam_name, this.gradeCategory(exam), exam.exam_date || '', exam.grade ?? '']),
+];
+const { summaries, unclassified } = this.attendanceSummary();
+const attendanceRows: (string | number)[][] = [
+  ['תחום', 'שיעורים', 'היעדרויות', 'איחורים', 'אחוז נוכחות'],
+  ...['קודש', 'מסלול', 'תפילה'].map(category => {
+    const summary = summaries[category];
+    return [
+      `נוכחות ${category}`, summary.total, summary.absent, summary.late,
+      summary.total ? Math.round((1 - summary.absent / summary.total) * 100) : '',
+    ];
+  }),
+  ...unclassified.map(subject => [
+    `נוכחות - ${subject.subject || 'מקצוע לא מסווג'}`,
+    subject.total || 0, subject.absent || 0, subject.late || 0,
+    subject.total ? Math.round((1 - subject.absent / subject.total) * 100) : '',
+  ]),
+];
+const workbook = new ExcelJS.Workbook();
+workbook.creator = 'סמינר גור';
+workbook.subject = 'גיליון ציונים ונוכחות';
+for (const [name, rows, widths] of [
+  ['ציונים', gradeRows, [30, 22, 16, 12]],
+  ['נוכחות', attendanceRows, [30, 14, 14, 14, 18]],
+] as const) {
+  const sheet = workbook.addWorksheet(name, { views: [{ rightToLeft: true }] });
+  sheet.addRows([
+    ['גיליון ציונים', ''],
+    ['שם התלמידה', student.name],
+    ['תעודת זהות', student.id_number],
+    ['מסלול', student.track || '—'],
+    ['שנה', student.year || '—'],
+    [],
+    ...rows,
+  ]);
+  sheet.columns = widths.map(width => ({ width }));
+  sheet.getRow(1).font = { bold: true, size: 16, color: { argb: 'FF174E3C' } };
+  const header = sheet.getRow(7);
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF174E3C' } };
+  sheet.eachRow(row => row.eachCell(cell => { cell.alignment = { vertical: 'middle', horizontal: 'right' }; }));
+}
+  const buffer = await workbook.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([new Uint8Array(buffer)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `גיליון ציונים - ${student.name}.xlsx`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+} catch {
+  this.gradeSheetError.set('לא ניתן ליצור את קובץ ה־Excel. נסי שוב.');
+}
+}
+
+printGradeSheet() {
+const student = this.student();
+if (!student || !this.attendance()) return;
+this.exportFormatOpen.set(false);
+const printWindow = window.open('', '_blank');
+if (!printWindow) {
+  this.gradeSheetError.set('לא ניתן לפתוח חלון הדפסה. יש לאפשר חלונות קופצים ולנסות שוב.');
+  return;
+}
+this.gradeSheetError.set('');
+const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[char]!));
+const exams = this.exams();
+const { summaries, unclassified } = this.attendanceSummary();
+const gradeRows = (category: 'קודש' | 'מסלול') => exams
+  .filter(exam => this.gradeCategory(exam) === category)
+  .map(exam => `<tr><td>${escapeHtml(exam.exam_name)}</td><td>${escapeHtml(exam.exam_date || '—')}</td><td>${escapeHtml(exam.grade ?? '—')}</td></tr>`)
+  .join('');
+const attendanceRows = ['קודש', 'מסלול', 'תפילה'].map(category => {
+  const summary = summaries[category];
+  const pct = summary.total ? `${Math.round((1 - summary.absent / summary.total) * 100)}%` : '—';
+  return `<tr><td>נוכחות ${escapeHtml(category)}</td><td>${summary.total}</td><td>${summary.absent}</td><td>${summary.late}</td><td>${pct}</td></tr>`;
+}).join('') + unclassified.map(subject =>
+  `<tr><td>נוכחות — ${escapeHtml(subject.subject || 'מקצוע לא מסווג')}</td><td>${subject.total || 0}</td><td>${subject.absent || 0}</td><td>${subject.late || 0}</td><td>${subject.total ? `${Math.round((1 - subject.absent / subject.total) * 100)}%` : '—'}</td></tr>`
+).join('');
+printWindow.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>גיליון ציונים - ${escapeHtml(student.name)}</title><style>
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;color:#18302b;background:#fff}
+.sheet{max-width:900px;margin:28px auto;padding:34px;border:1px solid #dce8e2;border-radius:16px}
+.brand{display:flex;align-items:center;gap:22px;border-bottom:3px solid #c5a45d;padding-bottom:20px}
+.brand img{width:112px;height:82px;object-fit:contain}.brand-name{color:#536b60;font-size:14px;font-weight:700}
+h1{font-size:28px;color:#174e3c;margin:8px 0}.subtitle{color:#7b6842;margin:0;font-size:14px}
+.student-info{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0}
+.info{padding:10px 12px;background:#f3f7f4;border-radius:8px}.info span{display:block;color:#718079;font-size:11px;margin-bottom:5px}.info strong{font-size:14px}
+h2{font-size:17px;color:#174e3c;margin:24px 0 9px;border-right:4px solid #c5a45d;padding-right:9px}
+table{width:100%;border-collapse:collapse;margin-bottom:15px;font-size:13px}
+th,td{border:1px solid #d8e1dc;padding:9px 10px;text-align:right}
+th{background:#174e3c;color:white;font-weight:700}tbody tr:nth-child(even){background:#f5f8f6}
+.footer{margin-top:24px;padding-top:10px;border-top:1px solid #d8e1dc;color:#76837d;font-size:11px}
+@media print{.sheet{max-width:none;margin:0;padding:0;border:0;border-radius:0}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+@media(max-width:600px){.sheet{margin:10px;padding:18px}.student-info{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><main class="sheet">
+<header class="brand"><img src="/logo.png" alt="לוגו הסמינר"><div><div class="brand-name">סמינר גור</div><h1>גיליון ציונים ונוכחות</h1><p class="subtitle">דוח אישי לתלמידה</p></div></header>
+<section class="student-info">
+<div class="info"><span>שם התלמידה</span><strong>${escapeHtml(student.name)}</strong></div>
+<div class="info"><span>תעודת זהות</span><strong>${escapeHtml(student.id_number)}</strong></div>
+<div class="info"><span>מסלול</span><strong>${escapeHtml(student.track || '—')}</strong></div>
+<div class="info"><span>שנה</span><strong>${escapeHtml(student.year || '—')}</strong></div>
+</section>
+<h2>ציוני קודש</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('קודש') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
+<h2>ציוני מסלול</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('מסלול') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
+<h2>נוכחות קודש, מסלול ותפילה</h2><table><thead><tr><th>תחום</th><th>שיעורים</th><th>היעדרויות</th><th>איחורים</th><th>אחוז נוכחות</th></tr></thead><tbody>${attendanceRows}</tbody></table>
+<footer class="footer">הופק בתאריך ${new Date().toLocaleDateString('he-IL')} · סמינר גור</footer>
+</main><script>window.onload=()=>window.print();</script></body></html>`);
+printWindow.document.close();
 }
 
 studentExamAvg(): string {

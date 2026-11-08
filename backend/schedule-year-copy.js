@@ -7,7 +7,8 @@ function addDays(dateStr, days) {
 }
 
 function copyScheduleAcrossYear(db, {
-  sourceWeek, firstWeek, throughDate, validateSlot, createSeriesId, isSchoolHoliday = () => false
+  sourceWeek, firstWeek, throughDate, validateSlot, createSeriesId, isSchoolHoliday = () => false,
+  onCopied = () => {}, onLinked = () => {}
 }) {
   return db.transaction(() => {
     const sourceSlots = db.prepare('SELECT * FROM schedule_slots WHERE week_start = ? ORDER BY id').all(sourceWeek);
@@ -53,6 +54,7 @@ function copyScheduleAcrossYear(db, {
         ).filter(candidate => !claimed.has(candidate.id));
         if (candidates.length === 1) {
           updateSeries.run(slot.series_id, candidates[0].id);
+          onLinked(slot.id, candidates[0].id);
           claimed.add(candidates[0].id);
           linked++;
           continue;
@@ -68,10 +70,12 @@ function copyScheduleAcrossYear(db, {
           skipped++;
           continue;
         }
-        inserted += insertSlot.run(
+        const result = insertSlot.run(
           slot.teacher_id, slot.class_year, slot.class_parallel, slot.day_of_week,
           slot.start_time, slot.end_time, slot.subject, week, slot.series_id
-        ).changes;
+        );
+        onCopied(slot.id, result.lastInsertRowid);
+        inserted += result.changes;
       }
     }
     return { inserted, linked, skipped, reason: 'completed' };

@@ -21,6 +21,8 @@ let generatedHolidayRange = '';
 const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
+const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
+const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
   PERMISSION_ACTIONS,
@@ -3123,7 +3125,7 @@ app.get('/api/exams-stats/summary', (req, res) => {
 // כל המבחנים והציונים של תלמידה אחת (להצגה בדף התלמידה)
 app.get('/api/students/:id_number/exams', (req, res) => {
   const rows = db.prepare(`
-    SELECT e.id AS exam_id, e.name AS exam_name, e.exam_date, c.code, g.grade, g.graded_at
+    SELECT e.id AS exam_id, e.name AS exam_name, e.exam_date, e.track, c.code, g.grade, g.graded_at
     FROM exam_codes c
     JOIN exams e ON e.id = c.exam_id
     LEFT JOIN exam_grades g ON g.code = c.code
@@ -3260,6 +3262,11 @@ if (!scheduleSlotColumns.includes('change_category')) db.exec('ALTER TABLE sched
 if (!scheduleSlotColumns.includes('change_reason')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_reason TEXT');
 if (!scheduleSlotColumns.includes('change_from_teacher_id')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_from_teacher_id INTEGER');
 if (!scheduleSlotColumns.includes('change_from_teacher_name')) db.exec('ALTER TABLE schedule_slots ADD COLUMN change_from_teacher_name TEXT');
+
+initializeRoomMap(db);
+initializeRoomBookings(db);
+registerRoomMapRoutes(app, db);
+registerRoomBookingRoutes(app, db, { ensureHolidays: ensureSchoolYearHolidays, holidayForDate: schoolHolidayForDate });
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS schedule_settings (
@@ -3859,7 +3866,9 @@ app.post('/api/schedule/copy-school-year', async (req, res) => {
       throughDate,
       validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
       isSchoolHoliday: (week, day) => Boolean(schoolHolidayForDate(addDays(week, day))),
-      createSeriesId: () => randomBytes(12).toString('hex')
+      createSeriesId: () => randomBytes(12).toString('hex'),
+      onCopied: (sourceId, targetId) => copyLessonRoom(db, sourceId, targetId),
+      onLinked: (sourceId, targetId) => copyLessonRoom(db, sourceId, targetId)
     });
     if (result.reason === 'source_empty') return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
     if (result.reason === 'source_has_one_time_changes') {
@@ -3868,6 +3877,9 @@ app.post('/api/schedule/copy-school-year', async (req, res) => {
     res.json({ ...result, source_week: sourceWeek, through_date: throughDate });
   } catch (error) {
     console.error('School-year schedule copy failed:', error);
+    if (error.message.includes('החדר')) {
+      return res.status(409).json({ error: `שכפול המערכת נכשל: ${error.message}` });
+    }
     res.status(500).json({ error: 'שכפול המערכת לשנת הלימודים נכשל' });
   }
 });
@@ -3882,13 +3894,16 @@ app.post('/api/schedule/copy-week', async (req, res) => {
   const existing = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(to_week);
   if (existing.c > 0) return res.status(400).json({ error: 'שבוע היעד כבר מכיל שיעורים' });
 
-  const result = copyScheduleWeekIfEmpty(db, {
+  let result;
+  try {
+  result = copyScheduleWeekIfEmpty(db, {
     fromWeek: from_week,
     toWeek: to_week,
     validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
     isSchoolHoliday: (week, day) => Boolean(schoolHolidayForDate(addDays(week, day))),
     createSeriesId: () => randomBytes(12).toString('hex'),
-    onCopied: slot => {
+    onCopied: (slot, sourceId) => {
+      copyLessonRoom(db, sourceId, slot.id);
       db.prepare(`UPDATE schedule_slots SET change_scope = 'once', change_category = ?, change_reason = ? WHERE id = ?`)
         .run(change.category, change.reason, slot.id);
       recordScheduleChange({
@@ -3897,6 +3912,10 @@ app.post('/api/schedule/copy-week', async (req, res) => {
       });
     }
   });
+  } catch (error) {
+    console.error('Schedule week copy failed:', error);
+    return res.status(409).json({ error: `העתקת השבוע נכשלה: ${error.message}` });
+  }
   if (result.reason === 'source_empty') return res.status(404).json({ error: 'לא נמצאו שיעורים בשבוע המקור' });
   res.json({ copied: result.copied, skipped: result.skipped, to_week });
 });
@@ -3974,6 +3993,7 @@ app.put('/api/schedule/:id', async (req, res) => {
       change_from_teacher_id, change_from_teacher_name
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  try {
   db.transaction(() => targets.forEach(target => {
     let slotId = target.id;
     const occurrenceChange = occurrenceChangeMetadata({
@@ -3987,6 +4007,7 @@ app.put('/api/schedule/:id', async (req, res) => {
         occurrenceChange.change_category, occurrenceChange.change_reason,
         occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name
       ).lastInsertRowid;
+      copyLessonRoom(db, current.id, slotId);
     } else {
       update.run(teacher_id, start_time, end_time, subject || null, seriesId, occurrenceChange.change_scope,
         occurrenceChange.change_category, occurrenceChange.change_reason,
@@ -3998,6 +4019,13 @@ app.put('/api/schedule/:id', async (req, res) => {
       userId: req.user?.id
     });
   }))();
+  } catch (error) {
+    if (error.message.includes('ROOM_CONFLICT') || error.message.includes('ROOM_INVALID_TIME') || error.message.includes('החדר תפוס')) {
+      return res.status(409).json({ error: 'לא ניתן לשנות את השיעור: החדר תפוס או שעות השיעור אינן תקינות' });
+    }
+    console.error('Schedule update failed:', error);
+    return res.status(500).json({ error: 'עדכון השיעור נכשל' });
+  }
   res.json({ success: true, updated: targets.length });
 });
 

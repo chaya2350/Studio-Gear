@@ -67,6 +67,7 @@ function formatHebrewDayHeading(dateStr: string): string {
   <div class="header-actions">
     <button *ngIf="activeTab() === 'grid'" type="button" class="btn btn-secondary" (click)="activeTab.set('manage')">ניהול שיעורים</button>
     <button *ngIf="activeTab() === 'manage'" type="button" class="btn btn-secondary" (click)="activeTab.set('grid')">חזרה למערכת</button>
+    <a routerLink="/schedule/rooms" class="btn btn-secondary">מפת חדרים</a>
     <a routerLink="/schedule/print" class="btn btn-secondary">הדפסת דפי נוכחות</a>
   </div>
 </div>
@@ -579,7 +580,7 @@ function formatHebrewDayHeading(dateStr: string): string {
   styles: [`
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .schedule-page-header { margin-bottom: 8px; align-items: center; }
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .tab-bar {
   display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface-2);

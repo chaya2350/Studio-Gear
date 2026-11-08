@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
 import { ExamAnalyticsComponent } from '../../components/exam-analytics/exam-analytics';
+import { isUpcomingExam } from './upcoming-exams';
 
 @Component({
 selector: 'app-exams',
@@ -22,11 +23,13 @@ template: `
 <div class="exams-grid">
 <!-- רשימת מבחנים -->
 <div class="card">
-<div class="section-title"> רשימת מבחנים</div>
+<div class="section-title"> מבחנים קרובים</div>
+<p class="hint">מבחנים מהיום והלאה, ומבחנים ללא תאריך.</p>
 <div class="exam-list">
-<div *ngFor="let e of exams()" class="exam-row" [class.selected]="selectedExam()?.id === e.id" (click)="selectExam(e)">
+<div *ngFor="let e of upcomingExams()" class="exam-row" [class.selected]="selectedExam()?.id === e.id" (click)="selectExam(e)">
 <div class="exam-row-info">
 <strong>{{ e.name }}</strong>
+<span>{{ e.exam_date || 'ללא תאריך' }}</span>
 <span>{{ e.track || 'כל המסלולים' }}{{ e.year ? ' · ' + e.year : '' }} · {{ e.codes_count }} ברקודים</span>
 </div>
 <div class="exam-row-stats">
@@ -37,9 +40,9 @@ template: `
 <button class="del-btn" (click)="deleteExam(e, $event)" title="מחיקה"></button>
 </div>
 </div>
-<div *ngIf="!exams().length" class="empty-state">
+<div *ngIf="!upcomingExams().length" class="empty-state">
 <div class="empty-icon"></div>
-<p>עדיין אין מבחנים. לחצי על "מבחן חדש"</p>
+<p>אין מבחנים קרובים או מבחנים ללא תאריך.</p>
 </div>
 </div>
 </div>
@@ -124,7 +127,7 @@ template: `
 <table class="stats-table">
 <thead><tr><th>מבחן</th><th>נבחנו</th><th>ממוצע</th></tr></thead>
 <tbody>
-<tr *ngFor="let e of stats()?.byExam || []">
+<tr *ngFor="let e of upcomingExamStats()">
 <td>{{ e.name }}</td>
 <td>{{ e.graded_count }} / {{ e.codes_count }}</td>
 <td [class.missing]="e.avg_grade == null">—</td>
@@ -132,10 +135,11 @@ template: `
 </tr>
 </tbody>
 </table>
-<p *ngIf="!stats()?.byExam?.length" class="hint">אין נתונים עדיין</p>
+<p *ngIf="!upcomingExamStats().length" class="hint">אין נתונים למבחנים קרובים</p>
 </div>
 <div class="stats-col">
 <h4>תלמידות שטרם נבחנו בכל המבחנים</h4>
+<p class="hint">הסיכום כולל את כל המבחנים, גם מבחנים שהתקיימו.</p>
 <div class="missing-list">
 <div *ngFor="let s of missingStudents()" class="missing-row">
 <strong>{{ s.name }}</strong>
@@ -273,6 +277,16 @@ this.loadStats();
 
 loadStats() {
 this.api.getExamStats().subscribe(stats => this.stats.set(stats));
+}
+
+upcomingExams() {
+  const now = new Date();
+  return this.exams().filter(exam => isUpcomingExam(exam.exam_date, now));
+}
+
+upcomingExamStats() {
+  const upcomingIds = new Set(this.upcomingExams().map(exam => exam.id));
+  return (this.stats()?.byExam || []).filter(exam => upcomingIds.has(exam.id));
 }
 
 trackOptions(): string[] {
