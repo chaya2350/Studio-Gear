@@ -307,6 +307,35 @@ export class ApiService {
   createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
   updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
   deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
+  getTrackScheduleMeta() {
+    return this.http.get<{
+      tracks: { id: number; name: string; years: { year: string; student_count: number }[] }[];
+      teachers: { id: number; name: string; subject: string | null; specialization: string | null }[];
+      periods: { id: number; name: string; start_time: string; end_time: string; is_break: number }[];
+      rooms: { number: string; name: string }[];
+    }>(`${this.base}/track-schedules`);
+  }
+  getTrackSchedule(trackId: number, studyYear: string) {
+    return this.http.get<{
+      track: { id: number; name: string };
+      study_year: string;
+      student_count: number;
+      slots: any[];
+    }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`);
+  }
+  createTrackScheduleSlot(trackId: number, studyYear: string, data: {
+    teacher_id: number; day_of_week: number; period_id: number; subject?: string; room_number?: string | null;
+  }) {
+    return this.http.post<{ id: number }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`, data);
+  }
+  updateTrackScheduleSlot(id: number, data: {
+    teacher_id: number; period_id: number; subject?: string; room_number?: string | null;
+  }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/track-schedules/slots/${id}`, data);
+  }
+  deleteTrackScheduleSlot(id: number) {
+    return this.http.delete<{ success: boolean }>(`${this.base}/track-schedules/slots/${id}`);
+  }
   copyWeekSchedule(from: string, to: string, change: { change_category: string; change_reason: string }) {
     return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to, ...change });
   }

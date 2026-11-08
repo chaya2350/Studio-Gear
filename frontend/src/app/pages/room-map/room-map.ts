@@ -32,7 +32,7 @@ interface Booking {
   title: string;
   start_time: string;
   end_time: string;
-  kind: 'manual' | 'lesson';
+  kind: 'manual' | 'lesson' | 'track';
   cancelled?: boolean;
   start_date?: string;
 }
@@ -411,7 +411,9 @@ export class RoomMapComponent implements OnInit {
   }
 
   removeBooking(booking: Booking): void {
-    const description = booking.kind === 'manual' ? 'השיבוץ השבועי וכל המופעים העתידיים שלו' : 'שיבוץ החדר לשיעור זה';
+    const description = booking.kind === 'manual'
+      ? 'השיבוץ השבועי וכל המופעים העתידיים שלו'
+      : booking.kind === 'track' ? 'שיוך החדר הקבוע לשיעור המסלול' : 'שיבוץ החדר לשיעור זה';
     if (!window.confirm(`להסיר את ${description}?`)) return;
     this.http.delete(`/api/schedule/room-bookings/${booking.kind}/${booking.id}`).subscribe({
       next: () => this.search(),

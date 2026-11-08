@@ -33,7 +33,9 @@ import { ApiService } from '../../services/api.service';
     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
     </svg>
-    <input [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="חיפוש לפי שם או מקצוע..." autocomplete="off">
+    <input [ngModel]="query()" (ngModelChange)="query.set($event)"
+           placeholder="חיפוש לפי שם, תחום, מקצוע, טלפון או מייל..."
+           aria-label="חיפוש מורות לפי שם, תחום, מקצוע, טלפון או מייל" autocomplete="off">
     <button *ngIf="query()" class="clear-btn" (click)="query.set('')">✕</button>
   </div>
 
@@ -55,6 +57,7 @@ import { ApiService } from '../../services/api.service';
         <div class="teacher-name">{{ t.name }}</div>
         <div class="teacher-meta">
           <span *ngIf="t.subject" class="meta-chip subject">{{ t.subject }}</span>
+          <span *ngIf="t.specialization" class="meta-chip specialization">תחום: {{ t.specialization }}</span>
           <span *ngIf="t.phone" class="meta-chip">{{ t.phone }}</span>
           <span *ngIf="t.email" class="meta-chip email">{{ t.email }}</span>
         </div>
@@ -116,6 +119,7 @@ import { ApiService } from '../../services/api.service';
       font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
       background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
       &.subject { background: var(--primary-light); color: var(--primary); border-color: transparent; }
+      &.specialization { background: var(--surface-2); color: var(--text); }
       &.email { direction: ltr; }
     }
 
@@ -143,7 +147,9 @@ export class TeacherSearchComponent implements OnInit {
     return this.allTeachers().filter(t =>
       (t.name || '').toLowerCase().includes(q) ||
       (t.subject || '').toLowerCase().includes(q) ||
-      (t.email || '').toLowerCase().includes(q)
+      (t.specialization || '').toLowerCase().includes(q) ||
+      (t.email || '').toLowerCase().includes(q) ||
+      (t.phone || '').toLowerCase().includes(q)
     );
   });
 

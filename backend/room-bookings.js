@@ -20,6 +20,12 @@ function validTime(start, end) {
   return typeof start === 'string' && typeof end === 'string' && TIME.test(start) && TIME.test(end) && start < end;
 }
 
+function hasTrackSchedules(db) {
+  return Boolean(db.prepare(`
+    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'track_schedule_slots'
+  `).get());
+}
+
 function initializeRoomBookings(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS room_manual_bookings (
@@ -61,7 +67,7 @@ function initializeRoomBookings(db) {
   `);
 }
 
-function findConflict(db, room, date, start, end, excludeSlot = 0, excludeManual = 0) {
+function findConflict(db, room, date, start, end, excludeSlot = 0, excludeManual = 0, excludeTrackSlot = 0) {
   const { day, week } = dateInfo(date);
   const manual = db.prepare(`
     SELECT id, title FROM room_manual_bookings WHERE room_number = ? AND day_of_week = ?
@@ -69,13 +75,22 @@ function findConflict(db, room, date, start, end, excludeSlot = 0, excludeManual
     LIMIT 1
   `).get(room, day, date, end, start, excludeManual);
   if (manual) return manual;
-  return db.prepare(`
+  const lesson = db.prepare(`
     SELECT s.id, s.subject AS title FROM room_lesson_bookings b
     JOIN schedule_slots s ON s.id = b.slot_id
     WHERE b.room_number = ? AND s.week_start = ? AND s.day_of_week = ?
       AND s.start_time < ? AND s.end_time > ? AND s.id != ?
     LIMIT 1
   `).get(room, week, day, end, start, excludeSlot);
+  if (lesson) return lesson;
+  if (!hasTrackSchedules(db)) return undefined;
+  return db.prepare(`
+    SELECT s.id, COALESCE(s.subject, s.period_name) AS title
+    FROM track_schedule_slots s
+    WHERE s.room_number = ? AND s.day_of_week = ?
+      AND s.start_time < ? AND s.end_time > ? AND s.id != ?
+    LIMIT 1
+  `).get(room, day, end, start, excludeTrackSlot);
 }
 
 function assignLesson(db, slot, room) {
@@ -114,6 +129,12 @@ function saveManualBooking(db, room, date, start, end, title, id = 0) {
       AND s.start_time < ? AND s.end_time > ? LIMIT 1
   `).get(room, day, date, end, start);
   if (future) throw new Error('קיים שיעור משובץ בחדר בשעה זו באחד השבועות הבאים');
+  const trackLesson = hasTrackSchedules(db) && db.prepare(`
+    SELECT s.id FROM track_schedule_slots s
+    WHERE s.room_number = ? AND s.day_of_week = ? AND s.start_time < ? AND s.end_time > ?
+    LIMIT 1
+  `).get(room, day, end, start);
+  if (trackLesson) throw new Error('קיים שיעור מסלול משובץ בחדר בשעה זו');
   if (id) {
     db.prepare('UPDATE room_manual_bookings SET title = ?, start_date = ?, day_of_week = ?, start_time = ?, end_time = ? WHERE id = ?')
       .run(title.trim(), date, day, start, end, id);
@@ -151,8 +172,26 @@ function registerRoomBookingRoutes(app, db, { ensureHolidays, holidayForDate }) 
     const occupied = lessons.filter(s => s.room_number && s.start_time < end && s.end_time > start)
       .map(s => ({ id: s.id, room_number: s.room_number, title: `${s.subject || 'שיעור'} · ${s.class_year}${s.class_parallel} · ${s.teacher_name}`,
         start_time: s.start_time, end_time: s.end_time, kind: 'lesson', cancelled: cancelled(s) }));
+    const trackLessons = hasTrackSchedules(db) ? db.prepare(`
+      SELECT s.id, s.room_number, s.start_time, s.end_time, s.subject, s.period_name,
+        s.study_year, t.name AS teacher_name, tr.name AS track_name
+      FROM track_schedule_slots s
+      JOIN teachers t ON t.id = s.teacher_id
+      JOIN tracks tr ON tr.id = s.track_id
+      WHERE s.room_number IS NOT NULL AND s.day_of_week = ?
+        AND s.start_time < ? AND s.end_time > ?
+      ORDER BY s.start_time, tr.name
+    `).all(day, end, start).map(s => ({
+      id: s.id,
+      room_number: s.room_number,
+      title: `${s.subject || s.period_name} · ${s.track_name} שנה ${s.study_year} · ${s.teacher_name}`,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      kind: 'track',
+      cancelled: Boolean(holiday)
+    })) : [];
     const choices = lessons.filter(s => !s.room_number && !cancelled(s) && validTime(s.start_time, s.end_time));
-    res.json({ bookings: [...manual, ...occupied], lessons: choices, holiday: holiday ? holiday.title : null });
+    res.json({ bookings: [...manual, ...occupied, ...trackLessons], lessons: choices, holiday: holiday ? holiday.title : null });
   });
 
   app.post('/api/schedule/room-bookings', async (req, res) => {
@@ -210,12 +249,13 @@ function registerRoomBookingRoutes(app, db, { ensureHolidays, holidayForDate }) 
     }
   });
   app.delete('/api/schedule/room-bookings/:kind/:id', (req, res) => {
-    if (!/^\d+$/.test(req.params.id) || !['manual', 'lesson'].includes(req.params.kind))
+    if (!/^\d+$/.test(req.params.id) || !['manual', 'lesson', 'track'].includes(req.params.kind))
       return res.status(400).json({ error: 'שיבוץ לא תקין' });
-    const statement = req.params.kind === 'manual'
-      ? 'DELETE FROM room_manual_bookings WHERE id = ?'
-      : 'DELETE FROM room_lesson_bookings WHERE slot_id = ?';
-    const result = db.prepare(statement).run(req.params.id);
+    const result = req.params.kind === 'manual'
+      ? db.prepare('DELETE FROM room_manual_bookings WHERE id = ?').run(req.params.id)
+      : req.params.kind === 'lesson'
+        ? db.prepare('DELETE FROM room_lesson_bookings WHERE slot_id = ?').run(req.params.id)
+        : db.prepare('UPDATE track_schedule_slots SET room_number = NULL, updated_at = datetime(\'now\') WHERE id = ? AND room_number IS NOT NULL').run(req.params.id);
     if (!result.changes) return res.status(404).json({ error: 'השיבוץ לא נמצא' });
     res.json({ success: true });
   });

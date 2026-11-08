@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -610,12 +610,22 @@ class="section-tab"
   <!-- רשימת מורות -->
   <div class="card" style="max-width:640px;">
     <div class="section-title-row">
-      <div class="section-title" style="margin-bottom:0">רשימת מורות ({{ teachers().length }})</div>
+      <div class="section-title" style="margin-bottom:0">
+        רשימת מורות ({{ filteredTeachers().length }}<span *ngIf="teacherQuery().trim()"> מתוך {{ teachers().length }}</span>)
+      </div>
       <button class="btn btn-secondary" style="font-size:0.8rem;padding:5px 12px" (click)="loadTeachers()">רענן</button>
     </div>
+    <div class="teacher-search">
+      <input [ngModel]="teacherQuery()" (ngModelChange)="teacherQuery.set($event)"
+             placeholder="חיפוש לפי שם, תחום, מקצוע, טלפון או מייל..."
+             aria-label="חיפוש מורות לפי שם, תחום, מקצוע, טלפון או מייל">
+      <button *ngIf="teacherQuery()" type="button" class="btn btn-secondary btn-xs"
+              (click)="teacherQuery.set('')">ניקוי</button>
+    </div>
     <div *ngIf="!teachers().length" class="empty-hint">אין מורות במערכת עדיין</div>
+    <div *ngIf="teachers().length && !filteredTeachers().length" class="empty-hint">לא נמצאו מורות התואמות לחיפוש</div>
     <div class="teacher-list-table">
-      <div *ngFor="let t of teachers()" class="teacher-list-row">
+      <div *ngFor="let t of filteredTeachers()" class="teacher-list-row">
         <ng-container *ngIf="editingTeacherId() !== t.id">
           <div class="teacher-color-dot" [style.background]="teacherColor(t.id)"></div>
           <div class="teacher-list-info">
@@ -724,6 +734,12 @@ gap: 8px;
 .danger-zone p { margin: 0; color: #881337; font-size: 0.85rem; }
 .danger-result { font-weight: 700; color: #9f1239; }
 .user-help { color: var(--text-muted); font-size: 0.85rem; margin: -4px 0 14px; }
+.teacher-search { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.teacher-search input {
+  flex: 1; min-width: 0; padding: 9px 12px; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit;
+}
+.teacher-search input:focus { outline: none; border-color: var(--primary); }
 .user-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: center; }
 .user-form input, .user-form select, .user-row select {
 padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
@@ -1391,6 +1407,15 @@ this.http.get<any[]>('/api/students').subscribe(s => this.totalImported.set(s.le
 
 // ── Teachers ──────────────────────────────────────────────
 teachers = signal<any[]>([]);
+teacherQuery = signal('');
+filteredTeachers = computed(() => {
+  const query = this.teacherQuery().trim().toLocaleLowerCase();
+  if (!query) return this.teachers();
+  return this.teachers().filter(teacher =>
+    [teacher.name, teacher.specialization, teacher.subject, teacher.email, teacher.phone]
+      .some(value => String(value || '').toLocaleLowerCase().includes(query))
+  );
+});
 newTeacherName = '';
 newTeacherSubject = '';
 newTeacherSpecialization = '';

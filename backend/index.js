@@ -23,6 +23,7 @@ const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule
 const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
+const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
@@ -3592,6 +3593,13 @@ db.exec(`
     is_break INTEGER NOT NULL DEFAULT 0
   );
 `);
+initializeTrackSchedule(db);
+registerTrackScheduleRoutes(app, db, {
+  getSchoolYearEnd,
+  todayInIsrael,
+  holidayForDate: schoolHolidayForDate,
+  ensureHolidays: ensureSchoolYearHolidays
+});
 
 // Seed default lesson periods if the table is empty
 {
