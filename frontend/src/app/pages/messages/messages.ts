@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { interval, Subject } from 'rxjs';
+import { interval, Subject, Subscription } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { AuthService } from '../../services/auth.service';
 import { DirectMessage, MessageUser, MessagesService, PersonalTask } from '../../services/messages.service';
@@ -30,27 +30,38 @@ template: `
 </div>
 <label for="recipient">אל (ניתן לבחור מספר עם Ctrl)</label>
 <select id="recipient" multiple [(ngModel)]="recipientIds"
-[disabled]="usersLoading || !users.length" size="4" style="height:auto">
+[disabled]="usersLoading || !users.length || sending || loadingReply"
+(ngModelChange)="cancelReply()"
+size="4" style="height:auto">
 <option *ngFor="let user of users" [ngValue]="user.id">{{ user.name }}</option>
 </select>
-<div *ngIf="replyToName" class="reply-hint">
-משיבה ל{{ replyToName }}
-<button type="button" (click)="replyToName = ''" aria-label="ביטול תשובה"></button>
+<div *ngIf="replyToMessage as original" class="reply-hint">
+<div><strong>בתשובה להודעה מאת {{ original.sender_name }}</strong><div class="reply-preview">{{ original.body }}</div></div>
+<button type="button" (click)="cancelReply()" [disabled]="sending" aria-label="ביטול תשובה">×</button>
 </div>
 <label for="message-body">תוכן ההודעה</label>
 <textarea id="message-body" [(ngModel)]="body" rows="5" maxlength="4000"
 placeholder="כתבי הודעה..."></textarea>
-<label for="message-file">צירוף קובץ (עד 10MB)</label>
-<input id="message-file" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-       [disabled]="sending" (change)="selectAttachment($event)">
-<div *ngIf="attachment" class="attachment-selected">
-  {{ attachment.name }}
-  <button type="button" class="retry-button" [disabled]="sending" (click)="clearAttachment()">הסרת קובץ</button>
+<div class="attachment-picker">
+  <div class="attachment-heading">קובץ מצורף <span>רשות</span></div>
+  <div class="attachment-controls">
+    <label for="message-file" class="attachment-button" [class.disabled]="sending">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5 12 20.4a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.4-8.4"/></svg>
+      {{ attachment ? 'החלפת קובץ' : 'בחירת קובץ' }}
+    </label>
+    <input id="message-file" class="file-input" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+           [disabled]="sending" (change)="selectAttachment($event)">
+    <span *ngIf="!attachment" class="attachment-empty">לא נבחר קובץ</span>
+  </div>
+  <div *ngIf="attachment" class="attachment-selected">
+    <span class="attachment-name">📎 {{ attachment.name }}</span>
+    <button type="button" class="attachment-remove" [disabled]="sending" (click)="clearAttachment()">הסרה</button>
+  </div>
+  <small class="attachment-hint">תמונה, PDF, Word, Excel או טקסט · עד 10MB</small>
 </div>
-<small class="attachment-hint">תמונות, PDF, מסמכי Word, Excel וטקסט</small>
 <div class="compose-footer">
 <small>{{ body.length }}/4000</small>
-<button class="btn btn-primary" type="button" [disabled]="sending || usersLoading || !recipientIds.length || !body.trim()"
+<button class="btn btn-primary" type="button" [disabled]="sending || loadingReply || usersLoading || !recipientIds.length || !body.trim()"
 (click)="send()">{{ sending ? 'שולחת…' : 'שליחת הודעה ' }}</button>
 </div>
 <div *ngIf="sendError" class="alert alert-error" role="alert">{{ sendError }}</div>
@@ -95,17 +106,21 @@ placeholder="כתבי הודעה..."></textarea>
 <span>{{ message.created_at | date:'dd/MM/yyyy HH:mm' }}{{ message.edited_at ? ' (נערך)' : '' }}</span>
 </div>
 <div style="display:flex;gap:6px;align-items:center">
-<button class="reply-button" type="button" (click)="startEdit(message)">✏️</button>
-<button class="reply-button" type="button" (click)="reply(message)">
+<button *ngIf="message.sender_id === auth.user()?.id" class="reply-button" type="button" (click)="startEdit(message)" aria-label="עריכת ההודעה" title="עריכת ההודעה">✏️</button>
+<button class="reply-button" type="button" [disabled]="sending || loadingReply" (click)="reply(message)">
   {{ message.group_id ? 'השב לכולם ↩' : 'השיבי ↩' }}
 </button>
 </div>
+</div>
+<div *ngIf="message.reply_to_id && message.reply_to_body !== null" class="message-quote">
+<strong>בתשובה ל{{ message.reply_to_sender_name }}</strong>
+<div class="reply-preview">{{ message.reply_to_body }}</div>
 </div>
 <ng-container *ngIf="editingMessageId === message.id; else showBody">
 <textarea style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:8px;font:inherit;resize:vertical;margin:6px 0" [(ngModel)]="editBody" rows="3" maxlength="4000"></textarea>
 <div style="display:flex;gap:8px;margin-bottom:4px">
 <button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit || !editBody.trim()" (click)="saveEdit(message)">{{ savingEdit ? 'שומרת…' : 'שמירה' }}</button>
-<button class="btn btn-secondary" style="padding:4px 12px;font-size:0.8rem" type="button" (click)="cancelEdit()">ביטול</button>
+<button class="btn btn-secondary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit" (click)="cancelEdit()">ביטול</button>
 </div>
 <p *ngIf="editError" class="alert alert-error">{{ editError }}</p>
 </ng-container>
@@ -165,13 +180,30 @@ styles: [`
 label { display: block; margin: 14px 0 6px; font-weight: 700; font-size: 0.85rem; }
 select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: 10px 12px; font: inherit; }
 textarea { resize: vertical; line-height: 1.7; }
-.attachment-selected { margin-top: 8px; overflow-wrap: anywhere; font-size: .85rem; }
-.attachment-hint { display: block; color: var(--text-muted); margin-top: 6px; }
+.attachment-picker { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.attachment-heading { font-size: .85rem; font-weight: 700; }
+.attachment-heading span { font-size: .75rem; font-weight: 400; color: var(--text-muted); margin-right: 5px; }
+.attachment-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 9px; }
+.attachment-button { display: inline-flex; align-items: center; gap: 7px; margin: 0; padding: 8px 12px; border: 1px solid var(--primary); border-radius: var(--radius-sm); color: var(--primary); background: var(--surface); cursor: pointer; font-size: .82rem; }
+.attachment-button:hover { background: var(--primary-light); }
+.attachment-button.disabled { opacity: .5; cursor: default; }
+.attachment-button svg { width: 17px; height: 17px; }
+.file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.attachment-controls:focus-within .attachment-button { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.attachment-empty, .attachment-hint { color: var(--text-muted); font-size: .78rem; }
+.attachment-selected { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 9px 10px; border-radius: var(--radius-xs); background: var(--surface); font-size: .85rem; }
+.attachment-name { min-width: 0; overflow-wrap: anywhere; }
+.attachment-remove { flex-shrink: 0; border: 0; background: transparent; color: var(--danger); cursor: pointer; font: inherit; }
+.attachment-remove:disabled { opacity: .5; cursor: default; }
+.attachment-hint { display: block; margin-top: 8px; }
 .attachment-link { display: inline-block; margin: 8px 0; color: var(--primary); overflow-wrap: anywhere; }
 .compose-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; }
 .compose-footer small { color: var(--text-muted); }
-.reply-hint { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--primary); font-size: 0.85rem; }
-.reply-hint button { border: 0; background: transparent; cursor: pointer; color: inherit; }
+.reply-hint, .message-quote { border-right: 3px solid var(--primary); border-radius: var(--radius-xs); background: var(--primary-light); padding: 8px 10px; font-size: .82rem; }
+.reply-hint { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--text); }
+.reply-hint button { align-self: flex-start; border: 0; background: transparent; cursor: pointer; color: var(--text); font-size: 1.2rem; }
+.message-quote { margin-top: 8px; color: var(--text); }
+.reply-preview { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-muted); }
 .success-message { display: flex; align-items: center; gap: 9px; margin-top: 14px; padding: 12px 14px; border: 1px solid #a7f3d0; border-radius: var(--radius-sm); background: #ecfdf5; color: #047857; font-weight: 700; }
 .success-icon { display: inline-flex; width: 23px; height: 23px; align-items: center; justify-content: center; border-radius: 50%; background: #10b981; color: white; }
 .retry-button { margin-right: 8px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
@@ -224,7 +256,9 @@ body = '';
 attachment: File | null = null;
 view: MessageView = 'all';
 selectedConversationId: number | null = null;
-replyToName = '';
+replyToMessage: DirectMessage | null = null;
+loadingReply = false;
+private replyRequest?: Subscription;
 emojiPickerMessageId: number | null = null;
 editingMessageId: number | null = null;
 editBody = '';
@@ -257,7 +291,7 @@ this.loadTasks();
 interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages(false));
 }
 
-ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
+ngOnDestroy() { this.replyRequest?.unsubscribe(); this.destroy$.next(); this.destroy$.complete(); }
 
 private localToday(): string {
 const today = new Date();
@@ -378,23 +412,22 @@ return Array.from(contacts.values()).sort((first, second) => first.name.localeCo
 }
 
 selectConversation(userId: number | null) {
+this.cancelReply();
 this.selectedConversationId = userId;
 this.emojiPickerMessageId = null;
 const activeContact = this.users.find(user => user.id === userId);
 if (activeContact) {
 this.recipientIds = [activeContact.id];
-this.replyToName = activeContact.name;
 } else {
 this.recipientIds = [];
-this.replyToName = '';
 }
 this.sendError = '';
 this.sendSuccess = '';
 }
 
 selectRecipient(userId: number | null) {
+this.cancelReply();
 this.selectedConversationId = userId;
-this.replyToName = '';
 this.sendError = '';
 this.sendSuccess = '';
 }
@@ -420,16 +453,16 @@ this.changeDetector.markForCheck();
 }
 
 send() {
-if (!this.recipientIds.length || !this.body.trim() || this.sending) return;
+if (!this.recipientIds.length || !this.body.trim() || this.sending || this.loadingReply) return;
 this.sending = true;
 this.sendError = '';
 this.sendSuccess = '';
-this.messagesApi.sendMessage(this.recipientIds, this.body, this.attachment).subscribe({
+this.messagesApi.sendMessage(this.recipientIds, this.body, this.attachment, this.replyToMessage?.id).subscribe({
 next: () => {
 const names = this.recipientIds.map(id => this.users.find(u => u.id === id)?.name || '').filter(Boolean).join(', ');
 this.body = '';
 this.clearAttachment();
-this.replyToName = '';
+this.cancelReply();
 this.sendSuccess = `ההודעה נשלחה בהצלחה אל ${names}`;
 this.sending = false;
 this.changeDetector.markForCheck();
@@ -462,38 +495,46 @@ if (input instanceof HTMLInputElement) input.value = '';
 }
 
 reply(message: DirectMessage) {
+if (this.sending || this.loadingReply) return;
+this.cancelReply();
 const currentId = this.auth.user()?.id;
 const recipientId = message.sender_id === currentId ? message.recipient_id : message.sender_id;
 const recipient = this.users.find(user => user.id === recipientId);
 if (!recipient) { this.sendError = 'המשתמשת אינה פעילה עוד במערכת'; return; }
 
-// אם יש group_id — מציעים השב לכולם
 if (message.group_id) {
-  this.messagesApi.getGroupRecipients(message.group_id).subscribe({
+  this.loadingReply = true;
+  this.replyRequest = this.messagesApi.getGroupRecipients(message.group_id).subscribe({
     next: (others) => {
-      const allIds = [recipient.id, ...others.map(o => o.id).filter(id => id !== recipient.id)];
-      this.recipientIds = allIds;
-      this.replyToName = allIds.length > 1
-        ? `${recipient.name} ועוד ${allIds.length - 1}`
-        : recipient.name;
+      this.recipientIds = [...new Set([recipient.id, ...others.map(o => o.id).filter(id => this.users.some(user => user.id === id))])];
+      this.replyToMessage = message;
+      this.loadingReply = false;
       this.sendError = '';
       this.sendSuccess = '';
       this.changeDetector.markForCheck();
     },
-    error: () => {
-      this.recipientIds = [recipient.id];
-      this.replyToName = recipient.name;
+    error: error => {
+      this.loadingReply = false;
+      this.sendError = error.error?.error || 'לא ניתן לטעון את נמענות ההודעה';
+      this.changeDetector.markForCheck();
     }
   });
 } else {
   this.recipientIds = [recipient.id];
-  this.replyToName = recipient.name;
+  this.replyToMessage = message;
 }
 this.sendError = '';
 this.sendSuccess = '';
 }
 
+cancelReply() {
+this.replyRequest?.unsubscribe();
+this.loadingReply = false;
+this.replyToMessage = null;
+}
+
 startEdit(message: DirectMessage) {
+if (message.sender_id !== this.auth.user()?.id || this.savingEdit) return;
 this.editingMessageId = message.id;
 this.editBody = message.body;
 this.editError = '';
@@ -506,7 +547,7 @@ this.editError = '';
 }
 
 saveEdit(message: DirectMessage) {
-if (!this.editBody.trim() || this.savingEdit) return;
+if (message.sender_id !== this.auth.user()?.id || !this.editBody.trim() || this.savingEdit) return;
 this.savingEdit = true;
 this.editError = '';
 this.messagesApi.editMessage(message.id, this.editBody).subscribe({

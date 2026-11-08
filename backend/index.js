@@ -25,6 +25,7 @@ const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
+const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
   PERMISSION_ACTIONS,
@@ -966,6 +967,8 @@ app.get('/api/messages/users', (req, res) => {
 // קבלת כל נמעני קבוצת הודעות (לצורך "השב לכולם")
 app.get('/api/messages/group/:group_id/recipients', (req, res) => {
   const groupId = req.params.group_id;
+  const member = db.prepare('SELECT 1 FROM messages WHERE group_id = ? AND (sender_id = ? OR recipient_id = ?)').get(groupId, req.user.id, req.user.id);
+  if (!member) return res.status(404).json({ error: 'קבוצת ההודעות לא נמצאה' });
   const rows = db.prepare(`
     SELECT DISTINCT recipient_id AS id, u.name
     FROM messages m JOIN users u ON u.id = m.recipient_id
@@ -1024,9 +1027,12 @@ app.get('/api/messages', (req, res) => {
   const messages = db.prepare(`
     SELECT m.id, m.sender_id, m.recipient_id, sender.name AS sender_name,
       recipient.name AS recipient_name, m.body, m.created_at, m.read_at, m.edited_at, m.group_id,
-      a.filename AS attachment_name
+      a.filename AS attachment_name, m.reply_to_id, original.body AS reply_to_body,
+      original_sender.name AS reply_to_sender_name
     FROM messages m
     LEFT JOIN message_attachments a ON a.message_id = m.id
+    LEFT JOIN messages original ON original.id = m.reply_to_id
+    LEFT JOIN users original_sender ON original_sender.id = original.sender_id
     JOIN users sender ON sender.id = m.sender_id
     JOIN users recipient ON recipient.id = m.recipient_id
     WHERE m.sender_id = ? OR m.recipient_id = ?
@@ -1081,11 +1087,21 @@ app.post('/api/messages', attachmentUpload, (req, res) => {
   const activeIds = db.prepare(`SELECT id FROM users WHERE id IN (${recipientIds.map(() => '?').join(',')}) AND active = 1`)
     .all(...recipientIds).map(u => u.id);
   if (!activeIds.length) return res.status(400).json({ error: 'הנמענות שנבחרו אינן פעילות במערכת' });
+  let replyToId = null;
+  if (req.body?.reply_to_id !== undefined && req.body.reply_to_id !== null) {
+    const value = req.body.reply_to_id;
+    if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') {
+      return res.status(400).json({ error: 'ההודעה המקורית אינה תקינה' });
+    }
+    const target = findReplyTarget(db, Number(value), req.user.id, recipientIds);
+    if (!target) return res.status(400).json({ error: 'לא ניתן להשיב להודעה זו לנמענות שנבחרו' });
+    replyToId = target.id;
+  }
   const now = new Date().toISOString();
-  const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at, group_id) VALUES (?, ?, ?, ?, ?)');
-  const groupId = activeIds.length > 1 ? `grp-${req.user.id}-${Date.now()}` : null;
+  const insertMsg = db.prepare('INSERT INTO messages (sender_id, recipient_id, body, created_at, group_id, reply_to_id) VALUES (?, ?, ?, ?, ?, ?)');
+  const groupId = activeIds.length > 1 ? `grp-${req.user.id}-${randomBytes(16).toString('hex')}` : null;
   const ids = db.transaction(() => activeIds.map(rid => {
-    const id = insertMsg.run(req.user.id, rid, body, now, groupId).lastInsertRowid;
+    const id = insertMsg.run(req.user.id, rid, body, now, groupId, replyToId).lastInsertRowid;
     if (req.file) insertAttachment(db, id, req.file);
     return id;
   }))();
@@ -1096,10 +1112,9 @@ app.put('/api/messages/:id', (req, res) => {
   const messageId = Number(req.params.id);
   const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
   if (!body || body.length > 4000) return res.status(400).json({ error: 'תוכן ההודעה חסר או ארוך מ-4000 תווים' });
-  // שני הצדדים יכולים לערוך — שולח ונמען
-  const message = db.prepare('SELECT * FROM messages WHERE id = ? AND (sender_id = ? OR recipient_id = ?)').get(messageId, req.user.id, req.user.id);
-  if (!message) return res.status(404).json({ error: 'הודעה לא נמצאה' });
-  db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, new Date().toISOString(), messageId);
+  if (!editOwnMessage(db, messageId, req.user.id, body, new Date().toISOString())) {
+    return res.status(404).json({ error: 'ההודעה לא נמצאה או שאין לך הרשאה לערוך אותה' });
+  }
   res.json({ success: true });
 });
 
@@ -1540,6 +1555,7 @@ db.exec(`
 const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
 if (!messageCols.includes('edited_at')) db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
 if (!messageCols.includes('group_id'))  db.exec('ALTER TABLE messages ADD COLUMN group_id TEXT');
+initializeMessageReplies(db);
 initializeMessageAttachments(db);
 
 // Migration: coordinator_track לטבלת users

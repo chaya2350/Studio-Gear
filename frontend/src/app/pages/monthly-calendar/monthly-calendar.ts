@@ -2,12 +2,12 @@
 import { Component, computed, OnInit, OnDestroy, signal, HostListener } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { interval, Subject } from 'rxjs';
+import { interval, Subject, Subscription } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { HDate, months } from '@hebcal/core';
 import { ApiService, CalendarEvent } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
-import { Loan } from '../../models';
+import { Loan, Student } from '../../models';
 import { MessagesService, PersonalTask, MessageUser } from '../../services/messages.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
@@ -109,14 +109,24 @@ interface GanttRow {
 </div>
 
 <div *ngIf="addWeddingOpen()" class="modal-backdrop" (click)="closeDialogs()">
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="wedding-title" (click)="$event.stopPropagation()">
+  <div class="modal-card wedding-dialog" role="dialog" aria-modal="true" aria-labelledby="wedding-title" (click)="$event.stopPropagation()">
     <h2 id="wedding-title" class="modal-title">הוספת חתונה ל־{{ formatShortDate(selectedDate()) }}</h2>
     <div class="form-group">
       <label for="wedding-student">בחירת תלמידה *</label>
-      <select id="wedding-student" [(ngModel)]="weddingStudentId">
-        <option value="">בחרי תלמידה</option>
-        <option *ngFor="let student of allStudents()" [value]="student.id_number">{{ student.name }} · {{ student.id_number }}</option>
-      </select>
+      <input id="wedding-student" [ngModel]="weddingQuery()" (ngModelChange)="onWeddingQueryChange($event)"
+             placeholder="חפשי לפי שם או מספר זהות" autocomplete="off" [disabled]="savingWedding()"
+             aria-describedby="wedding-search-hint">
+      <small id="wedding-search-hint" class="wedding-search-hint">
+        {{ weddingStudentsLoading() ? 'טוענת תלמידות...' : 'הקלידי לפחות שני תווים לחיפוש' }}
+      </small>
+      <div *ngIf="weddingStudentId" class="wedding-selected">התלמידה שנבחרה: {{ weddingSelectedName }}</div>
+      <div *ngIf="!weddingStudentId && weddingQuery().trim().length >= 2 && !weddingStudentsLoading() && !weddingStudentsLoadError()" class="wedding-results">
+        <button type="button" *ngFor="let student of weddingStudentResults() | slice:0:20" (click)="selectWeddingStudent(student)">
+          <strong>{{ student.name }}</strong><span>{{ student.id_number }}</span>
+        </button>
+        <span *ngIf="!weddingStudentResults().length" class="wedding-search-hint">לא נמצאו תלמידות מתאימות</span>
+        <span *ngIf="weddingStudentResults().length > 20" class="wedding-search-hint">מוצגות 20 תוצאות ראשונות; אפשר לדייק את החיפוש</span>
+      </div>
     </div>
     <div class="form-group">
       <label for="wedding-venue">מקום החתונה</label>
@@ -693,6 +703,14 @@ interface GanttRow {
       font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px;
     }
     .modal-actions { display: flex; gap: 8px; }
+    .wedding-dialog { max-height: 95vh; overflow-y: auto; }
+    .wedding-search-hint { color: var(--text-muted); font-size: .8rem; }
+    .wedding-results { display: flex; flex-direction: column; gap: 4px; max-height: 210px; overflow-y: auto; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+    .wedding-results button { display: flex; justify-content: space-between; gap: 12px; text-align: right; padding: 9px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+    .wedding-results button:hover, .wedding-results button:focus-visible { background: var(--primary-light); }
+    .wedding-results button span { color: var(--text-muted); direction: ltr; }
+    .wedding-results .wedding-search-hint { padding: 8px; }
+    .wedding-selected { color: var(--primary); font-size: .85rem; font-weight: 700; }
     .delete-task-dialog { position: relative; gap: 10px; text-align: center; border: 1px solid var(--border); animation: delete-dialog-enter 150ms ease-out; }
     .delete-task-icon { display: grid; place-items: center; width: 38px; height: 38px; margin: 0 auto; border-radius: 50%; background: #fff1f0; color: #b42318; font-size: 1.25rem; font-weight: 900; }
     .delete-task-dialog .modal-title { margin: 0; color: var(--text); font-size: 1.05rem; }
@@ -1147,7 +1165,20 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly addEventOpen = signal(false);
   readonly addWeddingOpen = signal(false);
   readonly savingWedding = signal(false);
+  readonly weddingStudentsLoading = signal(false);
+  readonly weddingStudentsLoadError = signal(false);
   weddingStudentId = '';
+  weddingSelectedName = '';
+  readonly weddingQuery = signal('');
+  readonly weddingStudentResults = computed<Student[]>(() => {
+    const query = this.weddingQuery().trim().toLocaleLowerCase('he');
+    if (query.length < 2) return [];
+    return this.allStudents().filter(student =>
+      String(student.name || '').toLocaleLowerCase('he').includes(query) ||
+      String(student.id_number || '').includes(query)
+    ).slice(0, 21);
+  });
+  private weddingStudentsRequest?: Subscription;
   weddingVenue = '';
   readonly dialogError  = signal('');
 
@@ -1220,7 +1251,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadAll());
   }
 
-  ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
+  ngOnDestroy() { this.weddingStudentsRequest?.unsubscribe(); this.destroy$.next(); this.destroy$.complete(); }
 
   private loadAll() {
     this.api.getLoans().subscribe({ next: v => this.loans.set(v), error: () => {} });
@@ -1411,13 +1442,34 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
     this.weddingStudentId = '';
+    this.weddingSelectedName = '';
+    this.weddingQuery.set('');
     this.weddingVenue = '';
     this.dialogError.set('');
     this.addWeddingOpen.set(true);
-    this.api.getStudents().subscribe({
-      next: students => this.allStudents.set(students),
-      error: () => this.dialogError.set('לא ניתן לטעון את רשימת התלמידות'),
+    this.weddingStudentsLoading.set(true);
+    this.weddingStudentsLoadError.set(false);
+    this.weddingStudentsRequest?.unsubscribe();
+    this.weddingStudentsRequest = this.api.getStudents().subscribe({
+      next: students => { this.allStudents.set(students); this.weddingStudentsLoading.set(false); },
+      error: () => {
+        this.weddingStudentsLoading.set(false);
+        this.weddingStudentsLoadError.set(true);
+        this.dialogError.set('לא ניתן לטעון את רשימת התלמידות. סגרי את החלון ונסי שוב.');
+      },
     });
+  }
+
+  onWeddingQueryChange(query: string) {
+    this.weddingQuery.set(query);
+    this.weddingStudentId = '';
+    this.weddingSelectedName = '';
+  }
+
+  selectWeddingStudent(student: Student) {
+    this.weddingStudentId = student.id_number;
+    this.weddingSelectedName = student.name;
+    this.weddingQuery.set(`${student.name} · ${student.id_number}`);
   }
 
   saveWedding() {
@@ -1443,6 +1495,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   closeDialogs() {
     if (this.savingWedding()) return;
+    this.weddingStudentsRequest?.unsubscribe();
+    this.weddingQuery.set('');
+    this.weddingStudentId = '';
+    this.weddingSelectedName = '';
     this.addTaskOpen.set(false);
     this.addExamOpen.set(false);
     this.addEventOpen.set(false);
