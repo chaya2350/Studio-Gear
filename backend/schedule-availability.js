@@ -37,10 +37,10 @@ function getPeriodAvailability(classYear, dayOfWeek, period) {
   if (!start || !end || end <= start) return 'track';
 
   const kodeshCutoff = getKodeshCutoff(classYear, dayOfWeek);
-  if (kodeshCutoff && end <= kodeshCutoff) return 'kodesh';
+  if (kodeshCutoff && start < kodeshCutoff) return 'kodesh';
 
   const instruction = getInstructionWindow(classYear, dayOfWeek);
-  if (instruction && start >= instruction.start && end <= instruction.end) return 'instruction';
+  if (instruction && start < instruction.end && end > instruction.start) return 'instruction';
 
   return 'track';
 }

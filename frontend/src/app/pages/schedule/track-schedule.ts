@@ -146,13 +146,12 @@ interface TrackScheduleSlot {
               </select>
             </label>
             <label>
-              <span>שעה</span>
-              <select name="period" [(ngModel)]="draft.period_id" required>
-                <option [ngValue]="null">בחרי שעה</option>
-                <option *ngFor="let period of availablePeriods(draft.day_of_week)" [ngValue]="period.id">
-                  {{ period.name }} · {{ period.start_time }}–{{ period.end_time }}
-                </option>
-              </select>
+              <span>שעת התחלה</span>
+              <input name="start_time" type="time" [(ngModel)]="draft.start_time" required>
+            </label>
+            <label>
+              <span>שעת סיום</span>
+              <input name="end_time" type="time" [(ngModel)]="draft.end_time" required>
             </label>
             <label>
               <span>מורה</span>
@@ -175,6 +174,7 @@ interface TrackScheduleSlot {
               </select>
             </label>
           </div>
+          <p class="time-hint">אפשר לקבוע שעות מסלול גם אחרי 15:30. שעות קודש והוראה נשארות חסומות.</p>
           <p *ngIf="!trackTeachers().length" class="alert alert-error" role="status">
             לא נמצאו מורות שתחום ההתמחות שלהן תואם למסלול. יש לעדכן את תחום ההתמחות בפרטי המורה.
           </p>
@@ -259,7 +259,23 @@ export class TrackScheduleComponent implements OnInit {
   selectableTracks = computed(() => this.tracks().filter(track =>
     track.years.some(year => year.student_count > 0)
   ));
-  lessonPeriods = computed(() => this.periods().filter(period => !period.is_break));
+  lessonPeriods = computed(() => {
+    const periods = new Map<string, { id?: number; name: string; start_time: string; end_time: string }>();
+    for (const period of this.periods().filter(item => !item.is_break)) {
+      periods.set(`${period.start_time}-${period.end_time}`, period);
+    }
+    for (const slot of this.schedule()?.slots || []) {
+      const key = `${slot.start_time}-${slot.end_time}`;
+      if (!periods.has(key)) {
+        periods.set(key, {
+          name: slot.period_name, start_time: slot.start_time, end_time: slot.end_time
+        });
+      }
+    }
+    return Array.from(periods.values()).sort((a, b) =>
+      a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)
+    );
+  });
   rooms = signal<{ number: string; name: string }[]>([]);
   availability = signal<ScheduleAvailabilityMap>(this.defaultAvailability);
   availabilityLoaded = signal(false);
@@ -281,7 +297,10 @@ export class TrackScheduleComponent implements OnInit {
   formOpen = signal(false);
   saving = signal(false);
   editingSlot = signal<TrackScheduleSlot | null>(null);
-  draft = { day_of_week: 0, period_id: null as number | null, teacher_id: null as number | null, subject: '', room_number: null as string | null };
+  draft = {
+    day_of_week: 0, start_time: '', end_time: '', teacher_id: null as number | null,
+    subject: '', room_number: null as string | null
+  };
 
   studyYears = computed(() => {
     const track = this.selectableTracks().find(item => item.id === this.selectedTrackId());
@@ -375,24 +394,17 @@ export class TrackScheduleComponent implements OnInit {
     return getPeriodAvailability(this.selectedYear(), day, period, this.availability());
   }
 
-  availablePeriods(day: number) {
-    if (!this.availabilityLoaded()) return [];
-    return this.lessonPeriods().filter(period => this.periodAvailability(day, period) === 'track');
-  }
-
   onDraftDayChange(day: number) {
     this.draft.day_of_week = Number(day);
-    if (!this.availablePeriods(this.draft.day_of_week).some(period => period.id === this.draft.period_id)) {
-      this.draft.period_id = null;
-    }
   }
 
-  openAdd(day = 0, period?: { id: number; start_time: string; end_time: string }) {
+  openAdd(day = 0, period?: { start_time: string; end_time: string }) {
     this.editingSlot.set(null);
     this.formError.set('');
     this.draft = {
       day_of_week: day,
-      period_id: period && this.periodAvailability(day, period) === 'track' ? period.id : null,
+      start_time: period?.start_time || '',
+      end_time: period?.end_time || '',
       teacher_id: null,
       subject: '',
       room_number: null
@@ -403,12 +415,10 @@ export class TrackScheduleComponent implements OnInit {
   edit(slot: TrackScheduleSlot) {
     this.editingSlot.set(slot);
     this.formError.set('');
-    const period = this.periods().find(item =>
-      item.start_time === slot.start_time && item.end_time === slot.end_time
-    );
     this.draft = {
       day_of_week: slot.day_of_week,
-      period_id: period?.id || null,
+      start_time: slot.start_time,
+      end_time: slot.end_time,
       teacher_id: slot.teacher_id,
       subject: slot.subject || '',
       room_number: slot.room_number
@@ -424,21 +434,24 @@ export class TrackScheduleComponent implements OnInit {
 
   save() {
     const trackId = this.selectedTrackId();
-    const { teacher_id, period_id, day_of_week, subject, room_number } = this.draft;
-    if (trackId === null || teacher_id === null || period_id === null) {
+    const { teacher_id, start_time, end_time, day_of_week, subject, room_number } = this.draft;
+    if (trackId === null || teacher_id === null || !start_time || !end_time) {
       this.formError.set('יש לבחור שעה ומורה');
       return;
     }
-    const period = this.lessonPeriods().find(item => item.id === period_id);
-    if (!period || this.periodAvailability(day_of_week, period) !== 'track') {
+    if (end_time <= start_time) {
+      this.formError.set('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+      return;
+    }
+    if (this.periodAvailability(day_of_week, { start_time, end_time }) !== 'track') {
       this.formError.set('יש לבחור שעה שאינה מיועדת ללימודי קודש או הוראה');
       return;
     }
     this.saving.set(true);
     this.formError.set('');
     const request = this.editingSlot()
-      ? this.api.updateTrackScheduleSlot(this.editingSlot()!.id, { teacher_id, period_id, subject, room_number }).pipe(map(() => undefined))
-      : this.api.createTrackScheduleSlot(trackId, this.selectedYear(), { teacher_id, day_of_week, period_id, subject, room_number }).pipe(map(() => undefined));
+      ? this.api.updateTrackScheduleSlot(this.editingSlot()!.id, { teacher_id, start_time, end_time, subject, room_number }).pipe(map(() => undefined))
+      : this.api.createTrackScheduleSlot(trackId, this.selectedYear(), { teacher_id, day_of_week, start_time, end_time, subject, room_number }).pipe(map(() => undefined));
     request.subscribe({
       next: () => {
         this.saving.set(false);

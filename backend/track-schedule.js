@@ -35,13 +35,19 @@ function validScheduleInput(input) {
   const trackId = Number(input?.track_id);
   const teacherId = Number(input?.teacher_id);
   const day = Number(input?.day_of_week);
-  const periodId = Number(input?.period_id);
+  const periodId = input?.period_id == null || input.period_id === '' ? null : Number(input.period_id);
   const year = String(input?.study_year || '').trim();
   if (!Number.isSafeInteger(trackId) || trackId < 1 ||
       !Number.isSafeInteger(teacherId) || teacherId < 1 ||
-      !Number.isSafeInteger(periodId) || periodId < 1 ||
+      (periodId !== null && (!Number.isSafeInteger(periodId) || periodId < 1)) ||
       !DAYS.includes(day) || !STUDY_YEARS.includes(year)) {
     return { error: 'יש לבחור מסלול, שנה, מורה, יום ושיעור תקינים' };
+  }
+  const startTime = String(input?.start_time || '').trim();
+  const endTime = String(input?.end_time || '').trim();
+  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!periodId && (!timePattern.test(startTime) || !timePattern.test(endTime) || endTime <= startTime)) {
+    return { error: 'יש לבחור שעת התחלה וסיום תקינות' };
   }
   const subject = typeof input.subject === 'string' ? input.subject.trim() : '';
   if (subject.length > 120) return { error: 'שם המקצוע ארוך מדי' };
@@ -49,7 +55,12 @@ function validScheduleInput(input) {
     ? null
     : String(input.room_number).trim();
   if (roomNumber && roomNumber.length > 30) return { error: 'בחירת החדר אינה תקינה' };
-  return { value: { trackId, teacherId, day, periodId, year, subject: subject || null, roomNumber } };
+  return {
+    value: {
+      trackId, teacherId, day, periodId, year, startTime, endTime,
+      subject: subject || null, roomNumber
+    }
+  };
 }
 
 function dateAtWeekDay(week, day) {
@@ -119,9 +130,14 @@ function prepareInput(db, input) {
   const track = getTrack(db, value.trackId);
   if (!track) return { error: 'המסלול לא נמצא או שהוא מאוחד למסלול אחר' };
 
-  const period = db.prepare('SELECT * FROM lesson_periods WHERE id = ? AND is_break = 0').get(value.periodId);
-  if (!period || !validTime(period.start_time, period.end_time)) {
-    return { error: 'יש לבחור שיעור תקין מתוך שעות המערכת' };
+  let period;
+  if (value.periodId) {
+    period = db.prepare('SELECT * FROM lesson_periods WHERE id = ? AND is_break = 0').get(value.periodId);
+    if (!period || !validTime(period.start_time, period.end_time)) {
+      return { error: 'יש לבחור שיעור תקין מתוך שעות המערכת' };
+    }
+  } else {
+    period = { name: 'שיעור', start_time: value.startTime, end_time: value.endTime };
   }
   const teacher = db.prepare('SELECT id, specialization FROM teachers WHERE id = ? AND active = 1').get(value.teacherId);
   if (!teacher) return { error: 'יש לבחור מורה פעילה' };

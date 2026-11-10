@@ -116,6 +116,41 @@ test('track schedule creation rejects breaks and unavailable periods, and blocks
   } finally { db.close(); }
 });
 
+test('track schedules accept custom late hours but reject Kodesh and instruction overlaps', async () => {
+  const db = setup();
+  try {
+    const { handlers } = routesFor(db);
+    const create = handlers.get('post /api/track-schedules/:trackId/:studyYear');
+
+    const lateLesson = response();
+    await create({
+      params: { trackId: '1', studyYear: 'ה' },
+      body: { teacher_id: 1, day_of_week: 1, start_time: '18:30', end_time: '20:45' }
+    }, lateLesson);
+    assert.equal(lateLesson.code, 201);
+    assert.deepEqual(
+      db.prepare('SELECT start_time, end_time FROM track_schedule_slots WHERE id = ?').get(lateLesson.body.id),
+      { start_time: '18:30', end_time: '20:45' }
+    );
+
+    const kodeshOverlap = response();
+    await create({
+      params: { trackId: '1', studyYear: 'ה' },
+      body: { teacher_id: 1, day_of_week: 1, start_time: '12:00', end_time: '12:45' }
+    }, kodeshOverlap);
+    assert.equal(kodeshOverlap.code, 400);
+    assert.match(kodeshOverlap.body.error, /קודש/);
+
+    const instructionOverlap = response();
+    await create({
+      params: { trackId: '1', studyYear: 'ה' },
+      body: { teacher_id: 1, day_of_week: 2, start_time: '14:30', end_time: '15:30' }
+    }, instructionOverlap);
+    assert.equal(instructionOverlap.code, 400);
+    assert.match(instructionOverlap.body.error, /הוראה/);
+  } finally { db.close(); }
+});
+
 test('track schedule only accepts active teachers specialized in the selected track', async () => {
   const db = setup();
   try {

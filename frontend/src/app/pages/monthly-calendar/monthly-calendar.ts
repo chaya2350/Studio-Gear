@@ -50,15 +50,16 @@ function toHebrewYear(year: number): string {
 }
 
 // ── Types ────────────────────────────────────────────────────
-type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams' | 'weddings';
+type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams' | 'weddings' | 'birthdays';
 
 interface CalendarItem {
-  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding' | 'birthday';
   loan?: Loan;
   task?: PersonalTask;
   event?: CalendarEvent;
   exam?: any;
   wedding?: any;
+  birthday?: Student;
   completed?: boolean;
 }
 
@@ -72,6 +73,7 @@ interface CalendarDay {
   calendarEvents: CalendarEvent[];
   exams: any[];
   weddings: any[];
+  birthdays: Student[];
 }
 
 // ── Context-menu ─────────────────────────────────────────────
@@ -83,7 +85,7 @@ interface CtxMenu {
 
 // ── Gantt ────────────────────────────────────────────────────
 interface GanttRow {
-  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding' | 'birthday';
   label: string;
   sublabel: string;
   color: string;
@@ -442,6 +444,11 @@ interface GanttRow {
     💍 חתונות
     <span class="chip-badge" *ngIf="monthBadge('weddings') as n">{{ n }}</span>
   </button>
+  <button *ngIf="canViewBirthdays()" type="button" class="layer-chip birthday-chip" [class.active]="has('birthdays')"
+          (click)="toggleLayer('birthdays')">
+    🎂 ימי הולדת
+    <span class="chip-badge" *ngIf="monthBadge('birthdays') as n">{{ n }}</span>
+  </button>
 </nav>
 
 <!-- Sheet sub-tabs (only when schedule active) -->
@@ -480,6 +487,7 @@ interface GanttRow {
   <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
   <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
   <span class="legend-item" *ngIf="has('weddings')">💍 חתונה</span>
+  <span class="legend-item" *ngIf="has('birthdays')">🎂 יום הולדת</span>
   <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
 </div>
 
@@ -518,13 +526,14 @@ interface GanttRow {
         <span *ngIf="visibleItems(cd).length && !onlyScheduleOrExams()"
               class="event-markers" aria-hidden="true">
           <ng-container *ngFor="let item of visibleItems(cd).slice(0,4)">
-            <span *ngIf="item.kind !== 'wedding'" class="event-dot"
+            <span *ngIf="item.kind !== 'wedding' && item.kind !== 'birthday'" class="event-dot"
                   [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
                   [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
                   [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
                   [class.completed-dot]="item.kind==='task' && item.completed"
                   [style.background]="dotColor(item)"></span>
             <span *ngIf="item.kind === 'wedding'" class="wedding-dot-icon" title="{{ item.wedding?.name }}">💍</span>
+            <span *ngIf="item.kind === 'birthday'" class="birthday-dot-icon" title="{{ item.birthday?.name }}">🎂</span>
           </ng-container>
           <span *ngIf="visibleItems(cd).length > 4" class="more-events">+{{ visibleItems(cd).length-4 }}</span>
         </span>
@@ -537,6 +546,7 @@ interface GanttRow {
             <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
             <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
             <ng-container *ngIf="item.kind==='wedding'">💍 {{ item.wedding?.name }}{{ item.wedding?.wedding_venue ? ' · 📍' + item.wedding?.wedding_venue : '' }}</ng-container>
+            <ng-container *ngIf="item.kind==='birthday'">🎂 {{ item.birthday?.name }}</ng-container>
           </span>
         </span>
       </button>
@@ -667,6 +677,17 @@ interface GanttRow {
       </div>
     </div>
   </ng-container>
+
+  <ng-container *ngIf="has('birthdays') && selectedDayBirthdays().length">
+    <h3 class="layer-title">🎂 ימי הולדת</h3>
+    <div *ngFor="let student of selectedDayBirthdays()" class="detail-row">
+      <span class="birthday-dot-icon" aria-hidden="true">🎂</span>
+      <div class="detail-main">
+        <a [routerLink]="['/students', student.id_number]"><strong>{{ student.name }}</strong></a>
+        <span>{{ student.track || '' }}{{ student.year ? ' · שנה ' + student.year : '' }}{{ student.class_name ? ' · כיתה ' + student.class_name : '' }}</span>
+      </div>
+    </div>
+  </ng-container>
 </section>
 `,
   styles: [`
@@ -774,6 +795,8 @@ interface GanttRow {
       font-size: 0.7rem; font-weight: 800;
     }
     .layer-chip:not(.active) .chip-badge { background: var(--primary-light); color: var(--primary); }
+    .birthday-chip.active { background: #db2777; border-color: #db2777; }
+    .birthday-dot-icon { font-size: .9rem; }
 
     /* ── Sheet sub-tabs ── */
     .sheet-tabs {
@@ -1116,6 +1139,19 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       }
     }
 
+    if (this.has('birthdays')) {
+      for (const date of days) {
+        const idx = days.indexOf(date);
+        for (const student of this.birthdaysForDate(date)) {
+          rows.push({
+            kind: 'birthday', label: student.name, sublabel: student.class_name || student.track || '',
+            color: '#db2777', leftPct: (idx / total) * 100,
+            widthPct: Math.max(2.5, (1 / total) * 100), date, icon: '🎂'
+          });
+        }
+      }
+    }
+
     // Weddings (single day)
     if (this.has('weddings')) {
       for (const w of this.weddingsForDate('')) {
@@ -1142,13 +1178,15 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly selectedDayEvents = computed(() => this.eventsForDate(this.selectedDate()));
   readonly selectedDayExams  = computed(() => this.examsForDate(this.selectedDate()));
   readonly selectedDayWeddings = computed(() => this.weddingsForDate(this.selectedDate()));
+  readonly selectedDayBirthdays = computed(() => this.birthdaysForDate(this.selectedDate()));
 
   readonly selectedDayCount = computed(() =>
     (this.has('equipment') ? this.selectedDayLoans().length   : 0) +
     (this.has('personal')  ? this.selectedDayTasks().length   : 0) +
     (this.has('schedule')  ? this.selectedDayEvents().length  : 0) +
     (this.has('exams')     ? this.selectedDayExams().length   : 0) +
-    (this.has('weddings')  ? this.selectedDayWeddings().length : 0)
+    (this.has('weddings')  ? this.selectedDayWeddings().length : 0) +
+    (this.has('birthdays') ? this.selectedDayBirthdays().length : 0)
   );
 
   readonly selectedDateLabel = computed(() => this.formatDateLabel(this.selectedDate()));
@@ -1265,6 +1303,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   has(l: CalendarLayer) { return this.layers().has(l); }
 
   toggleLayer(l: CalendarLayer) {
+    if (l === 'birthdays' && !this.canViewBirthdays()) return;
     const s = new Set(this.layers());
     if (!s.delete(l)) s.add(l);
     this.layers.set(s);
@@ -1282,6 +1321,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     if (layer === 'schedule')  return cells.reduce((s, c) => s + c.calendarEvents.length, 0);
     if (layer === 'exams')     return cells.reduce((s, c) => s + c.exams.length, 0);
     if (layer === 'weddings')  return cells.reduce((s, c) => s + c.weddings.length, 0);
+    if (layer === 'birthdays') return cells.reduce((s, c) => s + c.birthdays.length, 0);
     return 0;
   }
 
@@ -1307,6 +1347,19 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     );
   }
 
+  private birthdaysForDate(date: string): Student[] {
+    if (!this.canViewBirthdays() || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+    const monthAndDay = date.slice(5);
+    return this.allStudents().filter(student => {
+      const birthDate = String(student.birth_date || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return false;
+      const parsed = new Date(`${birthDate}T12:00:00`);
+      return !Number.isNaN(parsed.getTime()) &&
+        parsed.toISOString().slice(0, 10) === birthDate &&
+        birthDate.slice(5) === monthAndDay;
+    });
+  }
+
   private eventsForDate(date: string): CalendarEvent[] {
     const sheet = this.selectedSourceSheet();
     const events = this.calendarEvents().filter(e =>
@@ -1327,6 +1380,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       ...(this.has('schedule')  ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : []),
       ...(this.has('exams')     ? day.exams.map((exam): CalendarItem => ({ kind: 'exam', exam })) : []),
       ...(this.has('weddings')  ? day.weddings.map((wedding): CalendarItem => ({ kind: 'wedding', wedding })) : []),
+      ...(this.has('birthdays') ? day.birthdays.map((birthday): CalendarItem => ({ kind: 'birthday', birthday })) : []),
     ];
   }
 
@@ -1345,7 +1399,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         gregorianDay: gr.getDate(), gregorianMonth: gr.getMonth() + 1,
         loans: this.loansForDate(date), tasks: this.tasksForDate(date),
         calendarEvents: this.eventsForDate(date), exams: this.examsForDate(date),
-        weddings: this.weddingsForDate(date),
+        weddings: this.weddingsForDate(date), birthdays: this.birthdaysForDate(date),
       });
     }
     while (cells.length % 7 !== 0) cells.push(null);
@@ -1676,6 +1730,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     if (item.kind === 'loan') return this.loanColor(item.loan!);
     if (item.kind === 'exam') return '#e11d48';
     if (item.kind === 'event') return this.schoolEventColor(item.event!);
+    if (item.kind === 'birthday') return '#db2777';
     return null; // tasks use CSS class
   }
 
@@ -1683,6 +1738,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   canImportCalendar() {
     const r = this.auth.user()?.role;
     return r === 'admin' || r === 'secretary';
+  }
+
+  canViewBirthdays() {
+    return this.auth.hasPermission('students');
   }
 
   openEventDetail(event: CalendarEvent) {

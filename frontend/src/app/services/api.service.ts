@@ -324,12 +324,13 @@ export class ApiService {
     }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`);
   }
   createTrackScheduleSlot(trackId: number, studyYear: string, data: {
-    teacher_id: number; day_of_week: number; period_id: number; subject?: string; room_number?: string | null;
+    teacher_id: number; day_of_week: number; start_time: string; end_time: string;
+    subject?: string; room_number?: string | null;
   }) {
     return this.http.post<{ id: number }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`, data);
   }
   updateTrackScheduleSlot(id: number, data: {
-    teacher_id: number; period_id: number; subject?: string; room_number?: string | null;
+    teacher_id: number; start_time: string; end_time: string; subject?: string; room_number?: string | null;
   }) {
     return this.http.put<{ success: boolean }>(`${this.base}/track-schedules/slots/${id}`, data);
   }
