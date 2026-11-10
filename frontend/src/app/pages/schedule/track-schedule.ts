@@ -84,47 +84,51 @@ interface TrackScheduleSlot {
           </div>
         </div>
 
-        <div class="table-wrap">
-          <table class="timetable">
-            <thead>
-              <tr>
-                <th class="time-heading">שעה</th>
-                <th *ngFor="let day of days; let dayIndex = index">
-                  יום {{ day }}
-                  <small class="day-date">{{ formatWeekDate(dateForDay(dayIndex)) }}</small>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let period of lessonPeriods()">
-                <th class="period-heading">
-                  <strong>{{ period.start_time }}–{{ period.end_time }}</strong>
-                  <span>{{ period.name }}</span>
-                </th>
-                <td *ngFor="let day of days; let dayIndex = index"
-                    [class.unavailable-cell]="periodAvailability(dayIndex, period) !== 'track'">
-                  <span *ngIf="periodAvailability(dayIndex, period) === 'kodesh'" class="availability-label">קודש</span>
-                  <span *ngIf="periodAvailability(dayIndex, period) === 'instruction'" class="availability-label">הוראה</span>
-                  <ng-container *ngIf="periodAvailability(dayIndex, period) === 'track'">
-                    <article *ngFor="let slot of slotsFor(dayIndex, period)" class="lesson-card">
-                      <strong>{{ slot.subject || slot.teacher_subject || slot.period_name }}</strong>
-                      <span>{{ slot.teacher_name }}</span>
-                      <small *ngIf="slot.room_number">חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span></small>
-                      <div class="lesson-actions no-print">
-                        <button type="button" (click)="edit(slot)">עריכה</button>
-                        <button type="button" (click)="remove(slot)">מחיקה</button>
-                      </div>
-                    </article>
-                    <button *ngIf="!slotsFor(dayIndex, period).length" class="cell-add no-print"
-                            type="button" (click)="openAdd(dayIndex, period)" aria-label="הוספת שיעור">+</button>
-                  </ng-container>
-                </td>
-              </tr>
-              <tr *ngIf="!lessonPeriods().length">
-                <td colspan="6" class="empty-row">לא הוגדרו שעות שיעור במערכת.</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="timeline-scroll">
+          <div class="timeline" [style.--timeline-height.px]="timelineHeight()">
+            <div class="timeline-header">
+              <div class="timeline-time-heading">שעה</div>
+              <div *ngFor="let day of days; let dayIndex = index" class="timeline-day-heading">
+                יום {{ day }}
+                <small class="day-date">{{ formatWeekDate(dateForDay(dayIndex)) }}</small>
+              </div>
+            </div>
+            <div class="timeline-body">
+              <div class="timeline-ruler">
+                <span *ngFor="let minute of timelineHourMarkers()"
+                      class="timeline-hour-label"
+                      [style.top.px]="timelinePosition(minute)">
+                  {{ formatTime(minute) }}
+                </span>
+              </div>
+              <div *ngFor="let day of days; let dayIndex = index" class="timeline-day">
+                <span *ngFor="let minute of timelineHourMarkers()"
+                      class="timeline-gridline"
+                      [style.top.px]="timelinePosition(minute)"
+                      aria-hidden="true"></span>
+                <div *ngFor="let period of unavailablePeriods(dayIndex)"
+                     class="timeline-blocked"
+                     [class.blocked-instruction]="periodAvailability(dayIndex, period) === 'instruction'"
+                     [style.top.px]="timelinePosition(period.start_time)"
+                     [style.height.px]="timelineDuration(period.start_time, period.end_time)">
+                  {{ periodAvailability(dayIndex, period) === 'kodesh' ? 'קודש' : 'הוראה' }}
+                </div>
+                <article *ngFor="let slot of slotsForDay(dayIndex)"
+                         class="lesson-card"
+                         [style.top.px]="timelinePosition(slot.start_time)"
+                         [style.height.px]="timelineDuration(slot.start_time, slot.end_time)">
+                  <strong>{{ slot.subject || slot.teacher_subject || slot.period_name }}</strong>
+                  <span>{{ slot.teacher_name }}</span>
+                  <small class="lesson-time">{{ slot.start_time }}–{{ slot.end_time }}</small>
+                  <small *ngIf="slot.room_number">חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span></small>
+                  <div class="lesson-actions no-print">
+                    <button type="button" (click)="edit(slot)">עריכה</button>
+                    <button type="button" (click)="remove(slot)">מחיקה</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -205,27 +209,28 @@ interface TrackScheduleSlot {
     .day-date { display: block; margin-top: 3px; color: var(--text-muted); font-weight: 400; }
     .timetable-heading h2 { margin: 0; font-size: 1.15rem; }
     .timetable-heading p { margin: 6px 0 0; color: var(--text-muted); font-size: .82rem; }
-    .timetable { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; }
-    .timetable th, .timetable td { border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 8px; text-align: center; vertical-align: middle; }
-    .timetable thead th { position: sticky; top: 0; background: var(--surface-2); font-size: .85rem; }
-    .timetable tr > :first-child { border-right: 1px solid var(--border); }
-    .time-heading { min-width: 135px; }
-    .period-heading { min-width: 135px; background: var(--surface-2); }
-    .period-heading strong, .period-heading span { display: block; }
-    .period-heading strong { direction: ltr; font-size: .86rem; }
-    .period-heading span { color: var(--text-muted); font-size: .75rem; margin-top: 3px; }
-    .timetable td { min-width: 112px; height: 75px; }
-    .unavailable-cell { background: var(--surface-2); }
-    .availability-label { color: var(--text-muted); font-size: .78rem; }
-    .lesson-card { display: grid; gap: 4px; padding: 8px; border-radius: 9px; background: var(--primary-light); color: var(--text); text-align: right; }
+    .timeline-scroll { overflow-x: auto; }
+    .timeline { min-width: 900px; }
+    .timeline-header, .timeline-body { display: grid; grid-template-columns: 72px repeat(5, minmax(140px, 1fr)); direction: rtl; }
+    .timeline-header { position: sticky; top: 0; z-index: 5; background: var(--surface-2); }
+    .timeline-time-heading, .timeline-day-heading { padding: 10px 6px; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: center; font-size: .85rem; font-weight: 700; }
+    .timeline-day-heading { border-right: 1px solid var(--border); }
+    .timeline-body { height: var(--timeline-height); }
+    .timeline-ruler, .timeline-day { position: relative; height: var(--timeline-height); border-left: 1px solid var(--border); }
+    .timeline-ruler { border-right: 1px solid var(--border); background: var(--surface-2); }
+    .timeline-hour-label { position: absolute; right: 3px; z-index: 2; padding: 0 2px; transform: translateY(-50%); background: var(--surface-2); color: var(--text-muted); direction: ltr; font-size: .7rem; }
+    .timeline-day { border-bottom: 1px solid var(--border); }
+    .timeline-gridline { position: absolute; right: 0; left: 0; z-index: 0; border-top: 1px solid var(--border); pointer-events: none; }
+    .timeline-blocked { position: absolute; right: 2px; left: 2px; z-index: 1; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); font-size: .72rem; opacity: .8; pointer-events: none; }
+    .blocked-instruction { background: var(--primary-light); }
+    .lesson-card { position: absolute; right: 4px; left: 4px; z-index: 2; display: grid; align-content: start; gap: 2px; overflow: hidden; padding: 5px 7px; border: 1px solid var(--primary); border-radius: 8px; background: var(--surface); color: var(--text); text-align: right; }
     .lesson-card strong { color: var(--primary); }
-    .lesson-card span, .lesson-card small { font-size: .78rem; }
-    .lesson-actions { display: flex; gap: 8px; }
-    .lesson-actions button, .cell-add { border: 0; color: var(--primary); background: transparent; cursor: pointer; font: inherit; }
+    .lesson-card span, .lesson-card small { font-size: .72rem; line-height: 1.2; }
+    .lesson-time { direction: ltr; text-align: right; }
+    .lesson-actions { position: absolute; bottom: 3px; left: 5px; display: flex; gap: 8px; padding: 1px 3px; border-radius: 4px; background: var(--surface); opacity: 0; }
+    .lesson-card:hover .lesson-actions, .lesson-card:focus-within .lesson-actions { opacity: 1; }
+    .lesson-actions button { border: 0; color: var(--primary); background: transparent; cursor: pointer; font: inherit; }
     .lesson-actions button { padding: 2px 0; text-decoration: underline; font-size: .74rem; }
-    .cell-add { width: 100%; min-height: 55px; border: 1px dashed var(--border); border-radius: 8px; font-size: 1.35rem; }
-    .cell-add:hover { background: var(--surface-2); }
-    .empty-row { padding: 24px !important; color: var(--text-muted); }
     .editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
     .editor-actions { display: flex; gap: 8px; margin-top: 16px; }
     .modal-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .48); }
@@ -245,13 +250,17 @@ interface TrackScheduleSlot {
       .no-print, .page-header .header-actions, .selector-card { display: none !important; }
       .page-header { margin-bottom: 8px; }
       .timetable-card { box-shadow: none; border: 0; padding: 0; }
-      .timetable { min-width: 0; font-size: 10px; }
-      .timetable td, .period-heading { min-width: 0; }
+      .timeline { min-width: 0; }
+      .timeline-header, .timeline-body { grid-template-columns: 44px repeat(5, minmax(0, 1fr)); }
+      .timeline-day-heading, .timeline-time-heading { padding: 5px 2px; font-size: 8px; }
+      .lesson-card { right: 1px; left: 1px; padding: 2px; font-size: 8px; }
+      .lesson-card span, .lesson-card small { font-size: 7px; }
     }
   `]
 })
 export class TrackScheduleComponent implements OnInit {
   readonly days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
+  private readonly pixelsPerMinute = 1.6;
   private readonly defaultAvailability: ScheduleAvailabilityMap = { kodesh: {}, instruction: {} };
   tracks = signal<{ id: number; name: string; years: { year: string; student_count: number }[] }[]>([]);
   teachers = signal<{ id: number; name: string; subject: string | null; specialization: string | null }[]>([]);
@@ -275,6 +284,20 @@ export class TrackScheduleComponent implements OnInit {
     return Array.from(periods.values()).sort((a, b) =>
       a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)
     );
+  });
+  private timelineRange = computed(() => {
+    const times = [
+      ...this.lessonPeriods().flatMap(period => [period.start_time, period.end_time]),
+      ...(this.schedule()?.slots || []).flatMap(slot => [slot.start_time, slot.end_time])
+    ].map(time => this.minutesFromTime(time)).filter((minute): minute is number => minute !== null);
+    if (!times.length) return { start: 8 * 60, end: 20 * 60 };
+    const start = Math.floor(Math.min(...times) / 60) * 60;
+    const end = Math.ceil(Math.max(...times) / 60) * 60;
+    return { start, end: Math.max(end, start + 60) };
+  });
+  timelineHourMarkers = computed(() => {
+    const { start, end } = this.timelineRange();
+    return Array.from({ length: (end - start) / 60 + 1 }, (_, index) => start + index * 60);
   });
   rooms = signal<{ number: string; name: string }[]>([]);
   availability = signal<ScheduleAvailabilityMap>(this.defaultAvailability);
@@ -384,10 +407,43 @@ export class TrackScheduleComponent implements OnInit {
     });
   }
 
-  slotsFor(day: number, period: { start_time: string; end_time: string }) {
-    return (this.schedule()?.slots || []).filter(slot =>
-      slot.day_of_week === day && slot.start_time === period.start_time && slot.end_time === period.end_time
-    );
+  slotsForDay(day: number) {
+    return (this.schedule()?.slots || [])
+      .filter(slot => slot.day_of_week === day)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }
+
+  unavailablePeriods(day: number) {
+    return this.lessonPeriods().filter(period => this.periodAvailability(day, period) !== 'track');
+  }
+
+  timelineHeight() {
+    const { start, end } = this.timelineRange();
+    return (end - start) * this.pixelsPerMinute;
+  }
+
+  timelinePosition(time: string | number) {
+    const minute = typeof time === 'number' ? time : this.minutesFromTime(time);
+    if (minute === null) return 0;
+    return (minute - this.timelineRange().start) * this.pixelsPerMinute;
+  }
+
+  timelineDuration(start: string, end: string) {
+    const startMinute = this.minutesFromTime(start);
+    const endMinute = this.minutesFromTime(end);
+    if (startMinute === null || endMinute === null || endMinute <= startMinute) return 0;
+    return (endMinute - startMinute) * this.pixelsPerMinute;
+  }
+
+  formatTime(minute: number) {
+    const hours = Math.floor(minute / 60).toString().padStart(2, '0');
+    const minutes = (minute % 60).toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
+  private minutesFromTime(time: string) {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
   }
 
   periodAvailability(day: number, period: { start_time: string; end_time: string }) {
