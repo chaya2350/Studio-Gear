@@ -956,7 +956,6 @@ saveNewStudent() {
   const addExtra = (key: string, val: string) => { if (val.trim()) extraData[key] = val.trim(); };
   addExtra('שם פרטי', d.first_name);
   addExtra('שם חיבה', d.nickname);
-  addExtra('ת. לידה עברי', d.birth_date_hebrew);
   addExtra('ארץ לידה', d.birth_country);
   addExtra('מספר בית', d.house_number);
   addExtra('עיר', d.city);
@@ -987,6 +986,7 @@ saveNewStudent() {
     parallel: d.parallel.trim() || undefined,
     address: d.address.trim() || undefined,
     birth_date: d.birth_date.trim() || undefined,
+    birth_date_hebrew: d.birth_date_hebrew.trim() || undefined,
   }).subscribe({
     next: (res) => {
       // עדכון extra_data, personal_phone, marital_status בנפרד

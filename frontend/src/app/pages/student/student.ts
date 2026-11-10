@@ -120,6 +120,14 @@ template: `
 <input name="address" [(ngModel)]="studentDraft.address">
 </label>
 <label class="field">
+<span>תאריך לידה לועזי</span>
+<input type="date" name="birth_date" [(ngModel)]="studentDraft.birth_date">
+</label>
+<label class="field">
+<span>תאריך לידה עברי</span>
+<input name="birth_date_hebrew" [(ngModel)]="studentDraft.birth_date_hebrew" placeholder="למשל: כ״ג שבט">
+</label>
+<label class="field">
 <span>מסלול</span>
 <input name="track" [(ngModel)]="studentDraft.track">
 </label>
@@ -232,6 +240,14 @@ template: `
 <div class="info-row highlight">
 <span class="info-label">ת.ז.</span>
 <span class="info-value barcode-val">{{ student()!.id_number }}</span>
+</div>
+<div class="info-row">
+<span class="info-label">תאריך לידה לועזי</span>
+<span class="info-value">{{ student()!.birth_date ? formatWeddingDate(student()!.birth_date!) : 'לא הוגדר' }}</span>
+</div>
+<div class="info-row">
+<span class="info-label">תאריך לידה עברי</span>
+<span class="info-value">{{ formatHebrewBirthDate(student()!.birth_date_hebrew) || 'לא הוגדר' }}</span>
 </div>
 <div class="info-row" *ngIf="student()!.phone">
 <span class="info-label">טלפון</span>
@@ -888,7 +904,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', address: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
+studentDraft = { name: '', phone: '', address: '', birth_date: '', birth_date_hebrew: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -932,6 +948,20 @@ formatWeddingDate(dateStr: string): string {
     const greg = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
     return heb ? `${heb} (${greg})` : greg;
   } catch { return dateStr; }
+}
+
+formatHebrewBirthDate(value?: string): string {
+  const parsed = /^(\d{1,2})-(\d{1,2})$/.exec(String(value || ''));
+  if (!parsed) return '';
+  const day = Number(parsed[1]);
+  const month = Number(parsed[2]);
+  const numerals = ['', 'א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ז׳','ח׳','ט׳','י׳','י״א','י״ב','י״ג','י״ד','ט״ו','ט״ז','י״ז','י״ח','י״ט','כ׳','כ״א','כ״ב','כ״ג','כ״ד','כ״ה','כ״ו','כ״ז','כ״ח','כ״ט','ל׳'];
+  const monthNames: Record<number, string> = {
+    1: 'ניסן', 2: 'אייר', 3: 'סיוון', 4: 'תמוז', 5: 'אב', 6: 'אלול',
+    7: 'תשרי', 8: 'חשוון', 9: 'כסלו', 10: 'טבת', 11: 'שבט',
+    12: 'אדר א׳', 13: 'אדר ב׳', 14: 'אדר'
+  };
+  return numerals[day] && monthNames[month] ? `${numerals[day]} ${monthNames[month]}` : '';
 }
 
 // מודעות לפי הרשאות: admin/secretary/laborant רואים הכל, אחרים רק 'all'+'student'
@@ -1338,6 +1368,8 @@ this.studentDraft = {
 name: current.name,
 phone: current.phone || '',
 address: current.address || '',
+birth_date: current.birth_date || '',
+birth_date_hebrew: this.formatHebrewBirthDate(current.birth_date_hebrew),
 phone_code: current.phone_code || '',
 track: current.track || '',
 year: current.year || '',

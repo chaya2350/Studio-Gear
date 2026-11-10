@@ -12,6 +12,83 @@ function compactHeader(value) {
   return normalizeHeader(value).replace(/[^\p{L}\p{N}]/gu, '');
 }
 
+function normalizeBirthDate(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  const validDate = (year, month, day) => {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+      return null;
+    }
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);
+  if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const local = /^(\d{1,2})[/.\\-](\d{1,2})[/.\\-](\d{4})$/.exec(raw);
+  if (local) return validDate(Number(local[3]), Number(local[2]), Number(local[1]));
+
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const serial = Number(raw);
+    if (serial > 0 && serial <= 73415) {
+      const parsed = XLSX.SSF.parse_date_code(serial);
+      if (parsed && parsed.y >= 1900 && parsed.y <= 2100) {
+        return validDate(parsed.y, parsed.m, parsed.d);
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeHebrewBirthDate(value) {
+  const raw = String(value ?? '').normalize('NFKC').trim();
+  if (!raw) return null;
+  const compact = /^(\d{1,2})-(\d{1,2})$/.exec(raw);
+  if (compact && Number(compact[1]) >= 1 && Number(compact[1]) <= 30 && Number(compact[2]) >= 1 && Number(compact[2]) <= 14) {
+    return `${Number(compact[1])}-${Number(compact[2])}`;
+  }
+
+  const adar = /אדר/.test(raw);
+  let month = null;
+  if (adar) {
+    if (/אדר\s*(?:ב|׳ב|ב׳|שני|2)/.test(raw)) month = 13;
+    else if (/אדר\s*(?:א|׳א|א׳|ראשון|1)/.test(raw)) month = 12;
+    else month = 14;
+  } else {
+    const monthAliases = [
+      [/אלול/, 6], [/אב/, 5], [/תמוז/, 4], [/אייר/, 2], [/סיון|סיוון/, 3],
+      [/ניסן/, 1], [/שבט/, 11], [/טבת/, 10], [/כסלו/, 9], [/חשון|חשוון/, 8],
+      [/תשרי/, 7]
+    ];
+    month = monthAliases.find(([pattern]) => pattern.test(raw))?.[1] ?? null;
+  }
+  if (month === null) return null;
+
+  const hebrewValues = { א: 1, ב: 2, ג: 3, ד: 4, ה: 5, ו: 6, ז: 7, ח: 8, ט: 9, י: 10, כ: 20, ך: 20, ל: 30 };
+  const dayTokens = raw.replace(/[׳״"'`.,]/g, '').split(/\s+/).filter(Boolean);
+  let day = null;
+  for (const token of dayTokens) {
+    const numeric = /^(\d{1,2})$/.exec(token);
+    if (numeric && Number(numeric[1]) >= 1 && Number(numeric[1]) <= 30) {
+      day = Number(numeric[1]);
+      break;
+    }
+    if (/^[אבגדהוזחטיכךל]+$/.test(token)) {
+      const value = [...token].reduce((sum, letter) => sum + (hebrewValues[letter] || 0), 0);
+      if (value >= 1 && value <= 30) {
+        day = value;
+        break;
+      }
+    }
+  }
+  if (!day) {
+    return null;
+  }
+  return `${day}-${month}`;
+}
+
 function normalizeAliasText(value) {
   return String(value ?? '')
     .normalize('NFKC')
@@ -122,7 +199,8 @@ const knownHeaders = {
   phoneCode: ['קוד לטלפון', 'קידומת', 'קוד טלפון', 'phone code', 'phone_code', 'קוד-טלפון'],
   track: ['התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track', 'מסלול/התמחות'],
   year: ['כיתה', 'שנה', 'year', 'class'],
-  birthDate: ['ת. לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth', 'ת. לידה עברי'],
+  birthDate: ['ת. לידה לועזי', 'תאריך לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth'],
+  birthDateHebrew: ['ת. לידה עברי', 'תאריך לידה עברי', 'birth_date_hebrew', 'hebrew_birth_date'],
   address: ['כתובת', 'כתובת מגורים', 'address'],
   house: ['מספר בית', 'מס בית', 'בית'],
   city: ['עיר', 'יישוב']
@@ -225,7 +303,8 @@ function parseStudentWorkbook(buffer) {
       const name = [firstName, lastName].filter(Boolean).join(' ') || String(getValue(...knownHeaders.name)).trim();
       const phone = String(getValue(...knownHeaders.phone)).trim();
       const phone_code = String(getValue(...knownHeaders.phoneCode)).trim();
-      const birth_date = String(getValue(...knownHeaders.birthDate)).trim();
+      const birth_date = normalizeBirthDate(getValue(...knownHeaders.birthDate));
+      const birth_date_hebrew = normalizeHebrewBirthDate(getValue(...knownHeaders.birthDateHebrew));
       const trackValue = String(getValue(...knownHeaders.track)).trim() || String(row.__sheetName || '').trim();
       const track = canonicalTrackValue(trackValue);
       const year = canonicalYearValue(String(getValue(...knownHeaders.year)).trim(), String(row.__sheetName || ''));
@@ -252,6 +331,7 @@ function parseStudentWorkbook(buffer) {
         phone,
         phone_code,
         birth_date,
+        birth_date_hebrew,
         track,
         year,
         address,
@@ -271,5 +351,7 @@ module.exports = {
   knownHeaders,
   canonicalTrackValue,
   canonicalYearValue,
-  normalizeAliasText
+  normalizeAliasText,
+  normalizeBirthDate,
+  normalizeHebrewBirthDate
 };

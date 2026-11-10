@@ -685,6 +685,7 @@ interface GanttRow {
       <div class="detail-main">
         <a [routerLink]="['/students', student.id_number]"><strong>{{ student.name }}</strong></a>
         <span>{{ student.track || '' }}{{ student.year ? ' · שנה ' + student.year : '' }}{{ student.class_name ? ' · כיתה ' + student.class_name : '' }}</span>
+        <span>{{ formatHebrewBirthDate(student.birth_date_hebrew) }}</span>
       </div>
     </div>
   </ng-container>
@@ -1347,16 +1348,37 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     );
   }
 
+  formatHebrewBirthDate(value?: string): string {
+    const parsed = /^(\d{1,2})-(\d{1,2})$/.exec(String(value || '').trim());
+    if (!parsed) return '';
+    const day = Number(parsed[1]);
+    const month = Number(parsed[2]);
+    const monthNames: Record<number, string> = {
+      1: 'ניסן', 2: 'אייר', 3: 'סיוון', 4: 'תמוז', 5: 'אב', 6: 'אלול',
+      7: 'תשרי', 8: 'חשוון', 9: 'כסלו', 10: 'טבת', 11: 'שבט',
+      12: 'אדר א׳', 13: 'אדר ב׳', 14: 'אדר'
+    };
+    return HEBREW_DAY_NUMERALS[day] && monthNames[month]
+      ? `${HEBREW_DAY_NUMERALS[day]} ${monthNames[month]}`
+      : '';
+  }
+
   private birthdaysForDate(date: string): Student[] {
     if (!this.canViewBirthdays() || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
-    const monthAndDay = date.slice(5);
+    const hebrewDate = new HDate(new Date(`${date}T12:00:00`));
     return this.allStudents().filter(student => {
-      const birthDate = String(student.birth_date || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return false;
-      const parsed = new Date(`${birthDate}T12:00:00`);
-      return !Number.isNaN(parsed.getTime()) &&
-        parsed.toISOString().slice(0, 10) === birthDate &&
-        birthDate.slice(5) === monthAndDay;
+      const birthDate = /^(\d{1,2})-(\d{1,2})$/.exec(String(student.birth_date_hebrew || '').trim());
+      if (!birthDate || Number(birthDate[1]) !== hebrewDate.getDate()) return false;
+      const birthMonth = Number(birthDate[2]);
+      const currentMonth = hebrewDate.getMonth();
+      if (birthMonth === 14) {
+        return currentMonth === months.ADAR_I ||
+          (hebrewDate.isLeapYear() && currentMonth === months.ADAR_II);
+      }
+      if (birthMonth === months.ADAR_II && !hebrewDate.isLeapYear()) {
+        return currentMonth === months.ADAR_I;
+      }
+      return currentMonth === birthMonth;
     });
   }
 

@@ -109,18 +109,22 @@ interface TrackScheduleSlot {
                 <div *ngFor="let period of unavailablePeriods(dayIndex)"
                      class="timeline-blocked"
                      [class.blocked-instruction]="periodAvailability(dayIndex, period) === 'instruction'"
-                     [style.top.px]="timelinePosition(period.start_time)"
-                     [style.height.px]="timelineDuration(period.start_time, period.end_time)">
+                     [style.top.px]="timelineItemPosition(period.start_time)"
+                     [style.height.px]="timelineItemHeight(period.start_time, period.end_time)">
                   {{ periodAvailability(dayIndex, period) === 'kodesh' ? 'קודש' : 'הוראה' }}
                 </div>
                 <article *ngFor="let slot of slotsForDay(dayIndex)"
                          class="lesson-card"
-                         [style.top.px]="timelinePosition(slot.start_time)"
-                         [style.height.px]="timelineDuration(slot.start_time, slot.end_time)">
+                         [style.top.px]="timelineItemPosition(slot.start_time)"
+                         [style.height.px]="timelineItemHeight(slot.start_time, slot.end_time)">
                   <strong>{{ slot.subject || slot.teacher_subject || slot.period_name }}</strong>
                   <span>{{ slot.teacher_name }}</span>
-                  <small class="lesson-time">{{ slot.start_time }}–{{ slot.end_time }}</small>
-                  <small *ngIf="slot.room_number">חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span></small>
+                  <div class="lesson-meta">
+                    <small class="lesson-time">{{ slot.start_time }}–{{ slot.end_time }}</small>
+                    <small *ngIf="slot.room_number" class="lesson-room">
+                      חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span>
+                    </small>
+                  </div>
                   <div class="lesson-actions no-print">
                     <button type="button" (click)="edit(slot)">עריכה</button>
                     <button type="button" (click)="remove(slot)">מחיקה</button>
@@ -221,13 +225,16 @@ interface TrackScheduleSlot {
     .timeline-hour-label { position: absolute; right: 3px; z-index: 2; padding: 0 2px; transform: translateY(-50%); background: var(--surface-2); color: var(--text-muted); direction: ltr; font-size: .7rem; }
     .timeline-day { border-bottom: 1px solid var(--border); }
     .timeline-gridline { position: absolute; right: 0; left: 0; z-index: 0; border-top: 1px solid var(--border); pointer-events: none; }
-    .timeline-blocked { position: absolute; right: 2px; left: 2px; z-index: 1; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); font-size: .72rem; opacity: .8; pointer-events: none; }
+    .timeline-blocked { position: absolute; right: 2px; left: 2px; z-index: 1; box-sizing: border-box; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); font-size: .72rem; opacity: .8; pointer-events: none; }
     .blocked-instruction { background: var(--primary-light); }
-    .lesson-card { position: absolute; right: 4px; left: 4px; z-index: 2; display: grid; align-content: start; gap: 2px; overflow: hidden; padding: 5px 7px; border: 1px solid var(--primary); border-radius: 8px; background: var(--surface); color: var(--text); text-align: right; }
-    .lesson-card strong { color: var(--primary); }
-    .lesson-card span, .lesson-card small { font-size: .72rem; line-height: 1.2; }
-    .lesson-time { direction: ltr; text-align: right; }
-    .lesson-actions { position: absolute; bottom: 3px; left: 5px; display: flex; gap: 8px; padding: 1px 3px; border-radius: 4px; background: var(--surface); opacity: 0; }
+    .lesson-card { position: absolute; right: 4px; left: 4px; z-index: 2; box-sizing: border-box; display: grid; align-content: start; gap: 1px; overflow: hidden; padding: 4px 6px; border: 1px solid var(--primary); border-radius: 8px; background: var(--surface); color: var(--text); text-align: right; }
+    .lesson-card strong, .lesson-card > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lesson-card strong { color: var(--primary); font-size: .8rem; line-height: 1.2; }
+    .lesson-card span, .lesson-card small { font-size: .68rem; line-height: 1.15; }
+    .lesson-meta { display: flex; justify-content: space-between; gap: 4px; min-width: 0; }
+    .lesson-time { flex: 0 0 auto; direction: ltr; text-align: right; }
+    .lesson-room { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lesson-actions { position: absolute; bottom: 2px; left: 4px; display: flex; gap: 8px; padding: 1px 3px; border-radius: 4px; background: var(--surface); opacity: 0; }
     .lesson-card:hover .lesson-actions, .lesson-card:focus-within .lesson-actions { opacity: 1; }
     .lesson-actions button { border: 0; color: var(--primary); background: transparent; cursor: pointer; font: inherit; }
     .lesson-actions button { padding: 2px 0; text-decoration: underline; font-size: .74rem; }
@@ -260,7 +267,7 @@ interface TrackScheduleSlot {
 })
 export class TrackScheduleComponent implements OnInit {
   readonly days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
-  private readonly pixelsPerMinute = 1.6;
+  private readonly pixelsPerMinute = 1.8;
   private readonly defaultAvailability: ScheduleAvailabilityMap = { kodesh: {}, instruction: {} };
   tracks = signal<{ id: number; name: string; years: { year: string; student_count: number }[] }[]>([]);
   teachers = signal<{ id: number; name: string; subject: string | null; specialization: string | null }[]>([]);
@@ -433,6 +440,14 @@ export class TrackScheduleComponent implements OnInit {
     const endMinute = this.minutesFromTime(end);
     if (startMinute === null || endMinute === null || endMinute <= startMinute) return 0;
     return (endMinute - startMinute) * this.pixelsPerMinute;
+  }
+
+  timelineItemPosition(time: string) {
+    return this.timelinePosition(time) + 1;
+  }
+
+  timelineItemHeight(start: string, end: string) {
+    return Math.max(0, this.timelineDuration(start, end) - 2);
   }
 
   formatTime(minute: number) {

@@ -163,7 +163,7 @@ export class ApiService {
   addStudentWedding(id: string, date: string, venue: string) {
     return this.http.post<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id)}/wedding`, { date, venue });
   }
-  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
+  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string; birth_date_hebrew?: string }) {
     return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
   }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
@@ -177,7 +177,7 @@ export class ApiService {
   updateStudentPhoto(id_number: string, photo_url: string) {
     return this.http.patch<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id_number)}/photo`, { photo_url });
   }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & Partial<Pick<Student, 'address' | 'marital_status' | 'married_name' | 'personal_phone' | 'wedding_date' | 'wedding_venue'>> & { parallel?: string }) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & Partial<Pick<Student, 'address' | 'birth_date' | 'birth_date_hebrew' | 'marital_status' | 'married_name' | 'personal_phone' | 'wedding_date' | 'wedding_venue'>> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
   }
   deleteStudent(id_number: string) {
