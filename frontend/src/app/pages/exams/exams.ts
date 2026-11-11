@@ -29,6 +29,7 @@ template: `
 <div *ngFor="let e of upcomingExams()" class="exam-row" [class.selected]="selectedExam()?.id === e.id" (click)="selectExam(e)">
 <div class="exam-row-info">
 <strong>{{ e.name }}</strong>
+<span *ngIf="e.subject">מקצוע: {{ e.subject }}</span>
 <span>{{ e.exam_date || 'ללא תאריך' }}</span>
 <span>{{ e.track || 'כל המסלולים' }}{{ e.year ? ' · ' + e.year : '' }} · {{ e.codes_count }} ברקודים</span>
 </div>
@@ -51,6 +52,10 @@ template: `
 <div *ngIf="creating()" class="modal-backdrop" (click)="creating.set(false)">
   <div class="modal-card" (click)="$event.stopPropagation()" style="width:min(500px,95vw)">
     <div class="modal-title">➕ מבחן חדש</div>
+    <div class="form-group">
+      <label>מקצוע (אופציונלי)</label>
+      <input [(ngModel)]="newExam.subject" placeholder="לדוגמה: מתמטיקה">
+    </div>
     <div class="form-group">
       <label>שם המבחן *</label>
       <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'" (keyup.enter)="newExam.name.trim() && saveExam()" autofocus>
@@ -236,7 +241,7 @@ printMode = signal<'class' | 'personal'>('class');
 message = signal('');
 error = signal('');
 
-newExam: { name: string; track: string; year: string; exam_date: string; start_time: string; end_time: string; all_day: boolean; filterMode: 'track' | 'class'; parallel: string } = { name: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
+newExam: { name: string; subject: string; track: string; year: string; exam_date: string; start_time: string; end_time: string; all_day: boolean; filterMode: 'track' | 'class'; parallel: string } = { name: '', subject: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
 classForm: { track: string | null; year: string | null; parallel: string | null; filterMode: 'track' | 'class' } = { track: null, year: null, parallel: null, filterMode: 'track' };
 studentQuery = '';
 studentResults = signal<any[]>([]);
@@ -322,7 +327,7 @@ classOptions(): { parallel: string; label: string; count: number }[] {
 }
 
 openNewExam() {
-this.newExam = { name: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
+this.newExam = { name: '', subject: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
 this.error.set('');
 this.creating.set(true);
 }
@@ -336,6 +341,7 @@ this.error.set('');
 this.saving.set(true);
 const examData: any = {
 name: this.newExam.name.trim(),
+subject: this.newExam.subject.trim() || undefined,
 exam_date: this.newExam.exam_date || undefined,
 start_time: this.newExam.all_day ? undefined : this.newExam.start_time,
 end_time: this.newExam.all_day ? undefined : this.newExam.end_time

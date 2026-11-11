@@ -1188,11 +1188,13 @@ const semester = this.gradeSheetSemester();
 if (!student || !this.attendance() || !semester) return;
 this.exportFormatOpen.set(false);
 const asOfDate = new Date().toLocaleDateString('he-IL');
+let barcodeLoadFailed = false;
 try {
 const { default: ExcelJS } = await import('exceljs');
+const exams = this.exams();
 const gradeRows: (string | number)[][] = [
-  ['מבחן', 'סוג ציון', 'תאריך', 'ציון'],
-  ...this.exams().map(exam => [exam.exam_name, this.gradeCategory(exam), exam.exam_date || '', exam.grade ?? '']),
+  ['מקצוע', 'מבחן', 'ברקוד', 'תאריך', 'ציון'],
+  ...exams.map(exam => [exam.subject || '—', exam.exam_name, '', exam.exam_date || '', exam.grade ?? '']),
 ];
 const { summaries, unclassified } = this.attendanceSummary();
 const attendanceRows: (string | number)[][] = [
@@ -1213,8 +1215,23 @@ const attendanceRows: (string | number)[][] = [
 const workbook = new ExcelJS.Workbook();
 workbook.creator = 'סמינר גור';
 workbook.subject = 'גיליון ציונים ונוכחות';
+const loadBarcode = async (url: string) => {
+  const response = await fetch(url, { credentials: 'include' });
+  if (!response.ok) {
+    barcodeLoadFailed = true;
+    throw new Error('barcode load failed');
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return workbook.addImage({ base64: btoa(binary), extension: 'png' });
+};
+const studentBarcodeId = await loadBarcode(this.api.getStudentAttendanceBarcodeUrl(student.id_number));
+const examBarcodeIds = await Promise.all(exams.map(exam =>
+  exam.code ? loadBarcode(this.api.getExamBarcodeUrl(exam.code)) : Promise.resolve(null),
+));
 for (const [name, rows, widths] of [
-  ['ציונים', gradeRows, [30, 22, 16, 12]],
+  ['ציונים', gradeRows, [20, 30, 24, 16, 12]],
   ['נוכחות', attendanceRows, [30, 14, 14, 14, 18]],
 ] as const) {
   const sheet = workbook.addWorksheet(name, { views: [{ rightToLeft: true }] });
@@ -1227,13 +1244,25 @@ for (const [name, rows, widths] of [
     ['מחצית', semester],
     ['נכון לתאריך', asOfDate],
     [],
+    ['ברקוד כללי', ''],
     ...rows,
   ]);
   sheet.columns = widths.map(width => ({ width }));
   sheet.getRow(1).font = { bold: true, size: 16, color: { argb: 'FF174E3C' } };
-  const header = sheet.getRow(9);
+  sheet.getRow(9).height = 30;
+  sheet.addImage(studentBarcodeId, { tl: { col: 1, row: 8 }, ext: { width: 130, height: 28 } });
+  const header = sheet.getRow(10);
   header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF174E3C' } };
+  if (name === 'ציונים') {
+    exams.forEach((exam, index) => {
+      const imageId = examBarcodeIds[index];
+      if (imageId === null) return;
+      const row = sheet.getRow(11 + index);
+      row.height = 30;
+      sheet.addImage(imageId, { tl: { col: 2, row: 10 + index }, ext: { width: 130, height: 28 } });
+    });
+  }
   sheet.eachRow(row => row.eachCell(cell => { cell.alignment = { vertical: 'middle', horizontal: 'right' }; }));
 }
   const buffer = await workbook.xlsx.writeBuffer();
@@ -1246,7 +1275,9 @@ for (const [name, rows, widths] of [
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 } catch {
-  this.gradeSheetError.set('לא ניתן ליצור את קובץ ה־Excel. נסי שוב.');
+  this.gradeSheetError.set(barcodeLoadFailed
+    ? 'לא ניתן לטעון את הברקודים לגיליון. בדקי את החיבור ונסי שוב.'
+    : 'לא ניתן ליצור את קובץ ה־Excel. נסי שוב.');
 }
 }
 
@@ -1269,8 +1300,9 @@ const exams = this.exams();
 const { summaries, unclassified } = this.attendanceSummary();
 const gradeRows = (category: 'קודש' | 'מסלול') => exams
   .filter(exam => this.gradeCategory(exam) === category)
-  .map(exam => `<tr><td>${escapeHtml(exam.exam_name)}</td><td>${escapeHtml(exam.exam_date || '—')}</td><td>${escapeHtml(exam.grade ?? '—')}</td></tr>`)
+  .map(exam => `<tr><td>${escapeHtml(exam.subject || '—')}</td><td>${escapeHtml(exam.exam_name)}</td><td>${exam.code ? `<img class="barcode-image exam-barcode" src="${escapeHtml(this.api.getExamBarcodeUrl(exam.code))}" alt="ברקוד ${escapeHtml(exam.exam_name)}">` : '—'}</td><td>${escapeHtml(exam.exam_date || '—')}</td><td>${escapeHtml(exam.grade ?? '—')}</td></tr>`)
   .join('');
+const studentBarcodeUrl = escapeHtml(this.api.getStudentAttendanceBarcodeUrl(student.id_number));
 const attendanceRows = ['קודש', 'מסלול', 'תפילה'].map(category => {
   const summary = summaries[category];
   const pct = summary.total ? `${Math.round((1 - summary.absent / summary.total) * 100)}%` : '—';
@@ -1286,6 +1318,7 @@ printWindow.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta
 h1{font-size:28px;color:#174e3c;margin:8px 0}.subtitle{color:#7b6842;margin:0;font-size:14px}
 .student-info{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0}
 .info{padding:10px 12px;background:#f3f7f4;border-radius:8px}.info span{display:block;color:#718079;font-size:11px;margin-bottom:5px}.info strong{font-size:14px}
+.barcode-info img{width:150px;height:40px;object-fit:contain}.exam-barcode{width:125px;height:32px;object-fit:contain}
 h2{font-size:17px;color:#174e3c;margin:24px 0 9px;border-right:4px solid #c5a45d;padding-right:9px}
 table{width:100%;border-collapse:collapse;margin-bottom:15px;font-size:13px}
 th,td{border:1px solid #d8e1dc;padding:9px 10px;text-align:right}
@@ -1301,12 +1334,13 @@ th{background:#174e3c;color:white;font-weight:700}tbody tr:nth-child(even){backg
 <div class="info"><span>מסלול</span><strong>${escapeHtml(student.track || '—')}</strong></div>
 <div class="info"><span>שנת התלמידה</span><strong>${escapeHtml(this.gradeSheetYearLabel() === 'לא הוגדרה' ? '—' : this.gradeSheetYearLabel())}</strong></div>
 <div class="info"><span>מחצית</span><strong>${escapeHtml(semester)}</strong></div>
+<div class="info barcode-info"><span>ברקוד כללי</span><img class="barcode-image" src="${studentBarcodeUrl}" alt="ברקוד כללי ${escapeHtml(student.id_number)}"></div>
 </section>
-<h2>ציוני קודש</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('קודש') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
-<h2>ציוני מסלול</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('מסלול') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
+<h2>ציוני קודש</h2><table><thead><tr><th>מקצוע</th><th>מבחן</th><th>ברקוד</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('קודש') || '<tr><td colspan="5">אין ציונים</td></tr>'}</tbody></table>
+<h2>ציוני מסלול</h2><table><thead><tr><th>מקצוע</th><th>מבחן</th><th>ברקוד</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('מסלול') || '<tr><td colspan="5">אין ציונים</td></tr>'}</tbody></table>
 <h2>נוכחות קודש, מסלול ותפילה</h2><table><thead><tr><th>תחום</th><th>שיעורים</th><th>היעדרויות</th><th>איחורים</th><th>אחוז נוכחות</th></tr></thead><tbody>${attendanceRows}</tbody></table>
 <footer class="footer">סמינר גור</footer>
-</main><script>window.onload=()=>window.print();</script></body></html>`);
+</main><script>window.onload=async()=>{try{await Promise.all([...document.querySelectorAll('.barcode-image')].map(img=>img.decode()));window.print()}catch{alert('לא ניתן לטעון את הברקודים. בדקי את החיבור ונסי שוב.')}}</script></body></html>`);
 printWindow.document.close();
 }
 

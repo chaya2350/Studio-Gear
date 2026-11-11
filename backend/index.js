@@ -3061,6 +3061,7 @@ db.exec(`
 const examCols = db.prepare('PRAGMA table_info(exams)').all().map((c) => c.name);
 if (!examCols.includes('start_time')) db.exec('ALTER TABLE exams ADD COLUMN start_time TEXT');
 if (!examCols.includes('end_time')) db.exec('ALTER TABLE exams ADD COLUMN end_time TEXT');
+if (!examCols.includes('subject')) db.exec('ALTER TABLE exams ADD COLUMN subject TEXT');
 
 // רשימת מבחנים + סטטיסטיקות בסיסיות
 app.get('/api/exams', (req, res) => {
@@ -3076,12 +3077,13 @@ app.get('/api/exams', (req, res) => {
 app.post('/api/exams', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המבחן הוא שדה חובה' });
+  const subject = String(req.body?.subject || '').trim() || null;
   const startTime = req.body?.start_time || null;
   const endTime = req.body?.end_time || null;
   const timeError = validateOptionalTimeRange(startTime, endTime);
   if (timeError) return res.status(400).json({ error: timeError });
-  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null, startTime, endTime);
+  const result = db.prepare('INSERT INTO exams (name, subject, track, year, exam_date, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(name, subject, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null, startTime, endTime);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -3259,7 +3261,7 @@ app.get('/api/exams-stats/summary', (req, res) => {
 // כל המבחנים והציונים של תלמידה אחת (להצגה בדף התלמידה)
 app.get('/api/students/:id_number/exams', (req, res) => {
   const rows = db.prepare(`
-    SELECT e.id AS exam_id, e.name AS exam_name, e.exam_date, e.track, c.code, g.grade, g.graded_at
+    SELECT e.id AS exam_id, e.name AS exam_name, e.subject, e.exam_date, e.track, c.code, g.grade, g.graded_at
     FROM exam_codes c
     JOIN exams e ON e.id = c.exam_id
     LEFT JOIN exam_grades g ON g.code = c.code

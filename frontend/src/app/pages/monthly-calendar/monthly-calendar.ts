@@ -199,6 +199,10 @@ interface GanttEntry {
   <div class="modal-card" (click)="$event.stopPropagation()" style="width:min(500px,95vw)">
     <div class="modal-title"> מבחן חדש ל-{{ formatShortDate(selectedDate()) }}</div>
     <div class="form-group">
+      <label>מקצוע (אופציונלי)</label>
+      <input [(ngModel)]="newExam.subject" placeholder="לדוגמה: מתמטיקה">
+    </div>
+    <div class="form-group">
       <label>שם המבחן *</label>
       <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'" (keyup.enter)="saveExam()">
     </div>
@@ -1233,7 +1237,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   newTask = { title: '', start_time: '08:00', end_time: '09:00', all_day: false, visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
   taskUsers = signal<MessageUser[]>([]);
   showUserPicker = signal(false);
-  newExam  = { name: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track' as 'track' | 'class', parallel: '' };
+  newExam  = { name: '', subject: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track' as 'track' | 'class', parallel: '' };
   newEvent = {
     title: '', category: '', start_date: this.today, end_date: this.today,
     all_day: true, start_time: '08:00', end_time: '09:00',
@@ -1499,7 +1503,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddExam() {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
-    this.newExam = { name: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
+    this.newExam = { name: '', subject: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
     this.dialogError.set('');
     this.addExamOpen.set(true);
   }
@@ -1616,7 +1620,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     const name = this.newExam.name.trim();
     if (!name) return;
     const examData: any = {
-      name, exam_date: this.selectedDate(),
+      name, subject: this.newExam.subject.trim() || undefined, exam_date: this.selectedDate(),
       start_time: this.newExam.all_day ? undefined : this.newExam.start_time,
       end_time: this.newExam.all_day ? undefined : this.newExam.end_time
     };
