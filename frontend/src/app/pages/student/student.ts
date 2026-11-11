@@ -7,6 +7,7 @@ import { ApiService, StudentRequirement, StudentRequirements } from '../../servi
 import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 import { StudentProfileCardComponent } from '../../components/student-profile-card/student-profile-card';
+import { isHiddenStudentField } from '../../utils/hidden-student-fields';
 
 const HEBREW_MONTH_NAMES: Record<number, string> = {
   [months.TISHREI]: 'תשרי', [months.CHESHVAN]: 'חשוון', [months.KISLEV]: 'כסלו',
@@ -295,22 +296,34 @@ template: `
 </div>
 </div>
 
-<div class="extra-fields" *ngIf="hasPublicPhoneBlock() || extraFields().length">
+<div class="extra-fields" *ngIf="hasPublicPhoneBlock() || hasCredentialsBlock() || officialCredentialFields().length || emailFields().length || displayExtraFields().length">
 <h3>פרטים נוספים </h3>
-<div class="extra-fields-grid" *ngIf="hasPublicPhoneBlock() || hasCredentialsBlock()">
-<div class="info-row extra highlight-import">
+<div class="extra-fields-grid credentials-grid" *ngIf="hasPublicPhoneBlock() || hasCredentialsBlock() || officialCredentialFields().length || emailFields().length">
+<div class="info-row extra highlight-import public-phone-card" *ngIf="hasPublicPhoneBlock()">
 <span class="info-label">טלפון ציבורי</span>
 <span class="info-value" *ngIf="phoneCodeValue()">קוד: {{ phoneCodeValue() }}</span>
 <span class="info-value" *ngIf="phoneExtensionValue()">שלוחה: {{ phoneExtensionValue() }}</span>
 </div>
-<div class="info-row extra highlight-import" *ngIf="hasCredentialsBlock()">
+<div class="info-row extra highlight-import credentials-card" *ngIf="hasCredentialsBlock()">
 <span class="info-label">פרטי התחברות</span>
 <span class="info-value" *ngIf="usernameValue()">שם משתמש: {{ usernameValue() }}</span>
-<span class="info-value" *ngIf="passwordValue()">סיסמה: {{ passwordValue() }}</span>
+<span class="info-value" *ngFor="let field of otherPasswordFields()">{{ field.key }}: {{ field.value }}</span>
+</div>
+<div class="info-row extra highlight-import gov-password-card" *ngIf="officialCredentialFields().length">
+<ng-container *ngFor="let field of officialCredentialFields()">
+<span class="info-label">{{ field.key }}</span>
+<span class="info-value">{{ field.value }}</span>
+</ng-container>
+</div>
+<div class="info-row extra highlight-import email-card" *ngIf="emailFields().length">
+<ng-container *ngFor="let field of emailFields()">
+<span class="info-label">{{ field.key }}</span>
+<span class="info-value">{{ field.value }}</span>
+</ng-container>
 </div>
 </div>
 <div class="extra-fields-grid">
-<div class="info-row extra" *ngFor="let field of extraFields()">
+<div class="info-row extra" *ngFor="let field of displayExtraFields()">
 <span class="info-label">{{ field.key }}</span>
 <span class="info-value">{{ field.value }}</span>
 </div>
@@ -753,6 +766,10 @@ display: grid;
 grid-template-columns: repeat(2, minmax(0, 1fr));
 gap: 10px;
 }
+.public-phone-card { grid-column: 1; grid-row: 1; }
+.credentials-card { grid-column: 2; grid-row: 1; }
+.gov-password-card { grid-column: 1; grid-row: 2; }
+.email-card { grid-column: 2; grid-row: 2; }
 .info-row.extra {
 background: var(--bg);
 }
@@ -854,6 +871,9 @@ input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary)
 .quick-stats { grid-template-columns: 1fr; }
 .info-grid { grid-template-columns: 1fr; }
 .extra-fields-grid { grid-template-columns: 1fr; }
+.credentials-grid .public-phone-card, .credentials-grid .credentials-card, .credentials-grid .gov-password-card, .credentials-grid .email-card {
+  grid-column: auto; grid-row: auto;
+}
 .edit-grid { grid-template-columns: 1fr; }
 .extra-edit-row, .extra-add-row { grid-template-columns: 1fr; }
 .edit-actions { justify-content: stretch; }
@@ -1457,6 +1477,10 @@ addEditingExtraField() {
 const key = String(this.newExtraField.key || '').trim();
 const value = String(this.newExtraField.value || '').trim();
 if (!key || !value) return;
+if (isHiddenStudentField(key)) {
+this.editError.set('לא ניתן להוסיף פרט מסוג זה.');
+return;
+}
 const exists = this.editingExtraFields.some((field) => field.key.trim() === key);
 if (exists) {
 this.editError.set('כבר קיים פרט בשם הזה. אפשר לערוך אותו ברשימה.');
@@ -1495,6 +1519,10 @@ return data;
 saveStudent() {
 const current = this.student();
 if (!current || this.saving()) return;
+if (this.editingExtraFields.some(field => isHiddenStudentField(field.key))) {
+this.editError.set('לא ניתן לשמור פרט מסוג זה.');
+return;
+}
 this.saving.set(true);
 this.editError.set('');
 const payload = {
@@ -1558,6 +1586,11 @@ return Object.entries(data)
 .filter((field) => this.isEditableExtraFieldKey(field.key));
 }
 
+displayExtraFields() {
+return this.extraFields().filter(field => !this.isEmailKey(field.key) && !this.isGovCodeKey(field.key)
+  && !this.isEducationUserCodeKey(field.key));
+}
+
 isEditableExtraFieldKey(key: string) {
 return !this.isPhoneCodeKey(key) && !this.isPhoneExtensionKey(key)
   && !this.isUsernameKey(key) && !this.isPasswordKey(key)
@@ -1566,7 +1599,8 @@ return !this.isPhoneCodeKey(key) && !this.isPhoneExtensionKey(key)
 
 isHiddenExtraField(key: string) {
 const normalized = this.normalizeFieldKey(key);
-return normalized.includes('מקבילה')
+return isHiddenStudentField(key)
+|| normalized.includes('מקבילה')
 || normalized.includes('מספר')
 || normalized.includes('אופציהב')
 || normalized.includes('אבאחוץ')
@@ -1586,7 +1620,7 @@ return Boolean(this.phoneCodeValue() || this.phoneExtensionValue());
 }
 
 hasCredentialsBlock() {
-return Boolean(this.usernameValue() || this.passwordValue());
+return Boolean(this.usernameValue() || this.otherPasswordFields().length);
 }
 
 phoneCodeValue() {
@@ -1626,11 +1660,62 @@ const found = Object.entries(data).find(([key, value]) => this.isUsernameKey(key
 return found ? String(found[1] || '').trim() : '';
 }
 
-passwordValue() {
+private passwordFields(): { key: string; value: string }[] {
 const data = this.student()?.extra_data;
-if (!data || typeof data !== 'object') return '';
-const found = Object.entries(data).find(([key, value]) => this.isPasswordKey(key) && String(value || '').trim());
-return found ? String(found[1] || '').trim() : '';
+if (!data || typeof data !== 'object') return [];
+return Object.entries(data)
+  .filter(([key, value]) => !isHiddenStudentField(key) && this.isPasswordKey(key) && String(value ?? '').trim())
+  .map(([key, value]) => ({ key, value: String(value).trim() }));
+}
+
+officialCredentialFields(): { key: string; value: string }[] {
+const data = this.student()?.extra_data;
+if (!data || typeof data !== 'object') return [];
+return Object.entries(data)
+  .filter(([key, value]) => !isHiddenStudentField(key) && ((this.isPasswordKey(key) && this.isOfficialPasswordKey(key))
+    || this.isGovCodeKey(key) || this.isEducationUserCodeKey(key))
+    && String(value ?? '').trim())
+  .map(([key, value]) => ({ key, value: String(value).trim() }))
+  .sort((a, b) => this.officialCredentialOrder(a.key) - this.officialCredentialOrder(b.key));
+}
+
+officialCredentialOrder(key: string) {
+if (this.isGovCodeKey(key) || /גוב|gov/.test(this.normalizeFieldKey(key))) return 0;
+if (this.isEducationUserCodeKey(key)) return 1;
+return 2;
+}
+
+otherPasswordFields(): { key: string; value: string }[] {
+return this.passwordFields().filter(field => !this.isOfficialPasswordKey(field.key));
+}
+
+isOfficialPasswordKey(key: string) {
+return /גוב|gov|משרדהחינוך/.test(this.normalizeFieldKey(key));
+}
+
+isGovCodeKey(key: string) {
+const normalized = this.normalizeFieldKey(key);
+return normalized === 'קודלגוב' || normalized === 'קודגוב'
+  || normalized === 'govcode' || normalized === 'codeforgov';
+}
+
+isEducationUserCodeKey(key: string) {
+const normalized = this.normalizeFieldKey(key);
+return normalized === 'קודמשתמשלמשרדהחינוך' || normalized === 'קודמשתמשלמשרהחינוך';
+}
+
+emailFields(): { key: string; value: string }[] {
+const data = this.student()?.extra_data;
+if (!data || typeof data !== 'object') return [];
+return Object.entries(data)
+  .filter(([key, value]) => this.isEmailKey(key) && String(value ?? '').trim())
+  .map(([key, value]) => ({ key, value: String(value).trim() }));
+}
+
+isEmailKey(key: string) {
+const normalized = this.normalizeFieldKey(key);
+return normalized === 'מייל' || normalized === 'מיילים' || normalized === 'אימייל' || normalized === 'דואל'
+  || normalized === 'email' || normalized === 'mail' || normalized === 'emailaddress';
 }
 
 isUsernameKey(key: string) {
@@ -1640,7 +1725,7 @@ return normalized.includes('שםמשתמש') || normalized.includes('user') || n
 
 isPasswordKey(key: string) {
 const normalized = this.normalizeFieldKey(key);
-return normalized.includes('סיסמ') || normalized.includes('ססמ') || normalized.includes('password') || normalized === 'pass';
+return normalized.includes('סיסמ') || normalized.includes('ססמ') || normalized.includes('password') || normalized.includes('passwd') || normalized === 'pass';
 }
 
 isNameKey(key: string) {

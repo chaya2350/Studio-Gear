@@ -396,6 +396,7 @@ class="section-tab"
 <div *ngFor="let r of results()" class="import-status" [class.success]="r.ok" [class.error]="!r.ok">
 <span *ngIf="r.ok"> <strong>{{ r.filename }}</strong> — יובאו {{ r.imported }} תלמידות
 (תאריך לידה: {{ r.withBirthDate || 0 }}, כתובת: {{ r.withAddress || 0 }}, קוד טלפון: {{ r.withPhoneCode || 0 }})
+ · תלמידות עם שדה סיסמה שנקלט: {{ r.withGovPassword === undefined ? 'לא דווח' : r.withGovPassword }}
 <span *ngIf="r.mergedExisting"> · מוזגו {{ r.mergedExisting }} תלמידות קיימות</span>
 <span *ngIf="r.addedExtraFields"> · נוספו {{ r.addedExtraFields }} פרמטרים נוספים</span>
 <span *ngIf="r.skipped">({{ r.skipped }} דולגו)</span>
@@ -896,6 +897,7 @@ skipped?: number;
 withBirthDate?: number;
 withAddress?: number;
 withPhoneCode?: number;
+withGovPassword?: number;
 mergedExisting?: number;
 addedExtraFields?: number;
 error?: string;
@@ -1653,6 +1655,7 @@ skipped?: number;
 withBirthDate?: number;
 withAddress?: number;
 withPhoneCode?: number;
+withGovPassword?: number;
 mergedExisting?: number;
 addedExtraFields?: number;
 error?: string;
@@ -1671,6 +1674,7 @@ skipped: r.skipped,
 withBirthDate: r.withBirthDate,
 withAddress: r.withAddress,
 withPhoneCode: r.withPhoneCode,
+withGovPassword: r.withGovPassword,
 mergedExisting: r.mergedExisting,
 addedExtraFields: r.addedExtraFields
 });

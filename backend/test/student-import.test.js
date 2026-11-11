@@ -46,21 +46,29 @@ test('parses imported Gregorian and Hebrew birth dates separately', () => {
   assert.equal(rows[0].birth_date_hebrew, '23-11');
 });
 
-test('detects the exact government-password header and retains numeric values', () => {
+test('imports government password for a student on the first-year Ruach sheet', () => {
   const workbook = XLSX.utils.book_new();
   const sheet = {};
   setCell(sheet, 'A1', 'מספר זהות');
-  setCell(sheet, 'B1', 'סיסמא לגוב');
+  setCell(sheet, 'B1', 'שם מלא');
+  setCell(sheet, 'C1', 'מסלול');
+  setCell(sheet, 'D1', 'שנה');
+  setCell(sheet, 'E1', 'סיסמא לגוב');
   setCell(sheet, 'A2', '123456789');
-  setCell(sheet, 'B2', 0);
-  sheet['!ref'] = 'A1:B2';
+  setCell(sheet, 'B2', 'תלמידה לדוגמה');
+  setCell(sheet, 'C2', 'רוח');
+  setCell(sheet, 'D2', 'א');
+  setCell(sheet, 'E2', 0);
+  sheet['!ref'] = 'A1:E2';
 
-  XLSX.utils.book_append_sheet(workbook, sheet, 'שנה א');
+  XLSX.utils.book_append_sheet(workbook, sheet, 'רוח שנה א');
   const rows = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id_number, '123456789');
   assert.equal(rows[0].extra_fields['סיסמא לגוב'], '0');
+  assert.equal(rows[0].track, 'רוח');
+  assert.equal(rows[0].year, 'א');
 });
 
 test('reimported password replaces an older password header spelling', () => {
@@ -71,7 +79,20 @@ test('reimported password replaces an older password header spelling', () => {
 
   assert.deepEqual(result, {
     merged: { 'פרט אחר': 'keep', 'סיסמא לגוב': 'new' },
-    added: 0
+    added: 0,
+    passwordsImported: 1
+  });
+});
+
+test('preserves different password fields when importing and reimporting', () => {
+  const result = mergeStudentExtraFields(
+    { 'סיסמת הדפסה': 'print-old', 'סיסמה לגוב': 'gov-old' },
+    { 'סיסמא לגוב': 'gov-new', 'סיסמת הדפסה': 'print-new' }
+  );
+  assert.deepEqual(result, {
+    merged: { 'סיסמא לגוב': 'gov-new', 'סיסמת הדפסה': 'print-new' },
+    added: 0,
+    passwordsImported: 2
   });
 });
 

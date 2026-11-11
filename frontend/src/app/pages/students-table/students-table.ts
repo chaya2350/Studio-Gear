@@ -6,6 +6,7 @@ import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
+import { isHiddenStudentField } from '../../utils/hidden-student-fields';
 
 interface TableStudent {
   id_number: string;
@@ -313,7 +314,7 @@ export class StudentsTableComponent implements OnInit {
     const keys = new Set<string>();
     for (const s of this.allStudents().slice(0, 50)) {
       for (const k of Object.keys(s.extra_data || {})) {
-        if (!['מקבילה','מספר','סיסמא','סיסמת הדפסה','שלוחה לטלפון','עודכן במדפסת'].includes(k)) keys.add(k);
+        if (!isHiddenStudentField(k) && !['מקבילה','מספר','סיסמא','סיסמת הדפסה','שלוחה לטלפון','עודכן במדפסת'].includes(k)) keys.add(k);
       }
     }
     return [...keys].slice(0, 20);

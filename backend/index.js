@@ -2492,7 +2492,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
     `);
     const getExistingStudent = db.prepare('SELECT * FROM students WHERE id_number = ?');
 
-    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0, withPhoneCode = 0, mergedExisting = 0, addedExtraFields = 0;
+    let imported = 0, skipped = 0, withBirthDate = 0, withAddress = 0, withPhoneCode = 0;
+    let mergedExisting = 0, addedExtraFields = 0, withGovPassword = 0;
 
     const pickValue = (existingValue, incomingValue) => {
       const current = String(existingValue || '').trim();
@@ -2535,6 +2536,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const existingExtra = parseExtraData(existing?.extra_data);
         const mergedExtra = mergeStudentExtraFields(existingExtra, extraFields);
         addedExtraFields += mergedExtra.added;
+        if (mergedExtra.passwordsImported) withGovPassword++;
 
         const mergedName = pickValue(existing?.name, name);
         const mergedPhone = pickValue(existing?.phone, phone);
@@ -2571,7 +2573,10 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       }
     });
     importMany(rows);
-    res.json({ imported, skipped, withBirthDate, withAddress, withPhoneCode, mergedExisting, addedExtraFields, total: rows.length });
+    res.json({
+      imported, skipped, withBirthDate, withAddress, withPhoneCode,
+      withGovPassword, mergedExisting, addedExtraFields, total: rows.length
+    });
   } catch (e) {
     console.error('Import error:', e);
     res.status(500).json({ error: 'שגיאה בקריאת הקובץ: ' + e.message });

@@ -218,16 +218,24 @@ function isPasswordHeader(value) {
     || header.includes('password') || header.includes('passwd') || header === 'pass';
 }
 
+function passwordHeaderKey(value) {
+  return compactHeader(value).replace(/סיסמ[אה]/g, 'סיסמ');
+}
+
 function mergeStudentExtraFields(existing, incoming) {
   const merged = { ...existing };
   let added = 0;
+  let passwordsImported = 0;
   for (const [rawKey, rawValue] of Object.entries(incoming || {})) {
     const key = String(rawKey || '').trim();
     const value = String(rawValue ?? '').trim();
     if (!key || !value) continue;
 
     if (isPasswordHeader(key)) {
-      const oldPasswordKeys = Object.keys(merged).filter(isPasswordHeader);
+      passwordsImported++;
+      const oldPasswordKeys = Object.keys(merged).filter(oldKey =>
+        isPasswordHeader(oldKey) && passwordHeaderKey(oldKey) === passwordHeaderKey(key)
+      );
       if (!oldPasswordKeys.length) added++;
       for (const oldKey of oldPasswordKeys) delete merged[oldKey];
       merged[key] = value;
@@ -239,7 +247,7 @@ function mergeStudentExtraFields(existing, incoming) {
       added++;
     }
   }
-  return { merged, added };
+  return { merged, added, passwordsImported };
 }
 
 function buildRowsFromSheet(sheetName, sheet) {
