@@ -212,16 +212,25 @@ const knownHeaderSet = new Set(
     .map((header) => compactHeader(header))
 );
 
+const credentialHeaderAliases = [
+  'סיסמא', 'סיסמה', 'סיסמת גוב', 'סיסמא לגוב', 'סיסמה לגוב',
+  'סיסמא בגוב', 'סיסמה בגוב', 'סיסמא לgov', 'סיסמה לgov',
+  'סיסמת משתמש', 'סיסמת gov', 'gov password', 'password', 'password gov'
+];
+const headerDetectionSet = new Set([
+  ...knownHeaderSet,
+  ...credentialHeaderAliases.map((header) => compactHeader(header))
+]);
+
 function buildRowsFromSheet(sheetName, sheet) {
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-  const headersCompact = new Set([...knownHeaderSet]);
   let headerRowIndex = -1;
 
   for (let i = 0; i < Math.min(matrix.length, 40); i++) {
     const row = Array.isArray(matrix[i]) ? matrix[i] : [];
     const matches = row
       .map((cell) => compactHeader(cell))
-      .filter((token) => token && headersCompact.has(token)).length;
+      .filter((token) => token && headerDetectionSet.has(token)).length;
     if (matches >= 2) {
       headerRowIndex = i;
       break;
@@ -319,7 +328,7 @@ function parseStudentWorkbook(buffer) {
         if (/^__COL_\d+$/i.test(header) || /^__EMPTY/i.test(header)) return acc;
         const normalizedHeader = compactHeader(header);
         if (!normalizedHeader || knownHeaderSet.has(normalizedHeader)) return acc;
-        const cleanValue = String(value || '').trim();
+        const cleanValue = String(value ?? '').trim();
         if (!cleanValue) return acc;
         acc[String(header).trim()] = cleanValue;
         return acc;

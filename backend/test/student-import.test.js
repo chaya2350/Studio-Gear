@@ -45,6 +45,23 @@ test('parses imported Gregorian and Hebrew birth dates separately', () => {
   assert.equal(rows[0].birth_date_hebrew, '23-11');
 });
 
+test('detects a password-only worksheet from its ID and government password headers', () => {
+  const workbook = XLSX.utils.book_new();
+  const sheet = {};
+  setCell(sheet, 'A1', 'מספר זהות');
+  setCell(sheet, 'B1', 'סיסמה לגוב');
+  setCell(sheet, 'A2', '123456789');
+  setCell(sheet, 'B2', 0);
+  sheet['!ref'] = 'A1:B2';
+
+  XLSX.utils.book_append_sheet(workbook, sheet, 'שנה א');
+  const rows = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id_number, '123456789');
+  assert.equal(rows[0].extra_fields['סיסמה לגוב'], '0');
+});
+
 function setCell(sheet, address, value) {
   sheet[address] = { t: typeof value === 'number' ? 'n' : 's', v: value };
 }

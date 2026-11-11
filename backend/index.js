@@ -27,6 +27,7 @@ const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
 const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
+const { saveStudentPhoto, clearStudentPhoto } = require('./student-photo');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
@@ -1901,17 +1902,29 @@ app.put('/api/students/:id_number', (req, res) => {
 // העלאת תמונת פרופיל לתלמידה
 app.post('/api/students/:id_number/photo', upload.single('image'), (req, res) => {
   const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
-  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  if (!student) {
+    if (req.file) fs.rmSync(req.file.path, { force: true });
+    return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  }
   if (!req.file) return res.status(400).json({ error: 'לא נבחר קובץ' });
   const photoUrl = `/uploads/${req.file.filename}`;
+  if (!saveStudentPhoto(db, req.params.id_number, photoUrl)) {
+    fs.rmSync(req.file.path, { force: true });
+    return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  }
   registerUploadedFile(req.file, 'students');
   res.json({ url: photoUrl });
 });
 
 // עדכון/הסרת תמונת פרופיל
 app.patch('/api/students/:id_number/photo', (req, res) => {
-  const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
-  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  const result = clearStudentPhoto(db, req.params.id_number);
+  if (!result) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  if (result.photoUrl?.startsWith('/uploads/')) {
+    const filename = path.basename(result.photoUrl);
+    fs.rmSync(path.join(uploadsDir, filename), { force: true });
+    db.prepare('DELETE FROM uploaded_file_permissions WHERE filename = ?').run(filename);
+  }
   res.json({ success: true });
 });
 
