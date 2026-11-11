@@ -101,11 +101,11 @@ html.dark {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 1px;
   max-width: 100%; max-height: 28px; overflow: hidden;
 }
-.gantt-birthday {
+.gantt-top-event {
   max-width: 100%; padding: 0 2px; border: 0; border-radius: 3px;
-  background: #db2777; color: #fff; font: inherit; font-size: .5rem;
+  color: #fff; font: inherit; font-size: .5rem; font-weight: 700;
   line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help;
-  &:focus-visible { outline: 2px solid #831843; outline-offset: 1px; }
+  &:focus-visible { outline: 2px solid #334155; outline-offset: 1px; }
 }
 .gantt-hour-axis {
   position: sticky; right: 0; z-index: 2; height: 1056px; box-sizing: border-box;
