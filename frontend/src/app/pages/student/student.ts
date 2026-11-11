@@ -37,7 +37,7 @@ template: `
 <div *ngIf="student()">
 <div class="page-header">
 <div class="student-actions">
-  <button class="btn btn-secondary" (click)="exportFormatOpen.set(true)" [disabled]="!gradeSheetReady()">ייצוא ציונים</button>
+  <button class="btn btn-secondary" (click)="openGradeSheetExport()" [disabled]="!gradeSheetReady()">ייצוא ציונים</button>
 </div>
 <div style="display:flex; align-items:center; gap:16px;">
 <a href="#" (click)="goBack($event)" class="back-btn">→</a>
@@ -53,10 +53,18 @@ template: `
 <div *ngIf="exportFormatOpen()" class="modal-backdrop" (click)="exportFormatOpen.set(false)">
   <div class="modal-card export-format-modal" role="dialog" aria-modal="true" aria-labelledby="export-format-title" (click)="$event.stopPropagation()">
     <div class="modal-title" id="export-format-title">ייצוא גיליון ציונים</div>
+    <p>שנת התלמידה: <strong>{{ gradeSheetYearLabel() }}</strong></p>
+    <label class="semester-label">מחצית</label>
+    <div class="semester-options" role="group" aria-label="בחירת מחצית">
+      <button type="button" [class.active]="gradeSheetSemester() === 'א׳'"
+        [attr.aria-pressed]="gradeSheetSemester() === 'א׳'" (click)="gradeSheetSemester.set('א׳')">מחצית א׳</button>
+      <button type="button" [class.active]="gradeSheetSemester() === 'ב׳'"
+        [attr.aria-pressed]="gradeSheetSemester() === 'ב׳'" (click)="gradeSheetSemester.set('ב׳')">מחצית ב׳</button>
+    </div>
     <p>באיזה פורמט תרצי להוריד את הגיליון?</p>
     <div class="export-format-actions">
-      <button class="btn btn-primary" (click)="printGradeSheet()">הדפסה / שמירה כ־PDF</button>
-      <button class="btn btn-secondary" (click)="exportGradeSheetExcel()">קובץ Excel</button>
+      <button class="btn btn-primary" [disabled]="!gradeSheetSemester()" (click)="printGradeSheet()">הדפסה / שמירה כ־PDF</button>
+      <button class="btn btn-secondary" [disabled]="!gradeSheetSemester()" (click)="exportGradeSheetExcel()">קובץ Excel</button>
     </div>
     <button class="btn btn-ghost" (click)="exportFormatOpen.set(false)">ביטול</button>
   </div>
@@ -836,6 +844,10 @@ input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary)
 .notice-body { font-size: 0.85rem; color: var(--text); line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
 .export-format-modal { width: min(440px, 94vw); }
 .export-format-modal p { margin: 8px 0 18px; color: var(--text-muted); }
+.semester-label { display: block; margin: 12px 0 6px; font-size: .85rem; font-weight: 700; }
+.semester-options { display: flex; gap: 8px; margin-bottom: 14px; }
+.semester-options button { flex: 1; padding: 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.semester-options button.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); font-weight: 700; }
 .export-format-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 1050px) {
@@ -916,6 +928,7 @@ attendance = signal<any>(null);
 gradeSheetError = signal('');
 examsLoaded = signal(false);
 exportFormatOpen = signal(false);
+gradeSheetSemester = signal<'א׳' | 'ב׳' | null>(null);
 gradeSheetReady = computed(() => this.examsLoaded() && !!this.attendance());
 
 uploadingPhoto = signal(false);
@@ -1156,10 +1169,25 @@ for (const subject of this.attendance()?.by_subject || []) {
 return { summaries, unclassified };
 }
 
+gradeSheetYearLabel(): string {
+const year = String(this.student()?.year || '').trim();
+const normalized = year.replace(/[״׳'"]/g, '');
+if (normalized === 'ה') return 'א׳';
+if (normalized === 'ו') return 'ב׳';
+return year || 'לא הוגדרה';
+}
+
+openGradeSheetExport() {
+this.gradeSheetSemester.set(null);
+this.exportFormatOpen.set(true);
+}
+
 async exportGradeSheetExcel() {
 const student = this.student();
-if (!student || !this.attendance()) return;
+const semester = this.gradeSheetSemester();
+if (!student || !this.attendance() || !semester) return;
 this.exportFormatOpen.set(false);
+const asOfDate = new Date().toLocaleDateString('he-IL');
 try {
 const { default: ExcelJS } = await import('exceljs');
 const gradeRows: (string | number)[][] = [
@@ -1195,13 +1223,15 @@ for (const [name, rows, widths] of [
     ['שם התלמידה', student.name],
     ['תעודת זהות', student.id_number],
     ['מסלול', student.track || '—'],
-    ['שנה', student.year || '—'],
+    ['שנת התלמידה', this.gradeSheetYearLabel() === 'לא הוגדרה' ? '—' : this.gradeSheetYearLabel()],
+    ['מחצית', semester],
+    ['נכון לתאריך', asOfDate],
     [],
     ...rows,
   ]);
   sheet.columns = widths.map(width => ({ width }));
   sheet.getRow(1).font = { bold: true, size: 16, color: { argb: 'FF174E3C' } };
-  const header = sheet.getRow(7);
+  const header = sheet.getRow(9);
   header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF174E3C' } };
   sheet.eachRow(row => row.eachCell(cell => { cell.alignment = { vertical: 'middle', horizontal: 'right' }; }));
@@ -1222,8 +1252,10 @@ for (const [name, rows, widths] of [
 
 printGradeSheet() {
 const student = this.student();
-if (!student || !this.attendance()) return;
+const semester = this.gradeSheetSemester();
+if (!student || !this.attendance() || !semester) return;
 this.exportFormatOpen.set(false);
+const asOfDate = new Date().toLocaleDateString('he-IL');
 const printWindow = window.open('', '_blank');
 if (!printWindow) {
   this.gradeSheetError.set('לא ניתן לפתוח חלון הדפסה. יש לאפשר חלונות קופצים ולנסות שוב.');
@@ -1262,17 +1294,18 @@ th{background:#174e3c;color:white;font-weight:700}tbody tr:nth-child(even){backg
 @media print{.sheet{max-width:none;margin:0;padding:0;border:0;border-radius:0}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
 @media(max-width:600px){.sheet{margin:10px;padding:18px}.student-info{grid-template-columns:repeat(2,1fr)}}
 </style></head><body><main class="sheet">
-<header class="brand"><img src="/logo.png" alt="לוגו הסמינר"><div><div class="brand-name">סמינר גור</div><h1>גיליון ציונים ונוכחות</h1><p class="subtitle">דוח אישי לתלמידה</p></div></header>
+<header class="brand"><img src="/logo.png" alt="לוגו הסמינר"><div><div class="brand-name">סמינר גור</div><h1>גיליון ציונים ונוכחות</h1><p class="subtitle">דוח אישי לתלמידה · נכון לתאריך ${escapeHtml(asOfDate)}</p></div></header>
 <section class="student-info">
 <div class="info"><span>שם התלמידה</span><strong>${escapeHtml(student.name)}</strong></div>
 <div class="info"><span>תעודת זהות</span><strong>${escapeHtml(student.id_number)}</strong></div>
 <div class="info"><span>מסלול</span><strong>${escapeHtml(student.track || '—')}</strong></div>
-<div class="info"><span>שנה</span><strong>${escapeHtml(student.year || '—')}</strong></div>
+<div class="info"><span>שנת התלמידה</span><strong>${escapeHtml(this.gradeSheetYearLabel() === 'לא הוגדרה' ? '—' : this.gradeSheetYearLabel())}</strong></div>
+<div class="info"><span>מחצית</span><strong>${escapeHtml(semester)}</strong></div>
 </section>
 <h2>ציוני קודש</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('קודש') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
 <h2>ציוני מסלול</h2><table><thead><tr><th>מבחן</th><th>תאריך</th><th>ציון</th></tr></thead><tbody>${gradeRows('מסלול') || '<tr><td colspan="3">אין ציונים</td></tr>'}</tbody></table>
 <h2>נוכחות קודש, מסלול ותפילה</h2><table><thead><tr><th>תחום</th><th>שיעורים</th><th>היעדרויות</th><th>איחורים</th><th>אחוז נוכחות</th></tr></thead><tbody>${attendanceRows}</tbody></table>
-<footer class="footer">הופק בתאריך ${new Date().toLocaleDateString('he-IL')} · סמינר גור</footer>
+<footer class="footer">סמינר גור</footer>
 </main><script>window.onload=()=>window.print();</script></body></html>`);
 printWindow.document.close();
 }
