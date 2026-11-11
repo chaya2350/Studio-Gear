@@ -28,13 +28,30 @@ template: `
 {{ usersError }}
 <button type="button" class="retry-button" (click)="loadUsers()">נסי שוב</button>
 </div>
-<label for="recipient">אל (ניתן לבחור מספר עם Ctrl)</label>
-<select id="recipient" multiple [(ngModel)]="recipientIds"
-[disabled]="usersLoading || !users.length || sending || loadingReply"
-(ngModelChange)="cancelReply()"
-size="4" style="height:auto">
-<option *ngFor="let user of users" [ngValue]="user.id">{{ user.name }}</option>
-</select>
+<fieldset class="recipient-picker" [disabled]="usersLoading || !users.length || sending || loadingReply">
+<legend>אל</legend>
+<p class="recipient-instructions">סמני את כל מי שצריכה לקבל את ההודעה:</p>
+<div *ngIf="usersLoading" class="recipient-empty">טוענת משתמשות…</div>
+<div *ngIf="!usersLoading && !users.length && !usersError" class="recipient-empty">אין משתמשות זמינות לבחירה</div>
+<div *ngIf="users.length" class="recipient-options">
+  <label *ngFor="let user of users" class="recipient-option" [class.checked]="isRecipientSelected(user.id)">
+    <input type="checkbox" [checked]="isRecipientSelected(user.id)" (change)="toggleRecipient(user.id)">
+    <span>{{ user.name }}</span>
+  </label>
+</div>
+<div class="selected-recipients" aria-live="polite">
+  <strong>נבחרו {{ recipientIds.length }} נמענות:</strong>
+  <span *ngIf="!recipientIds.length" class="recipient-empty">עדיין לא נבחרו נמענות</span>
+  <div *ngIf="recipientIds.length" class="recipient-chips">
+    <span *ngFor="let recipient of selectedRecipients()" class="recipient-chip">
+      {{ recipient.name }}
+      <button type="button" [disabled]="sending || loadingReply"
+        [attr.aria-label]="'הסירי את ' + recipient.name"
+        (click)="toggleRecipient(recipient.id)">×</button>
+    </span>
+  </div>
+</div>
+</fieldset>
 <div *ngIf="replyToMessage as original" class="reply-hint">
 <div><strong>בתשובה להודעה מאת {{ original.sender_name }}</strong><div class="reply-preview">{{ original.body }}</div></div>
 <button type="button" (click)="cancelReply()" [disabled]="sending" aria-label="ביטול תשובה">×</button>
@@ -178,8 +195,22 @@ styles: [`
 .messages-layout { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr); gap: 20px; align-items: start; }
 .compose-card, .inbox-card { min-width: 0; }
 label { display: block; margin: 14px 0 6px; font-weight: 700; font-size: 0.85rem; }
-select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: 10px 12px; font: inherit; }
+textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: 10px 12px; font: inherit; }
 textarea { resize: vertical; line-height: 1.7; }
+.recipient-picker { min-width: 0; margin: 0; padding: 7px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.recipient-picker legend { padding: 0 4px; font-weight: 700; font-size: .8rem; }
+.recipient-instructions { margin: 0 0 5px; color: var(--text-muted); font-size: .74rem; }
+.recipient-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 4px; max-height: 190px; overflow-y: auto; }
+.recipient-option { display: flex; align-items: center; gap: 5px; margin: 0; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--surface); cursor: pointer; font-size: .75rem; }
+.recipient-option.checked { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+.recipient-option input { width: 14px; height: 14px; flex: 0 0 14px; margin: 0; accent-color: var(--primary); }
+.recipient-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selected-recipients { margin-top: 6px; font-size: .76rem; }
+.recipient-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.recipient-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 16px; background: var(--primary-light); color: var(--primary); font-size: .72rem; font-weight: 700; }
+.recipient-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: .9rem; line-height: 1; }
+.recipient-chip button:disabled { opacity: .5; cursor: default; }
+.recipient-empty { color: var(--text-muted); font-size: .74rem; }
 .attachment-picker { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
 .attachment-heading { font-size: .85rem; font-weight: 700; }
 .attachment-heading span { font-size: .75rem; font-weight: 400; color: var(--text-muted); margin-right: 5px; }
@@ -428,6 +459,25 @@ this.sendSuccess = '';
 selectRecipient(userId: number | null) {
 this.cancelReply();
 this.selectedConversationId = userId;
+this.sendError = '';
+this.sendSuccess = '';
+}
+
+isRecipientSelected(userId: number): boolean {
+return this.recipientIds.includes(userId);
+}
+
+selectedRecipients(): MessageUser[] {
+return this.recipientIds
+  .map(id => this.users.find(user => user.id === id))
+  .filter((user): user is MessageUser => user !== undefined);
+}
+
+toggleRecipient(userId: number) {
+this.cancelReply();
+this.recipientIds = this.isRecipientSelected(userId)
+  ? this.recipientIds.filter(id => id !== userId)
+  : [...this.recipientIds, userId];
 this.sendError = '';
 this.sendSuccess = '';
 }
