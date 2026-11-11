@@ -183,7 +183,7 @@ template: `
   </div>
 </div>
 <label class="field" *ngIf="studentDraft.marital_status === 'מאורסת' || studentDraft.marital_status === 'נשואה'">
-  <span>📍 מקום חתונה / אולם</span>
+  <span> מקום חתונה / אולם</span>
   <input name="wedding_venue" [(ngModel)]="studentDraft.wedding_venue" placeholder="שם האולם / עיר">
 </label>
 </section>
@@ -291,7 +291,7 @@ template: `
 <span class="info-value">{{ formatWeddingDate(student()!.wedding_date!) }}</span>
 </div>
 <div class="info-row" *ngIf="student()!.wedding_venue">
-<span class="info-label">📍 מקום חתונה</span>
+<span class="info-label"> מקום חתונה</span>
 <span class="info-value">{{ student()!.wedding_venue }}</span>
 </div>
 </div>

@@ -563,7 +563,7 @@ interface GanttEntry {
             <ng-container *ngIf="item.kind==='task'">{{ item.task?.title }}<span *ngIf="item.task?.visibility==='public'"> ({{ item.task?.creator_name }})</span><span *ngIf="item.task?.visibility==='shared'"> (👥 {{ item.task?.creator_name }})</span></ng-container>
             <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
             <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
-            <ng-container *ngIf="item.kind==='wedding'">💍 {{ item.wedding?.name }}{{ item.wedding?.wedding_venue ? ' · 📍' + item.wedding?.wedding_venue : '' }}</ng-container>
+            <ng-container *ngIf="item.kind==='wedding'">💍 {{ item.wedding?.name }}{{ item.wedding?.wedding_venue ? ' · ' + item.wedding?.wedding_venue : '' }}</ng-container>
             <ng-container *ngIf="item.kind==='birthday'">🎂 {{ item.birthday?.name }}</ng-container>
           </span>
         </span>
@@ -716,8 +716,8 @@ interface GanttEntry {
       <div class="detail-main">
         <a [routerLink]="['/students', s.id_number]"><strong>{{ s.name }}</strong></a>
         <span>{{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
-        <span *ngIf="s.wedding_venue" class="wedding-venue-label">📍 {{ s.wedding_venue }}</span>
-        <span *ngIf="!s.wedding_venue" class="wedding-venue-label no-venue">📍 מקום לא הוזן</span>
+        <span *ngIf="s.wedding_venue" class="wedding-venue-label"> {{ s.wedding_venue }}</span>
+        <span *ngIf="!s.wedding_venue" class="wedding-venue-label no-venue"> מקום לא הוזן</span>
       </div>
     </div>
   </ng-container>
