@@ -301,15 +301,15 @@ import { filter, takeUntil } from 'rxjs/operators';
               <span class="sidebar-badge" *ngIf="accessRequests().length + grantedCount > 0">{{ accessRequests().length + grantedCount }}</span>
             </span>
           </a>
-          <a *ngIf="auth.hasPermission('messages')" routerLink="/messages" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'הודעות' : ''" (click)="clearSearch()">
+          <a *ngIf="auth.hasPermission('messages')" routerLink="/messages" routerLinkActive="active" class="sidebar-item"
+            [title]="sidebarCollapsed ? (messages.unreadCount() > 0 ? 'הודעה חדשה' : 'הודעות') : ''"
+            [attr.aria-label]="messages.unreadCount() > 0 ? 'הודעות, יש הודעה חדשה שלא נקראה' : 'הודעות'"
+            (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             <span>הודעות</span>
-            <span *ngIf="messages.unreadCount() > 0" class="sidebar-badge"
-              [attr.aria-label]="messages.unreadCount() + ' הודעות שלא נקראו'">
-              {{ messages.unreadCount() > 99 ? '99+' : messages.unreadCount() }}
-            </span>
+            <span *ngIf="messages.unreadCount() > 0" class="sidebar-unread-dot" aria-hidden="true"></span>
           </a>
           <a *ngIf="auth.hasPermission('reports')" routerLink="/database" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מסד נתונים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -787,11 +787,31 @@ import { filter, takeUntil } from 'rxjs/operators';
       flex-shrink: 0;
     }
 
+    .sidebar-unread-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      flex: 0 0 9px;
+      margin-inline-start: auto;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--danger);
+      box-sizing: content-box;
+    }
+
     .sidebar.collapsed .sidebar-item > .sidebar-badge {
       display: inline-flex;
       position: absolute;
       top: 3px;
       right: calc(50% - 19px);
+      margin: 0;
+    }
+
+    .sidebar.collapsed .sidebar-item > .sidebar-unread-dot {
+      display: block;
+      position: absolute;
+      top: 4px;
+      right: calc(50% - 17px);
       margin: 0;
     }
 
