@@ -212,16 +212,45 @@ const knownHeaderSet = new Set(
     .map((header) => compactHeader(header))
 );
 
+function isPasswordHeader(value) {
+  const header = compactHeader(value);
+  return header.includes('סיסמ') || header.includes('ססמ')
+    || header.includes('password') || header.includes('passwd') || header === 'pass';
+}
+
+function mergeStudentExtraFields(existing, incoming) {
+  const merged = { ...existing };
+  let added = 0;
+  for (const [rawKey, rawValue] of Object.entries(incoming || {})) {
+    const key = String(rawKey || '').trim();
+    const value = String(rawValue ?? '').trim();
+    if (!key || !value) continue;
+
+    if (isPasswordHeader(key)) {
+      const oldPasswordKeys = Object.keys(merged).filter(isPasswordHeader);
+      if (!oldPasswordKeys.length) added++;
+      for (const oldKey of oldPasswordKeys) delete merged[oldKey];
+      merged[key] = value;
+      continue;
+    }
+
+    if (!String(merged[key] ?? '').trim()) {
+      merged[key] = value;
+      added++;
+    }
+  }
+  return { merged, added };
+}
+
 function buildRowsFromSheet(sheetName, sheet) {
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-  const headersCompact = new Set([...knownHeaderSet]);
   let headerRowIndex = -1;
 
   for (let i = 0; i < Math.min(matrix.length, 40); i++) {
     const row = Array.isArray(matrix[i]) ? matrix[i] : [];
     const matches = row
       .map((cell) => compactHeader(cell))
-      .filter((token) => token && headersCompact.has(token)).length;
+      .filter((token) => token && (knownHeaderSet.has(token) || isPasswordHeader(token))).length;
     if (matches >= 2) {
       headerRowIndex = i;
       break;
@@ -319,7 +348,7 @@ function parseStudentWorkbook(buffer) {
         if (/^__COL_\d+$/i.test(header) || /^__EMPTY/i.test(header)) return acc;
         const normalizedHeader = compactHeader(header);
         if (!normalizedHeader || knownHeaderSet.has(normalizedHeader)) return acc;
-        const cleanValue = String(value || '').trim();
+        const cleanValue = String(value ?? '').trim();
         if (!cleanValue) return acc;
         acc[String(header).trim()] = cleanValue;
         return acc;
@@ -353,5 +382,7 @@ module.exports = {
   canonicalYearValue,
   normalizeAliasText,
   normalizeBirthDate,
-  normalizeHebrewBirthDate
+  normalizeHebrewBirthDate,
+  isPasswordHeader,
+  mergeStudentExtraFields
 };
