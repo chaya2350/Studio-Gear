@@ -110,6 +110,8 @@ test('parses student workbook and ignores numeric-only false positives as IDs', 
   assert.equal(rows.length, 2);
   assert.equal(rows[0].id_number, '123456789');
   assert.equal(rows[0].name, 'עדי כהן');
+  assert.equal(rows[0].extra_fields['שם פרטי'], 'עדי');
+  assert.equal(rows[0].extra_fields['שם משפחה'], 'כהן');
   assert.equal(rows[0].track, 'רוח');
   assert.equal(rows[0].year, 'יב');
   assert.equal(rows[0].extra_fields['מיקום מדף'], '230');

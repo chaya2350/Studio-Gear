@@ -34,8 +34,8 @@ interface TableStudent {
 <!-- Photo popup -->
 <div *ngIf="popupPhoto()" class="popup-backdrop" (click)="popupPhoto.set(null)">
   <div class="popup-card" (click)="$event.stopPropagation()">
-    <img [src]="popupPhoto()!.url" [alt]="popupPhoto()!.name" class="popup-img">
-    <div class="popup-name">{{ popupPhoto()!.name }}</div>
+    <img [src]="popupPhoto()!.photo_url" [alt]="displayStudentName(popupPhoto()!, sortBy())" class="popup-img">
+    <div class="popup-name">{{ displayStudentName(popupPhoto()!, sortBy()) }}</div>
     <button class="popup-close" (click)="popupPhoto.set(null)">✕</button>
   </div>
 </div>
@@ -99,8 +99,8 @@ interface TableStudent {
     <div class="form-group">
       <label>מיון</label>
       <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)">
-        <option value="family">לפי שם משפחה</option>
-        <option value="name">לפי שם פרטי</option>
+        <option value="family">לפי שם פרטי</option>
+        <option value="name">לפי שם משפחה</option>
         <option value="class">לפי כיתה</option>
         <option value="missing">לפי חסרות</option>
         <option value="avg">לפי ממוצע</option>
@@ -145,16 +145,16 @@ interface TableStudent {
       <tbody>
         <tr *ngFor="let s of filtered(); let i = index" [class.row-missing]="s.missingRequired > 0">
           <td *ngIf="showPhoto" class="col-photo">
-            <div class="photo-cell" (click)="s.photo_url && popupPhoto.set({url: s.photo_url, name: s.name})">
-              <img *ngIf="s.photo_url" [src]="s.photo_url" [alt]="s.name" class="table-photo">
+            <div class="photo-cell" (click)="s.photo_url && popupPhoto.set(s)">
+              <img *ngIf="s.photo_url" [src]="s.photo_url" [alt]="displayStudentName(s, sortBy())" class="table-photo">
               <div *ngIf="!s.photo_url" class="table-initials" [style.background]="avatarColor(s.id_number)">
-                {{ s.name.charAt(0) }}
+                {{ displayStudentName(s, sortBy()).charAt(0) }}
               </div>
             </div>
           </td>
           <td class="col-num">{{ i + 1 }}</td>
           <td class="col-name">
-            <a [routerLink]="['/students', s.id_number]" class="name-link">{{ s.name }}</a>
+            <a [routerLink]="['/students', s.id_number]" class="name-link">{{ displayStudentName(s, sortBy()) }}</a>
           </td>
           <td class="col-id mono">{{ s.id_number }}</td>
           <td class="col-class">{{ s.class_name || '' }}</td>
@@ -265,7 +265,7 @@ export class StudentsTableComponent implements OnInit {
   showPhoto = true;
   showExtra = false;
 
-  popupPhoto = signal<{ url: string; name: string } | null>(null);
+  popupPhoto = signal<TableStudent | null>(null);
 
   private allStudents = signal<TableStudent[]>([]);
   private allClasses = signal<{ parallel: string; label: string; count: number }[]>([]);
@@ -313,11 +313,55 @@ export class StudentsTableComponent implements OnInit {
     const keys = new Set<string>();
     for (const s of this.allStudents().slice(0, 50)) {
       for (const k of Object.keys(s.extra_data || {})) {
-        if (!['מקבילה','מספר','סיסמא','סיסמת הדפסה','שלוחה לטלפון','עודכן במדפסת'].includes(k)) keys.add(k);
+        if (!['מקבילה','מספר','סיסמא','סיסמת הדפסה','שלוחה לטלפון','עודכן במדפסת','שם פרטי','שם משפחה','משפחה'].includes(k)) keys.add(k);
       }
     }
     return [...keys].slice(0, 20);
   });
+
+  private studentFamilyName(student: TableStudent): string {
+    const name = student.name.trim().replace(/\s+/g, ' ');
+    const familyName = String(student.extra_data?.['שם משפחה'] || student.extra_data?.['משפחה'] || '').trim();
+    if (familyName) return familyName;
+
+    const firstNames = String(student.extra_data?.['שם פרטי'] || '').trim().replace(/\s+/g, ' ');
+    if (firstNames && name.startsWith(`${firstNames} `)) {
+      return name.slice(firstNames.length).trim().split(/\s+/)[0] || '';
+    }
+    if (firstNames && name.endsWith(` ${firstNames}`)) {
+      return name.slice(0, -firstNames.length).trim();
+    }
+
+    return name.split(/\s+/).pop() || name;
+  }
+
+  private studentGivenNames(student: TableStudent): string {
+    const name = student.name.trim().replace(/\s+/g, ' ');
+    const familyName = this.studentFamilyName(student);
+    const parts = name.split(/\s+/);
+    const familyParts = familyName.split(/\s+/);
+    const familyIndex = parts.findIndex((_, index) =>
+      familyParts.every((part, offset) => parts[index + offset] === part)
+    );
+    if (familyIndex >= 0) {
+      parts.splice(familyIndex, familyParts.length);
+      return parts.join(' ');
+    }
+
+    return String(student.extra_data?.['שם פרטי'] || '').trim().replace(/\s+/g, ' ');
+  }
+
+  displayStudentName(student: TableStudent, order: string = this.sortBy()): string {
+    const name = student.name.trim().replace(/\s+/g, ' ');
+    const familyName = this.studentFamilyName(student);
+    if (!name || !familyName) return name;
+
+    const givenNames = this.studentGivenNames(student);
+    if (!givenNames) return name;
+    return order === 'name'
+      ? `${givenNames} ${familyName}`
+      : `${familyName} ${givenNames}`;
+  }
 
   filtered = computed(() => {
     let list = this.allStudents();
@@ -341,10 +385,11 @@ export class StudentsTableComponent implements OnInit {
         (s.address || '').includes(q)
       );
     }
-    const familyName = (n: string) => n.trim().split(/\s+/).pop() || n;
     return [...list].sort((a, b) => {
-      if (this.sortBy() === 'family')  return familyName(a.name).localeCompare(familyName(b.name), 'he');
-      if (this.sortBy() === 'name')    return a.name.localeCompare(b.name, 'he');
+      if (this.sortBy() === 'family') return this.studentFamilyName(a).localeCompare(this.studentFamilyName(b), 'he')
+        || this.displayStudentName(a).localeCompare(this.displayStudentName(b), 'he');
+      if (this.sortBy() === 'name') return this.studentGivenNames(a).localeCompare(this.studentGivenNames(b), 'he')
+        || this.studentFamilyName(a).localeCompare(this.studentFamilyName(b), 'he');
       if (this.sortBy() === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
       if (this.sortBy() === 'missing') return b.missingRequired - a.missingRequired;
       if (this.sortBy() === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1);
@@ -397,7 +442,7 @@ export class StudentsTableComponent implements OnInit {
 
     const data = rows.map(s => {
       const row: string[] = [
-        s.name, s.id_number,
+        this.displayStudentName(s), s.id_number,
         `${s.class_name || ''}${s.parallel && s.parallel !== '0' ? s.parallel : ''}`,
         s.track || '', toStudyYear(s.year), s.phone || '',
         s.birth_date || '',
