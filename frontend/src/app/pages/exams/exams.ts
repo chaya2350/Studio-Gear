@@ -5,6 +5,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { toStudyYear } from '../approvals/study-year';
 import { collectTrackNames } from '../../utils/track-names';
+import { printA4LabelSheet } from '../../utils/label-print';
 import { ExamAnalyticsComponent } from '../../components/exam-analytics/exam-analytics';
 import { isUpcomingExam } from './upcoming-exams';
 
@@ -480,63 +481,25 @@ error: (e) => this.error.set(e.error?.error || 'הפקה נכשלה')
 });
 }
 
-// הדפסה רק אחרי שכל תמונות הברקוד נטענו — כדי שאף כרטיס לא יצא ריק
-private printWhenImagesLoaded(win: Window) {
-const imgs = Array.from(win.document.images);
-Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
-img.onload = img.onerror = () => res(null);
-}))).then(() => setTimeout(() => win.print(), 150));
-}
-
 printClassCodes(examName: string) {
 this.api.getExam(this.selectedExam()!.id).subscribe(exam => {
 const base = window.location.origin;
-const cards = exam.students.map((s: any) => `
-<div class="bc-card">
-<div class="bc-name">${s.name}</div>
-<div class="bc-exam">${examName}</div>
-<img src="${base}/api/exam-codes/${encodeURIComponent(s.code)}/barcode">
-<div class="bc-code">${s.code}</div>
-</div>`).join('');
-const win = window.open('', '_blank', 'width=800,height=900');
-win!.document.write(`<html dir="rtl"><head><title>ברקודים — ${examName}</title>
-<style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:16px;background:white;}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
-.bc-card{border:1.5px dashed #999;border-radius:10px;padding:12px 8px;text-align:center;page-break-inside:avoid;}
-.bc-name{font-weight:800;font-size:15px;}.bc-exam{font-size:11px;color:#555;margin-bottom:6px;}
-img{width:82%;min-height:36px;display:block;margin:0 auto;} .bc-code{font-family:monospace;font-size:10px;color:#666;}
-@media print{.grid{grid-template-columns:repeat(2,1fr);}}</style></head>
-<body><div class="grid">${cards}</div></body></html>`);
-win!.document.close();
-this.printWhenImagesLoaded(win!);
+printA4LabelSheet(exam.students.map((student: any) => ({
+title: student.name,
+subtitle: examName,
+code: student.code,
+barcodeUrl: `${base}/api/exam-codes/${encodeURIComponent(student.code)}/barcode`,
+})), `מדבקות ברקוד — ${examName}`);
 });
 }
 
 printPersonalSheet(s: any, exams: any[]) {
 const base = window.location.origin;
-const cards = exams.map((x: any) => `
-<div class="bc-card">
-<div class="bc-name">${x.exam_name}</div>
-<img src="${base}/api/exam-codes/${encodeURIComponent(x.code)}/barcode">
-<div class="bc-code">${x.code}</div>
-</div>`).join('');
-const win = window.open('', '_blank', 'width=800,height=900');
-win!.document.write(`<html dir="rtl"><head><title>ברקודים — ${s.name}</title>
-<style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:16px;background:white;}
-.header{text-align:center;font-weight:800;font-size:17px;margin-bottom:4px;}
-.sub{text-align:center;font-size:12px;color:#555;margin-bottom:14px;}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
-.bc-card{border:1.5px dashed #999;border-radius:10px;padding:12px 8px;text-align:center;page-break-inside:avoid;}
-.bc-name{font-weight:700;font-size:13px;margin-bottom:4px;}
-img{width:82%;} .bc-code{font-family:monospace;font-size:10px;color:#666;}
-.cut{margin-top:10px;font-size:9px;color:#aaa;text-align:center;}
-@media print{.grid{grid-template-columns:repeat(2,1fr);}}</style></head>
-<body>
-<div class="header">${s.name}</div>
-<div class="sub">ברקודים למבחנים — הדביקי כל ברקוד על המבחן המתאים</div>
-<div class="grid">${cards}</div>
-</body></html>`);
-win!.document.close();
-this.printWhenImagesLoaded(win!);
+printA4LabelSheet(exams.map((exam: any) => ({
+title: exam.exam_name,
+subtitle: s.name,
+code: exam.code,
+barcodeUrl: `${base}/api/exam-codes/${encodeURIComponent(exam.code)}/barcode`,
+})), `מדבקות ברקוד — ${s.name}`);
 }
 }

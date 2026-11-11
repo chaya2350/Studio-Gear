@@ -15,6 +15,11 @@ export interface AuthUser {
   permissions?: Record<string, Record<PermissionAction, boolean>>;
 }
 
+export interface GoogleAuthConfiguration {
+  enabled: boolean;
+  clientId: string | null;
+}
+
 export interface SystemRole {
   role_key: string;
   name: string;
@@ -80,6 +85,16 @@ export class AuthService {
   login(email: string, password: string, remember = false): Observable<AuthUser> {
     return this.http
       .post<AuthUser>('/api/auth/login', { email, password, remember })
+      .pipe(tap((user) => this.user.set(user)));
+  }
+
+  getGoogleAuthConfiguration(): Observable<GoogleAuthConfiguration> {
+    return this.http.get<GoogleAuthConfiguration>('/api/auth/google-config');
+  }
+
+  loginWithGoogle(credential: string, remember = false): Observable<AuthUser> {
+    return this.http
+      .post<AuthUser>('/api/auth/google', { credential, remember })
       .pipe(tap((user) => this.user.set(user)));
   }
 
