@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { CartService } from './services/cart.service';
 import { ApiService } from './services/api.service';
 import { AuthService, UserRole } from './services/auth.service';
+import { MessagesService } from './services/messages.service';
 import { NotificationsService } from './services/notifications.service';
 import { NotificationDrawerComponent } from './components/notifications/notification-drawer';
 import { Subject, interval } from 'rxjs';
@@ -305,6 +306,10 @@ import { filter, takeUntil } from 'rxjs/operators';
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             <span>הודעות</span>
+            <span *ngIf="messages.unreadCount() > 0" class="sidebar-badge"
+              [attr.aria-label]="messages.unreadCount() + ' הודעות שלא נקראו'">
+              {{ messages.unreadCount() > 99 ? '99+' : messages.unreadCount() }}
+            </span>
           </a>
           <a *ngIf="auth.hasPermission('reports')" routerLink="/database" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מסד נתונים' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -779,6 +784,15 @@ import { filter, takeUntil } from 'rxjs/operators';
       padding: 0 4px;
       margin-right: 4px;
       vertical-align: 1px;
+      flex-shrink: 0;
+    }
+
+    .sidebar.collapsed .sidebar-item > .sidebar-badge {
+      display: inline-flex;
+      position: absolute;
+      top: 3px;
+      right: calc(50% - 19px);
+      margin: 0;
     }
 
     /* ── Main content area ─────────────────────── */
@@ -954,6 +968,7 @@ export class App implements OnInit {
     private router: Router,
     private api: ApiService,
     public auth: AuthService,
+    public messages: MessagesService,
     public notifs: NotificationsService,
   ) {
     this.currentPath = this.router.url.split('?')[0];
@@ -968,9 +983,13 @@ export class App implements OnInit {
       this.currentQuery = e.urlAfterRedirects;
       this.notifOpen = false;
     });
+    interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => {
+      if (this.auth.user()) this.refreshUnreadMessages();
+    });
     effect(() => {
       const user = this.auth.user();
       if (user) {
+        this.refreshUnreadMessages();
         this.api.getApprovalTypes().subscribe((t) => {
           if (this.auth.user()) this.approvalTypes = t;
         });
@@ -983,9 +1002,16 @@ export class App implements OnInit {
           if (this.auth.user()) this.notifs.refresh().subscribe();
         });
       } else {
+        this.messages.unreadCount.set(0);
         this.approvalTypes = [];
         this.accessRequests.set([]);
       }
+    });
+  }
+
+  private refreshUnreadMessages() {
+    this.messages.refreshUnreadCount().subscribe({
+      error: error => console.error('Could not refresh unread message count', error)
     });
   }
 
