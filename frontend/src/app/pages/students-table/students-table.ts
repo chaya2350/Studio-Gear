@@ -100,8 +100,8 @@ interface TableStudent {
     <div class="form-group">
       <label>מיון</label>
       <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)">
-        <option value="family">לפי שם פרטי</option>
-        <option value="name">לפי שם משפחה</option>
+        <option value="family">לפי שם משפחה</option>
+        <option value="name">לפי שם פרטי</option>
         <option value="class">לפי כיתה</option>
         <option value="missing">לפי חסרות</option>
         <option value="avg">לפי ממוצע</option>
