@@ -585,11 +585,12 @@ interface GanttEntry {
         <strong>{{ formatHebrewGanttDate(date) }}</strong>
         <span>{{ formatGanttDay(date) }} · {{ dayNames[dateWeekday(date)] }}</span>
         <div class="gantt-birthday-list">
-          <button *ngFor="let entry of ganttBirthdaysForDay(date)" type="button" class="gantt-birthday"
+          <button *ngFor="let entry of ganttTopEntriesForDay(date)" type="button" class="gantt-top-event"
+                  [style.background]="entry.color"
                   (mouseenter)="showGanttDetails($event, entry)" (mouseleave)="hideGanttDetails()"
                   (focus)="showGanttDetails($event, entry)" (blur)="hideGanttDetails()"
-                  [attr.aria-label]="'יום הולדת: ' + entry.label">
-            🎂 {{ entry.label }}
+                  [attr.aria-label]="(entry.kind === 'birthday' ? 'יום הולדת: ' : 'חתונה: ') + entry.label">
+            {{ entry.icon }} {{ entry.label }}
           </button>
         </div>
       </div>
@@ -1099,7 +1100,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     for (const date of days) {
       if (this.has('equipment')) {
         for (const loan of this.loansForDate(date)) {
-          add('loan', loan.equipment_name || 'ציוד', loan.borrower_name || '', '#0f766e', '💻', date, null, null, true);
+          add('loan', loan.equipment_name || 'ציוד', loan.borrower_name || '', '#0891b2', '💻', date, null, null, true);
         }
       }
 
@@ -1142,7 +1143,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         for (const student of this.weddingsForDate(date)) {
           const weddingDetails = [student.track, student.class_name && `כיתה ${student.class_name}`, student.wedding_venue]
             .filter(Boolean).join(' · ');
-          add('wedding', student.name, weddingDetails, '#9333ea', '💍', date, null, null, true);
+          add('wedding', student.name, weddingDetails, '#c026d3', '💍', date, null, null, true);
         }
       }
 
@@ -1157,7 +1158,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
     const byDate = new Map<string, GanttEntry[]>();
     for (const entry of entries) {
-      if (entry.kind === 'birthday') continue;
+      if (entry.kind === 'birthday' || entry.kind === 'wedding') continue;
       const dayEntries = byDate.get(entry.date) || [];
       dayEntries.push(entry);
       byDate.set(entry.date, dayEntries);
@@ -1951,11 +1952,15 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   }
 
   ganttEntriesForDay(date: string): GanttEntry[] {
-    return this.ganttEntries().filter(entry => entry.date === date && entry.kind !== 'birthday');
+    return this.ganttEntries().filter(entry =>
+      entry.date === date && entry.kind !== 'birthday' && entry.kind !== 'wedding'
+    );
   }
 
-  ganttBirthdaysForDay(date: string): GanttEntry[] {
-    return this.ganttEntries().filter(entry => entry.date === date && entry.kind === 'birthday');
+  ganttTopEntriesForDay(date: string): GanttEntry[] {
+    return this.ganttEntries().filter(entry =>
+      entry.date === date && (entry.kind === 'birthday' || entry.kind === 'wedding')
+    );
   }
 
   ganttLegend(): { label: string; color: string }[] {
@@ -1964,8 +1969,8 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       { label: 'משימה שבוצעה', color: '#b45309' },
       { label: 'מבחן', color: '#dc2626' },
       { label: 'יום הולדת', color: '#db2777' },
-      { label: 'חתונה', color: '#9333ea' },
-      { label: 'ציוד', color: '#0f766e' }
+      { label: 'חתונה', color: '#c026d3' },
+      { label: 'ציוד', color: '#0891b2' }
     ];
     const visibleFixed = fixed.filter(item =>
       (item.label === 'משימה' && this.has('personal')) ||
@@ -1978,7 +1983,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     );
     if (!this.has('schedule')) return visibleFixed;
     const categories = new Map<string, { label: string; color: string }>([
-      ['חג / יום חופש', { label: 'חג / יום חופש', color: '#7c3aed' }],
+      ['חג / יום חופש', { label: 'חג / יום חופש', color: '#4338ca' }],
       ['טיול / סיור', { label: 'טיול / סיור', color: '#15803d' }]
     ]);
     for (const event of this.calendarEvents()) {
@@ -2005,7 +2010,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   ganttEventColor(category: string, isHoliday = false): string {
     const normalized = String(category || '').replace(/[\s־-]/g, '');
-    if (isHoliday || /חג|חופשה|אסרוחג/.test(normalized)) return '#7c3aed';
+    if (isHoliday || /חג|חופשה|אסרוחג/.test(normalized)) return '#4338ca';
     if (/טיול|סיור|מסע/.test(normalized)) return '#15803d';
     if (/מבחן|בחינה/.test(normalized)) return '#dc2626';
     return '#0369a1';

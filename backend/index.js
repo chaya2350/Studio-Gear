@@ -1807,7 +1807,7 @@ app.post('/api/students/:id_number/wedding', (req, res) => {
     return res.status(403).json({ error: 'אין הרשאה לעדכן תלמידה זו' });
   }
   try {
-    registerWedding(db, student, req.body?.date, req.body?.venue, todayInIsrael());
+    registerWedding(db, student, req.body?.date, req.body?.venue, todayInIsrael(), req.user?.id || null);
     res.json({ success: true });
   } catch (error) {
     if (error instanceof Error && !error.code) return res.status(400).json({ error: error.message });
