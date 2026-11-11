@@ -238,7 +238,7 @@ export class ApiService {
   // ── Exams ──
   getExams() { return this.http.get<any[]>(`${this.base}/exams`); }
   getExam(id: number) { return this.http.get<any>(`${this.base}/exams/${id}`); }
-  createExam(data: { name: string; track?: string; year?: string; exam_date?: string; parallel?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
+  createExam(data: { name: string; track?: string; year?: string; exam_date?: string; parallel?: string; start_time?: string; end_time?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
   deleteExam(id: number) { return this.http.delete(`${this.base}/exams/${id}`); }
   generateExamCodes(id: number, data: { track?: string; year?: string; id_number?: string; parallel?: string }) { return this.http.post<{ created: number }>(`${this.base}/exams/${id}/codes`, data); }
   getExamCode(code: string) { return this.http.get<any>(`${this.base}/exam-codes/${encodeURIComponent(code)}`); }

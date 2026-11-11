@@ -20,6 +20,18 @@ function formatValue(value) {
   return normalized(value) || 'לא צוין';
 }
 
+function normalizeExtraData(value) {
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      if (error instanceof SyntaxError) return {};
+      throw error;
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function isSensitiveKey(key) {
   const normalizedKey = key.toLocaleLowerCase().replace(/[\s_-]+/g, '');
   return /סיסמ|password|passwd|שםמשתמש|username|login|קודלטלפון|phonecode/.test(normalizedKey);
@@ -33,8 +45,8 @@ function buildStudentUpdateNotice(before, after) {
     if (oldValue !== newValue) changes.set(field, { label, oldValue, newValue });
   }
 
-  const oldExtra = before.extra_data || {};
-  const newExtra = after.extra_data || {};
+  const oldExtra = normalizeExtraData(before.extra_data);
+  const newExtra = normalizeExtraData(after.extra_data);
   const extraKeys = new Set([...Object.keys(oldExtra), ...Object.keys(newExtra)]);
   let sensitiveExtraChanged = normalized(before.phone_code) !== normalized(after.phone_code);
   for (const key of extraKeys) {

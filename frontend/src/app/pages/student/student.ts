@@ -1370,7 +1370,7 @@ phone: current.phone || '',
 address: current.address || '',
 birth_date: current.birth_date || '',
 birth_date_hebrew: this.formatHebrewBirthDate(current.birth_date_hebrew),
-phone_code: current.phone_code || '',
+phone_code: this.phoneCodeValue(),
 track: current.track || '',
 year: current.year || '',
 parallel: current.parallel || '',
@@ -1406,6 +1406,12 @@ this.editingExtraFields = this.editingExtraFields.filter((_, i) => i !== index);
 
 buildExtraDataForSave() {
 const data: Record<string, string> = {};
+const currentExtraData = this.student()?.extra_data || {};
+for (const [rawKey, rawValue] of Object.entries(currentExtraData)) {
+const key = String(rawKey || '').trim();
+const value = String(rawValue || '').trim();
+if (key && value && !this.isEditableExtraFieldKey(key)) data[key] = value;
+}
 for (const field of this.editingExtraFields) {
 const key = String(field.key || '').trim();
 const value = String(field.value || '').trim();
@@ -1482,10 +1488,13 @@ if (!data || typeof data !== 'object') return [];
 return Object.entries(data)
 .map(([key, value]) => ({ key: String(key), value: String(value ?? '').trim() }))
 .filter((field) => field.key && field.value)
-.filter((field) => !this.isPhoneCodeKey(field.key) && !this.isPhoneExtensionKey(field.key))
-.filter((field) => !this.isUsernameKey(field.key) && !this.isPasswordKey(field.key))
-.filter((field) => !this.isNameKey(field.key))
-.filter((field) => !this.isHiddenExtraField(field.key));
+.filter((field) => this.isEditableExtraFieldKey(field.key));
+}
+
+isEditableExtraFieldKey(key: string) {
+return !this.isPhoneCodeKey(key) && !this.isPhoneExtensionKey(key)
+  && !this.isUsernameKey(key) && !this.isPasswordKey(key)
+  && !this.isNameKey(key) && !this.isHiddenExtraField(key);
 }
 
 isHiddenExtraField(key: string) {

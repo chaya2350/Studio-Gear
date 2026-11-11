@@ -22,7 +22,7 @@ const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-
 let generatedHolidayRange = '';
 const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
-const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
+const { validateCalendarEventSettings, validateOptionalTimeRange, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
 const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
@@ -459,6 +459,9 @@ if (srcCol && srcCol.notnull === 1) {
     PRAGMA foreign_keys=ON;
   `);
 }
+const migratedTaskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
+if (!migratedTaskCols.includes('start_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN start_time TEXT');
+if (!migratedTaskCols.includes('end_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN end_time TEXT');
 
 // ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
 db.exec(`
@@ -1159,6 +1162,7 @@ app.get('/api/tasks', (req, res) => {
   const toDate = to || null;
   const tasks = db.prepare(`
     SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.start_time, pt.end_time,
       pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt
@@ -1184,6 +1188,8 @@ app.get('/api/tasks', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const title = String(req.body?.title || '').trim();
   const dueDate = req.body?.due_date;
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
   const rawVisibility = String(req.body?.visibility || 'private');
   const visibility = ['private', 'public', 'shared'].includes(rawVisibility) ? rawVisibility : 'private';
   const sharedUserIds = Array.isArray(req.body?.shared_user_ids)
@@ -1195,12 +1201,14 @@ app.post('/api/tasks', (req, res) => {
     new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
     return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
   }
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
 
   const tx = db.transaction(() => {
     const result = db.prepare(`
-      INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, visibility, created_at)
-      VALUES (?, NULL, ?, ?, ?, ?)
-    `).run(req.user.id, title, dueDate, visibility, new Date().toISOString());
+      INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, start_time, end_time, visibility, created_at)
+      VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(req.user.id, title, dueDate, startTime, endTime, visibility, new Date().toISOString());
 
     const taskId = result.lastInsertRowid;
     const validShares = visibility === 'shared' && sharedUserIds.length
@@ -1216,6 +1224,7 @@ app.post('/api/tasks', (req, res) => {
   const taskId = tx();
   const task = db.prepare(`
     SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.start_time, pt.end_time,
       pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt JOIN users u ON u.id = pt.user_id
@@ -1257,11 +1266,15 @@ app.delete('/api/tasks/:id', (req, res) => {
 app.post('/api/messages/:id/tasks', (req, res) => {
   const messageId = Number(req.params.id);
   const dueDate = req.body?.due_date;
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
     Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
     new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
     return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
   }
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
   const message = db.prepare(`
     SELECT id, body FROM messages
     WHERE id = ? AND (sender_id = ? OR recipient_id = ?)
@@ -1269,12 +1282,14 @@ app.post('/api/messages/:id/tasks', (req, res) => {
   if (!message) return res.status(404).json({ error: 'ההודעה לא נמצאה' });
   const title = message.body.trim() || 'משימה מהודעה';
   const result = db.prepare(`
-    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, created_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (user_id, source_message_id) DO UPDATE SET due_date = excluded.due_date
-  `).run(req.user.id, messageId, title, dueDate, new Date().toISOString());
+    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, start_time, end_time, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, source_message_id) DO UPDATE SET
+      due_date = excluded.due_date, start_time = excluded.start_time, end_time = excluded.end_time
+  `).run(req.user.id, messageId, title, dueDate, startTime, endTime, new Date().toISOString());
   const task = db.prepare(`
     SELECT id, user_id, source_message_id, title, due_date,
+      start_time, end_time,
       completed_at IS NOT NULL AS completed, completed_at, created_at
     FROM personal_tasks WHERE user_id = ? AND source_message_id = ?
   `).get(req.user.id, messageId);
@@ -3043,6 +3058,9 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS exam_codes_student_idx ON exam_codes(id_number);
 `);
+const examCols = db.prepare('PRAGMA table_info(exams)').all().map((c) => c.name);
+if (!examCols.includes('start_time')) db.exec('ALTER TABLE exams ADD COLUMN start_time TEXT');
+if (!examCols.includes('end_time')) db.exec('ALTER TABLE exams ADD COLUMN end_time TEXT');
 
 // רשימת מבחנים + סטטיסטיקות בסיסיות
 app.get('/api/exams', (req, res) => {
@@ -3058,8 +3076,12 @@ app.get('/api/exams', (req, res) => {
 app.post('/api/exams', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המבחן הוא שדה חובה' });
-  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date) VALUES (?, ?, ?, ?)')
-    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null);
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
+  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null, startTime, endTime);
   res.json({ id: result.lastInsertRowid });
 });
 

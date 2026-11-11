@@ -13,6 +13,23 @@ test('describes changed profile values without creating a notice for unchanged v
   assert.equal(buildStudentUpdateNotice(before, before), null);
 });
 
+test('does not report each character of stored extra data as a change', () => {
+  const before = {
+    marital_status: null,
+    extra_data: '{"פרט נוסף":"ערך","ת. לידה עברי":"כ״ג שבט"}'
+  };
+  const after = {
+    ...before,
+    marital_status: 'רווקה',
+    extra_data: { 'פרט נוסף': 'ערך', 'ת. לידה עברי': 'כ״ג שבט' }
+  };
+
+  assert.deepEqual(buildStudentUpdateNotice(before, after), {
+    title: 'עדכון פרטי תלמידה',
+    body: 'הסטטוס האישי עודכן מ־לא צוין ל־רווקה.'
+  });
+});
+
 test('describes engagement updates and never reveals passwords', () => {
   const notice = buildStudentUpdateNotice({
     marital_status: '',

@@ -86,6 +86,17 @@ template: `
       <label>תאריך (אופציונלי)</label>
       <input type="date" [(ngModel)]="newExam.exam_date">
     </div>
+    <label class="gantt-all-day-toggle"><input type="checkbox" [(ngModel)]="newExam.all_day"> כל היום</label>
+    <div class="form-row" *ngIf="!newExam.all_day">
+      <div class="form-group">
+        <label>משעה</label>
+        <input type="time" [(ngModel)]="newExam.start_time">
+      </div>
+      <div class="form-group">
+        <label>עד שעה</label>
+        <input type="time" [(ngModel)]="newExam.end_time">
+      </div>
+    </div>
     <p *ngIf="error()" class="hint" style="color:var(--danger); margin:0 0 8px;">{{ error() }}</p>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="saveExam()">
@@ -225,7 +236,7 @@ printMode = signal<'class' | 'personal'>('class');
 message = signal('');
 error = signal('');
 
-newExam: { name: string; track: string; year: string; exam_date: string; filterMode: 'track' | 'class'; parallel: string } = { name: '', track: '', year: '', exam_date: '', filterMode: 'track', parallel: '' };
+newExam: { name: string; track: string; year: string; exam_date: string; start_time: string; end_time: string; all_day: boolean; filterMode: 'track' | 'class'; parallel: string } = { name: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
 classForm: { track: string | null; year: string | null; parallel: string | null; filterMode: 'track' | 'class' } = { track: null, year: null, parallel: null, filterMode: 'track' };
 studentQuery = '';
 studentResults = signal<any[]>([]);
@@ -311,7 +322,7 @@ classOptions(): { parallel: string; label: string; count: number }[] {
 }
 
 openNewExam() {
-this.newExam = { name: '', track: '', year: '', exam_date: '', filterMode: 'track', parallel: '' };
+this.newExam = { name: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
 this.error.set('');
 this.creating.set(true);
 }
@@ -325,7 +336,9 @@ this.error.set('');
 this.saving.set(true);
 const examData: any = {
 name: this.newExam.name.trim(),
-exam_date: this.newExam.exam_date || undefined
+exam_date: this.newExam.exam_date || undefined,
+start_time: this.newExam.all_day ? undefined : this.newExam.start_time,
+end_time: this.newExam.all_day ? undefined : this.newExam.end_time
 };
 if (this.newExam.filterMode === 'class') {
 examData.parallel = this.newExam.parallel || undefined;
