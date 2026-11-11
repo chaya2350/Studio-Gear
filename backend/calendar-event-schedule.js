@@ -6,10 +6,20 @@ function validateCalendarEventSettings({ all_day, start_time, end_time, class_sc
   }
   if (class_scope === 'class' && !String(class_parallel || '').trim()) return 'יש לבחור כיתה';
   if (!all_day) {
-    const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-    if (!timePattern.test(String(start_time || '')) || !timePattern.test(String(end_time || '')) || start_time >= end_time) {
+    if (validateOptionalTimeRange(start_time, end_time, true)) {
       return 'יש לבחור שעות תקינות, ושעת הסיום צריכה להיות מאוחרת משעת ההתחלה';
     }
+  }
+  return '';
+}
+
+function validateOptionalTimeRange(start_time, end_time, required = false) {
+  const start = String(start_time || '');
+  const end = String(end_time || '');
+  if (!start && !end) return required ? 'יש להזין שעת התחלה וסיום' : '';
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  if (!timePattern.test(start) || !timePattern.test(end) || start >= end) {
+    return 'יש לבחור שעות תקינות, ושעת הסיום צריכה להיות מאוחרת משעת ההתחלה';
   }
   return '';
 }
@@ -22,4 +32,4 @@ function calendarEventAffectsLesson(event, lessonDate, classYear, classParallel,
   return Boolean(event.start_time && event.end_time && endTime && event.start_time < endTime && event.end_time > startTime);
 }
 
-module.exports = { validateCalendarEventSettings, calendarEventAffectsLesson };
+module.exports = { validateCalendarEventSettings, validateOptionalTimeRange, calendarEventAffectsLesson };

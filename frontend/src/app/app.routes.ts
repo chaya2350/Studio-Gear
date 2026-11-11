@@ -144,6 +144,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/student/student').then((m) => m.StudentComponent),
       },
       {
+        path: 'schedule/tracks',
+        loadComponent: () => import('./pages/schedule/track-schedule').then((m) => m.TrackScheduleComponent),
+      },
+      {
         path: 'schedule',
         loadComponent: () => import('./pages/schedule/schedule').then((m) => m.ScheduleComponent),
       },

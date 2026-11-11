@@ -39,6 +39,8 @@ export interface PersonalTask {
   source_message_id: number | null;
   title: string;
   due_date: string;
+  start_time: string | null;
+  end_time: string | null;
   completed: boolean;
   completed_at: string | null;
   created_at: string;
@@ -89,16 +91,16 @@ export class MessagesService {
     return this.http.get<PersonalTask[]>('/api/tasks');
   }
 
-  addMessageToTasks(messageId: number, due_date: string): Observable<PersonalTask> {
-    return this.http.post<PersonalTask>(`/api/messages/${messageId}/tasks`, { due_date });
+  addMessageToTasks(messageId: number, due_date: string, start_time?: string, end_time?: string): Observable<PersonalTask> {
+    return this.http.post<PersonalTask>(`/api/messages/${messageId}/tasks`, { due_date, start_time, end_time });
   }
 
   setTaskCompleted(taskId: number, completed: boolean): Observable<{ success: boolean }> {
     return this.http.patch<{ success: boolean }>(`/api/tasks/${taskId}/completion`, { completed });
   }
 
-  createTask(title: string, due_date: string, visibility: 'private' | 'public' | 'shared', shared_user_ids?: number[]): Observable<PersonalTask> {
-    return this.http.post<PersonalTask>('/api/tasks', { title, due_date, visibility, shared_user_ids });
+  createTask(title: string, due_date: string, visibility: 'private' | 'public' | 'shared', shared_user_ids?: number[], start_time?: string, end_time?: string): Observable<PersonalTask> {
+    return this.http.post<PersonalTask>('/api/tasks', { title, due_date, visibility, shared_user_ids, start_time, end_time });
   }
 
   rescheduleTask(taskId: number, due_date: string): Observable<{ success: boolean }> {

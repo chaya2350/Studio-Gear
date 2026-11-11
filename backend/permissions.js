@@ -31,6 +31,7 @@ const apiRoutes = [
   [/^\/students(?:\/|$)/, 'students'],
   [/^\/track-requirements(?:\/|$)/, 'tracks'],
   [/^\/tracks(?:\/|$)/, 'tracks'],
+  [/^\/track-schedules(?:\/|$)/, 'schedule'],
   [/^\/approval-types(?:\/|$)/, 'approvals'],
   [/^\/teachers(?:\/|$)/, 'teachers'],
   [/^\/schedule(?:\/|$)/, 'schedule'],

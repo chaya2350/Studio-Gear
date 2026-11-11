@@ -66,6 +66,7 @@ export interface Student {
   parallel?: string;
   class_name?: string;
   birth_date?: string;
+  birth_date_hebrew?: string;
   address?: string;
   photo_url?: string;
   extra_data?: Record<string, string>;

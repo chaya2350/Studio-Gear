@@ -160,6 +160,15 @@ placeholder="כתבי הודעה..."></textarea>
 <label [for]="'task-date-' + message.id">תאריך למשימה</label>
 <input [id]="'task-date-' + message.id" type="date" name="taskDueDate"
 [(ngModel)]="taskDueDate" required>
+<label class="gantt-all-day-toggle"><input type="checkbox" name="taskAllDay" [(ngModel)]="taskAllDay"> כל היום</label>
+<ng-container *ngIf="!taskAllDay">
+<label [for]="'task-start-' + message.id">משעה</label>
+<input [id]="'task-start-' + message.id" type="time" name="taskStartTime"
+[(ngModel)]="taskStartTime" required>
+<label [for]="'task-end-' + message.id">עד שעה</label>
+<input [id]="'task-end-' + message.id" type="time" name="taskEndTime"
+[(ngModel)]="taskEndTime" required>
+</ng-container>
 <button type="submit" [disabled]="savingTask">הוספה</button>
 <button type="button" (click)="taskDraftMessageId = null">ביטול</button>
 </form>
@@ -305,6 +314,9 @@ sendSuccess = '';
 tasks: PersonalTask[] = [];
 taskDraftMessageId: number | null = null;
 taskDueDate = this.localToday();
+taskStartTime = '08:00';
+taskEndTime = '09:00';
+taskAllDay = false;
 savingTask = false;
 taskError = '';
 
@@ -349,6 +361,9 @@ return this.tasks.find(task => task.source_message_id === message.id);
 startTask(message: DirectMessage) {
 this.taskDraftMessageId = message.id;
 this.taskDueDate = this.localToday();
+this.taskStartTime = '08:00';
+this.taskEndTime = '09:00';
+this.taskAllDay = false;
 this.taskError = '';
 }
 
@@ -356,7 +371,12 @@ addMessageTask(message: DirectMessage) {
 if (!this.taskDueDate || this.savingTask) return;
 this.savingTask = true;
 this.taskError = '';
-this.messagesApi.addMessageToTasks(message.id, this.taskDueDate).subscribe({
+this.messagesApi.addMessageToTasks(
+message.id,
+this.taskDueDate,
+this.taskAllDay ? undefined : this.taskStartTime,
+this.taskAllDay ? undefined : this.taskEndTime
+).subscribe({
 next: task => {
 this.tasks = [...this.tasks.filter(existing => existing.id !== task.id), task];
 this.taskDraftMessageId = null;

@@ -1,11 +1,48 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const XLSX = require('xlsx');
-const { parseStudentWorkbook, canonicalTrackValue } = require('../student-import');
+const {
+  parseStudentWorkbook, canonicalTrackValue, normalizeBirthDate, normalizeHebrewBirthDate
+} = require('../student-import');
 
 test('keeps הוראה distinct from הוראה מתקנת when normalizing imported track values', () => {
   assert.equal(canonicalTrackValue('הוראה'), 'הוראה');
   assert.equal(canonicalTrackValue('הוראה מתקנת'), 'הוראה מתקנת');
+});
+
+test('normalizes imported birth dates from ISO, Israeli, and Excel serial formats', () => {
+  assert.equal(normalizeBirthDate('2001-02-03'), '2001-02-03');
+  assert.equal(normalizeBirthDate('3/2/2001'), '2001-02-03');
+  assert.equal(normalizeBirthDate('29.02.2000'), '2000-02-29');
+  assert.equal(normalizeBirthDate('31/02/2001'), null);
+  assert.equal(normalizeBirthDate(''), null);
+});
+
+test('normalizes Hebrew birthdays to recurring Hebrew day and month', () => {
+  assert.equal(normalizeHebrewBirthDate('כ״ג שבט תשפ״ז'), '23-11');
+  assert.equal(normalizeHebrewBirthDate('כ״ה חשוון תשפ״ז'), '25-8');
+  assert.equal(normalizeHebrewBirthDate('ט״ו אדר ב׳ תשפ״ד'), '15-13');
+  assert.equal(normalizeHebrewBirthDate('א׳ אדר תשפ״ה'), '1-14');
+  assert.equal(normalizeHebrewBirthDate('31 שבט'), null);
+});
+
+test('parses imported Gregorian and Hebrew birth dates separately', () => {
+  const workbook = XLSX.utils.book_new();
+  const sheet = {};
+  setCell(sheet, 'A1', 'מספר זהות');
+  setCell(sheet, 'B1', 'שם מלא');
+  setCell(sheet, 'C1', 'ת. לידה לועזי');
+  setCell(sheet, 'D1', 'ת. לידה עברי');
+  setCell(sheet, 'A2', '123456789');
+  setCell(sheet, 'B2', 'עדי כהן');
+  setCell(sheet, 'C2', '3/2/2001');
+  setCell(sheet, 'D2', 'כ״ג שבט תשס״א');
+  sheet['!ref'] = 'A1:D2';
+
+  XLSX.utils.book_append_sheet(workbook, sheet, 'תלמידות');
+  const rows = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  assert.equal(rows[0].birth_date, '2001-02-03');
+  assert.equal(rows[0].birth_date_hebrew, '23-11');
 });
 
 function setCell(sheet, address, value) {
@@ -110,4 +147,43 @@ test('converts specialization year values to the real workbook year names: שנ�
 
   assert.equal(rows[0].year, 'א');
   assert.equal(rows[1].year, 'ב');
+});
+
+test('imports birth dates from the second workbook sheet and resolves its year from the sheet name', () => {
+  const workbook = XLSX.utils.book_new();
+  const sheetA = {};
+  setCell(sheetA, 'A1', 'מספר זהות');
+  setCell(sheetA, 'B1', 'שם מלא');
+  setCell(sheetA, 'C1', 'ת. לידה לועזי');
+  setCell(sheetA, 'D1', 'ת. לידה עברי');
+  setCell(sheetA, 'E1', 'כיתה');
+  setCell(sheetA, 'A2', '111');
+  setCell(sheetA, 'B2', 'אילה כהן');
+  setCell(sheetA, 'C2', '3/2/2001');
+  setCell(sheetA, 'D2', 'כ״ג שבט תשס״א');
+  setCell(sheetA, 'E2', 'התמחות');
+  sheetA['!ref'] = 'A1:E2';
+  XLSX.utils.book_append_sheet(workbook, sheetA, 'שנה א תשפז');
+
+  const sheetB = {};
+  setCell(sheetB, 'A1', 'מספר זהות');
+  setCell(sheetB, 'B1', 'שם מלא');
+  setCell(sheetB, 'C1', 'ת. לידה לועזי');
+  setCell(sheetB, 'D1', 'ת. לידה עברי');
+  setCell(sheetB, 'E1', 'כיתה');
+  setCell(sheetB, 'A2', '222');
+  setCell(sheetB, 'B2', 'בנה כהן');
+  setCell(sheetB, 'C2', '4/5/2002');
+  setCell(sheetB, 'D2', 'ט״ו אדר ב׳ תשס״ב');
+  setCell(sheetB, 'E2', 'התמחות');
+  sheetB['!ref'] = 'A1:E2';
+  XLSX.utils.book_append_sheet(workbook, sheetB, 'שנה ב תשפז');
+
+  const rows = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  const yearB = rows.find((row) => row.id_number === '222');
+
+  assert.ok(yearB);
+  assert.equal(yearB.year, 'ב');
+  assert.equal(yearB.birth_date, '2002-05-04');
+  assert.equal(yearB.birth_date_hebrew, '15-13');
 });

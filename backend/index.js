@@ -11,7 +11,9 @@ const { hashPassword, verifyPassword, initializeAuthSchema, sessionCookie: makeS
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
 const { buildStudentUpdateNotice } = require('./student-update-notice');
-const { parseStudentWorkbook, normalizeIdNumber } = require('./student-import');
+const {
+  parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber
+} = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
@@ -20,9 +22,10 @@ const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-
 let generatedHolidayRange = '';
 const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
-const { validateCalendarEventSettings, calendarEventAffectsLesson } = require('./calendar-event-schedule');
+const { validateCalendarEventSettings, validateOptionalTimeRange, calendarEventAffectsLesson } = require('./calendar-event-schedule');
 const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
 const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
+const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
@@ -456,6 +459,9 @@ if (srcCol && srcCol.notnull === 1) {
     PRAGMA foreign_keys=ON;
   `);
 }
+const migratedTaskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().map((c) => c.name);
+if (!migratedTaskCols.includes('start_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN start_time TEXT');
+if (!migratedTaskCols.includes('end_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN end_time TEXT');
 
 // ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
 db.exec(`
@@ -1156,6 +1162,7 @@ app.get('/api/tasks', (req, res) => {
   const toDate = to || null;
   const tasks = db.prepare(`
     SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.start_time, pt.end_time,
       pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt
@@ -1181,6 +1188,8 @@ app.get('/api/tasks', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const title = String(req.body?.title || '').trim();
   const dueDate = req.body?.due_date;
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
   const rawVisibility = String(req.body?.visibility || 'private');
   const visibility = ['private', 'public', 'shared'].includes(rawVisibility) ? rawVisibility : 'private';
   const sharedUserIds = Array.isArray(req.body?.shared_user_ids)
@@ -1192,12 +1201,14 @@ app.post('/api/tasks', (req, res) => {
     new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
     return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
   }
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
 
   const tx = db.transaction(() => {
     const result = db.prepare(`
-      INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, visibility, created_at)
-      VALUES (?, NULL, ?, ?, ?, ?)
-    `).run(req.user.id, title, dueDate, visibility, new Date().toISOString());
+      INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, start_time, end_time, visibility, created_at)
+      VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+    `).run(req.user.id, title, dueDate, startTime, endTime, visibility, new Date().toISOString());
 
     const taskId = result.lastInsertRowid;
     const validShares = visibility === 'shared' && sharedUserIds.length
@@ -1213,6 +1224,7 @@ app.post('/api/tasks', (req, res) => {
   const taskId = tx();
   const task = db.prepare(`
     SELECT pt.id, pt.user_id, pt.source_message_id, pt.title, pt.due_date,
+      pt.start_time, pt.end_time,
       pt.completed_at IS NOT NULL AS completed, pt.completed_at, pt.created_at,
       pt.visibility, u.name AS creator_name
     FROM personal_tasks pt JOIN users u ON u.id = pt.user_id
@@ -1254,11 +1266,15 @@ app.delete('/api/tasks/:id', (req, res) => {
 app.post('/api/messages/:id/tasks', (req, res) => {
   const messageId = Number(req.params.id);
   const dueDate = req.body?.due_date;
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') ||
     Number.isNaN(Date.parse(`${dueDate}T12:00:00Z`)) ||
     new Date(`${dueDate}T12:00:00Z`).toISOString().slice(0, 10) !== dueDate) {
     return res.status(400).json({ error: 'יש לבחור תאריך יעד תקין' });
   }
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
   const message = db.prepare(`
     SELECT id, body FROM messages
     WHERE id = ? AND (sender_id = ? OR recipient_id = ?)
@@ -1266,12 +1282,14 @@ app.post('/api/messages/:id/tasks', (req, res) => {
   if (!message) return res.status(404).json({ error: 'ההודעה לא נמצאה' });
   const title = message.body.trim() || 'משימה מהודעה';
   const result = db.prepare(`
-    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, created_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (user_id, source_message_id) DO UPDATE SET due_date = excluded.due_date
-  `).run(req.user.id, messageId, title, dueDate, new Date().toISOString());
+    INSERT INTO personal_tasks (user_id, source_message_id, title, due_date, start_time, end_time, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, source_message_id) DO UPDATE SET
+      due_date = excluded.due_date, start_time = excluded.start_time, end_time = excluded.end_time
+  `).run(req.user.id, messageId, title, dueDate, startTime, endTime, new Date().toISOString());
   const task = db.prepare(`
     SELECT id, user_id, source_message_id, title, due_date,
+      start_time, end_time,
       completed_at IS NOT NULL AS completed, completed_at, created_at
     FROM personal_tasks WHERE user_id = ? AND source_message_id = ?
   `).get(req.user.id, messageId);
@@ -1565,6 +1583,7 @@ const studentCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c
 const studentColNames = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
 if (!studentColNames.includes('photo_url')) db.exec('ALTER TABLE students ADD COLUMN photo_url TEXT');
 if (!studentCols.includes('birth_date')) db.exec('ALTER TABLE students ADD COLUMN birth_date TEXT');
+if (!studentCols.includes('birth_date_hebrew')) db.exec('ALTER TABLE students ADD COLUMN birth_date_hebrew TEXT');
 if (!studentCols.includes('address')) db.exec('ALTER TABLE students ADD COLUMN address TEXT');
 if (!studentCols.includes('phone_code')) db.exec('ALTER TABLE students ADD COLUMN phone_code TEXT');
 if (!studentCols.includes('extra_data')) db.exec("ALTER TABLE students ADD COLUMN extra_data TEXT NOT NULL DEFAULT '{}'");
@@ -1597,12 +1616,30 @@ function parseExtraData(rawValue) {
 
 function mapStudentRow(row) {
   if (!row) return row;
+  const extraData = parseExtraData(row.extra_data);
   return {
     ...row,
     class_name: buildClassName(row.year, row.parallel) || String(row.class_name || '').trim(),
     track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
-    extra_data: parseExtraData(row.extra_data)
+    birth_date: normalizeBirthDate(row.birth_date),
+    birth_date_hebrew: normalizeHebrewBirthDate(row.birth_date_hebrew ||
+      extraData['ת. לידה עברי'] || extraData['תאריך לידה עברי']),
+    extra_data: extraData
   };
+}
+
+for (const student of db.prepare(`
+  SELECT id_number, extra_data FROM students
+  WHERE birth_date_hebrew IS NULL OR birth_date_hebrew = ''
+`).all()) {
+  const extraData = parseExtraData(student.extra_data);
+  const hebrewBirthDate = normalizeHebrewBirthDate(
+    extraData['ת. לידה עברי'] || extraData['תאריך לידה עברי']
+  );
+  if (hebrewBirthDate) {
+    db.prepare('UPDATE students SET birth_date_hebrew = ? WHERE id_number = ?')
+      .run(hebrewBirthDate, student.id_number);
+  }
 }
 
 app.get('/api/students', (req, res) => {
@@ -1714,6 +1751,10 @@ app.post('/api/students', (req, res) => {
   const parallel  = String(req.body?.parallel  || '').trim() || null;
   const address   = String(req.body?.address   || '').trim() || null;
   const birth_date= String(req.body?.birth_date|| '').trim() || null;
+  const birth_date_hebrew = normalizeHebrewBirthDate(req.body?.birth_date_hebrew);
+  if (req.body?.birth_date_hebrew && !birth_date_hebrew) {
+    return res.status(400).json({ error: 'יש להזין תאריך לידה עברי תקין, למשל כ״ג שבט' });
+  }
   if (!id_number) return res.status(400).json({ error: 'מספר תעודת זהות הוא שדה חובה' });
   if (!name)      return res.status(400).json({ error: 'שם התלמידה הוא שדה חובה' });
   if (!/^\d{7,9}$/.test(id_number)) return res.status(400).json({ error: 'מספר תעודת זהות צריך להכיל 7–9 ספרות' });
@@ -1721,9 +1762,9 @@ app.post('/api/students', (req, res) => {
   if (existing) return res.status(409).json({ error: 'תלמידה עם מספר תעודת זהות זה כבר קיימת במערכת' });
   const className = buildClassName(year, parallel);
   db.prepare(`
-    INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, extra_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
-  `).run(id_number, name, phone, track, year, parallel, className, address, birth_date);
+    INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, birth_date_hebrew, extra_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
+  `).run(id_number, name, phone, track, year, parallel, className, address, birth_date, birth_date_hebrew);
   res.status(201).json({ id_number, name });
 });
 
@@ -1805,6 +1846,22 @@ app.put('/api/students/:id_number', (req, res) => {
   const track = optionalText(req.body?.track, existing.track);
   const year = optionalText(req.body?.year, existing.year);
   const phoneCode = optionalText(req.body?.phone_code, existing.phone_code);
+  const birthDateInput = req.body?.birth_date;
+  const birthDate = birthDateInput !== undefined
+    ? normalizeBirthDate(birthDateInput)
+    : (existing.birth_date ?? null);
+  if (birthDateInput !== undefined && String(birthDateInput || '').trim() && !birthDate) {
+    return res.status(400).json({ error: 'יש להזין תאריך לידה תקין' });
+  }
+  const birthDateHebrewInput = req.body?.birth_date_hebrew;
+  const birthDateHebrew = birthDateHebrewInput !== undefined
+    ? normalizeHebrewBirthDate(birthDateHebrewInput)
+    : normalizeHebrewBirthDate(existing.birth_date_hebrew ||
+      parseExtraData(existing.extra_data)['ת. לידה עברי'] ||
+      parseExtraData(existing.extra_data)['תאריך לידה עברי']);
+  if (birthDateHebrewInput !== undefined && String(birthDateHebrewInput || '').trim() && !birthDateHebrew) {
+    return res.status(400).json({ error: 'יש להזין תאריך לידה עברי תקין, למשל כ״ג שבט' });
+  }
   const parallel = optionalText(req.body?.parallel, existing.parallel);
   const extraData = sanitizeExtraData(req.body?.extra_data, existing.extra_data);
   const className = buildClassName(year, parallel);
@@ -1824,10 +1881,10 @@ app.put('/api/students/:id_number', (req, res) => {
   db.transaction(() => {
     db.prepare(`
     UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?,
-      address = ?, marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?, wedding_venue = ?
+      address = ?, birth_date = ?, birth_date_hebrew = ?, marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?, wedding_venue = ?
     WHERE id_number = ?
     `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), address,
-      maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);
+      birthDate, birthDateHebrew, maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);
     if (maritalStatus !== existing.marital_status || weddingDate !== existing.wedding_date) {
       db.prepare('DELETE FROM scheduled_wedding_status WHERE id_number = ?').run(req.params.id_number);
     }
@@ -2404,8 +2461,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
     const rows = parseStudentWorkbook(req.file.buffer);
 
     const upsert = db.prepare(`
-      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, address, parallel, class_name, extra_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO students (id_number, name, phone, phone_code, track, year, birth_date, birth_date_hebrew, address, parallel, class_name, extra_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id_number) DO UPDATE SET
         name=excluded.name,
         phone=excluded.phone,
@@ -2413,6 +2470,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         track=excluded.track,
         year=excluded.year,
         birth_date=excluded.birth_date,
+        birth_date_hebrew=excluded.birth_date_hebrew,
         address=excluded.address,
         parallel=excluded.parallel,
         class_name=excluded.class_name,
@@ -2466,7 +2524,8 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const phone_code = String(row.phone_code || '').trim();
         const track = String(row.track || '').trim();
         const year = String(row.year || '').trim();
-        const birth_date = String(row.birth_date || '').trim();
+        const birth_date = normalizeBirthDate(row.birth_date);
+        const birth_date_hebrew = normalizeHebrewBirthDate(row.birth_date_hebrew);
         const address = String(row.address || '').trim();
         const extraFields = row.extra_fields || {};
 
@@ -2485,7 +2544,11 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const mergedTrack = mergeTrackValues(existing?.track, track);
         const mergedYear = pickValue(existing?.year, year);
         const mergedParallel = pickValue(existing?.parallel, String(extraFields.parallel || extraFields['מקבילה'] || '').trim());
-        const mergedBirthDate = pickValue(existing?.birth_date, birth_date);
+        const mergedBirthDate = birth_date || normalizeBirthDate(existing?.birth_date);
+        const mergedBirthDateHebrew = birth_date_hebrew ||
+          normalizeHebrewBirthDate(existing?.birth_date_hebrew) ||
+          normalizeHebrewBirthDate(existingExtra['ת. לידה עברי'] || existingExtra['תאריך לידה עברי']) ||
+          null;
         const mergedAddress = pickValue(existing?.address, address);
         const mergedClassName = buildClassName(mergedYear, mergedParallel);
 
@@ -2497,6 +2560,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
           mergedTrack,
           mergedYear,
           mergedBirthDate,
+          mergedBirthDateHebrew,
           mergedAddress,
           mergedParallel || null,
           mergedClassName,
@@ -2994,6 +3058,9 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS exam_codes_student_idx ON exam_codes(id_number);
 `);
+const examCols = db.prepare('PRAGMA table_info(exams)').all().map((c) => c.name);
+if (!examCols.includes('start_time')) db.exec('ALTER TABLE exams ADD COLUMN start_time TEXT');
+if (!examCols.includes('end_time')) db.exec('ALTER TABLE exams ADD COLUMN end_time TEXT');
 
 // רשימת מבחנים + סטטיסטיקות בסיסיות
 app.get('/api/exams', (req, res) => {
@@ -3009,8 +3076,12 @@ app.get('/api/exams', (req, res) => {
 app.post('/api/exams', (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'שם המבחן הוא שדה חובה' });
-  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date) VALUES (?, ?, ?, ?)')
-    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null);
+  const startTime = req.body?.start_time || null;
+  const endTime = req.body?.end_time || null;
+  const timeError = validateOptionalTimeRange(startTime, endTime);
+  if (timeError) return res.status(400).json({ error: timeError });
+  const result = db.prepare('INSERT INTO exams (name, track, year, exam_date, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, req.body?.track || null, req.body?.year || null, req.body?.exam_date || null, startTime, endTime);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -3592,6 +3663,13 @@ db.exec(`
     is_break INTEGER NOT NULL DEFAULT 0
   );
 `);
+initializeTrackSchedule(db);
+registerTrackScheduleRoutes(app, db, {
+  getSchoolYearEnd,
+  todayInIsrael,
+  holidayForDate: schoolHolidayForDate,
+  ensureHolidays: ensureSchoolYearHolidays
+});
 
 // Seed default lesson periods if the table is empty
 {

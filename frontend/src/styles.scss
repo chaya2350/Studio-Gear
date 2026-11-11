@@ -79,6 +79,78 @@ html.dark {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+.gantt-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.gantt-scroll { max-height: 75vh; overflow-y: auto; overflow-x: hidden; direction: rtl; }
+.gantt-board { display: grid; width: 100%; min-width: 0; }
+.gantt-day-heading {
+  position: sticky; top: 0; z-index: 3; min-height: 58px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 0; gap: 3px; padding: 3px 1px; background: var(--surface-2);
+  border-bottom: 1px solid var(--border); border-inline-start: 3px solid #334155;
+  text-align: center; overflow: hidden; cursor: pointer;
+  strong { max-width: 100%; font-size: .62rem; line-height: 1.15; color: var(--primary); overflow-wrap: anywhere; }
+  span { max-width: 100%; font-size: .48rem; line-height: 1.1; color: var(--text-muted); overflow-wrap: anywhere; }
+  &.gantt-hour-heading { right: 0; z-index: 4; width: 52px; }
+  &.today { background: var(--primary-light); }
+  &.selected { box-shadow: inset 0 0 0 2px var(--primary); }
+}
+.gantt-birthday-list {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 1px;
+  max-width: 100%; max-height: 28px; overflow: hidden;
+}
+.gantt-birthday {
+  max-width: 100%; padding: 0 2px; border: 0; border-radius: 3px;
+  background: #db2777; color: #fff; font: inherit; font-size: .5rem;
+  line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help;
+  &:focus-visible { outline: 2px solid #831843; outline-offset: 1px; }
+}
+.gantt-hour-axis {
+  position: sticky; right: 0; z-index: 2; height: 1056px; box-sizing: border-box;
+  background: var(--surface-2); border-inline-start: 3px solid #334155;
+  span { position: absolute; inset-inline-start: 0; width: 100%; padding-inline-end: 6px;
+    text-align: center; font-size: .68rem; color: var(--text-muted); }
+}
+.gantt-day-track {
+  position: relative; height: 1056px; min-width: 0; box-sizing: border-box;
+  border-inline-start: 3px solid #334155;
+  cursor: pointer;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 43px, var(--border) 43px, var(--border) 44px);
+  &.today { background-color: var(--primary-light); }
+  &.selected { box-shadow: inset 0 0 0 2px var(--primary); }
+}
+.gantt-time-block {
+  position: absolute; z-index: 1; box-sizing: border-box; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px;
+  padding: 2px; border: 1px solid rgba(255,255,255,.8); border-radius: 4px;
+  color: #334155; text-align: center; font-size: .62rem; line-height: 1.15;
+  cursor: help;
+  strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  span { font-size: .58rem; white-space: nowrap; }
+  &:hover, &:focus-visible { z-index: 5; outline: 2px solid #475569; outline-offset: 1px; }
+  &.all-day { z-index: 0; border-style: dashed; opacity: .8; }
+}
+.gantt-time-block:not(.all-day) { z-index: 1; }
+.gantt-time-block.all-day:hover, .gantt-time-block.all-day:focus-visible { z-index: 5; opacity: 1; }
+.gantt-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.gantt-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; font-weight: 700; }
+.gantt-legend-swatch { width: 14px; height: 14px; flex: 0 0 14px; border-radius: 3px; border: 1px solid rgba(15,23,42,.35); }
+.gantt-all-day-toggle { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: .82rem; font-weight: 700; }
+.gantt-hover-card {
+  position: fixed; z-index: 10000; display: flex; flex-direction: column; gap: 4px;
+  width: max-content; max-width: 270px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  font-size: .78rem; line-height: 1.4; pointer-events: none;
+  strong { color: var(--primary); overflow-wrap: anywhere; }
+  span { overflow-wrap: anywhere; }
+}
+
 body {
   font-family: 'Heebo', 'Segoe UI', sans-serif;
   background: var(--bg);

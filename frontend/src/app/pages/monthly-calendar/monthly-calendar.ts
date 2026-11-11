@@ -50,15 +50,16 @@ function toHebrewYear(year: number): string {
 }
 
 // ── Types ────────────────────────────────────────────────────
-type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams' | 'weddings';
+type CalendarLayer = 'equipment' | 'personal' | 'schedule' | 'exams' | 'weddings' | 'birthdays';
 
 interface CalendarItem {
-  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding' | 'birthday';
   loan?: Loan;
   task?: PersonalTask;
   event?: CalendarEvent;
   exam?: any;
   wedding?: any;
+  birthday?: Student;
   completed?: boolean;
 }
 
@@ -72,6 +73,7 @@ interface CalendarDay {
   calendarEvents: CalendarEvent[];
   exams: any[];
   weddings: any[];
+  birthdays: Student[];
 }
 
 // ── Context-menu ─────────────────────────────────────────────
@@ -82,15 +84,19 @@ interface CtxMenu {
 }
 
 // ── Gantt ────────────────────────────────────────────────────
-interface GanttRow {
-  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding';
+interface GanttEntry {
+  kind: 'loan' | 'task' | 'event' | 'exam' | 'wedding' | 'birthday';
   label: string;
-  sublabel: string;
+  details: string;
+  timeLabel: string;
   color: string;
-  leftPct: number;
-  widthPct: number;
   date: string;
   icon: string;
+  startMinute: number;
+  endMinute: number;
+  allDay: boolean;
+  lane: number;
+  laneCount: number;
 }
 
 @Component({
@@ -149,6 +155,11 @@ interface GanttRow {
       <label>כותרת *</label>
       <input [(ngModel)]="newTask.title" placeholder="מה צריך לעשות?" (keyup.enter)="saveTask()">
     </div>
+    <label class="gantt-all-day-toggle"><input type="checkbox" [(ngModel)]="newTask.all_day"> כל היום</label>
+    <div class="form-row" *ngIf="!newTask.all_day">
+      <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="newTask.start_time"></div>
+      <div class="form-group"><label>עד שעה</label><input type="time" [(ngModel)]="newTask.end_time"></div>
+    </div>
     <div class="form-group">
       <label>מי יכול לראות?</label>
       <div class="visibility-toggle">
@@ -190,6 +201,11 @@ interface GanttRow {
     <div class="form-group">
       <label>שם המבחן *</label>
       <input [(ngModel)]="newExam.name" placeholder="לדוגמה: מבחן עברית מחצית א'" (keyup.enter)="saveExam()">
+    </div>
+    <label class="gantt-all-day-toggle"><input type="checkbox" [(ngModel)]="newExam.all_day"> כל היום</label>
+    <div class="form-row" *ngIf="!newExam.all_day">
+      <div class="form-group"><label>משעה</label><input type="time" [(ngModel)]="newExam.start_time"></div>
+      <div class="form-group"><label>עד שעה</label><input type="time" [(ngModel)]="newExam.end_time"></div>
     </div>
     <div style="display:flex;gap:6px;margin:8px 0 10px">
       <button type="button"
@@ -442,6 +458,11 @@ interface GanttRow {
     💍 חתונות
     <span class="chip-badge" *ngIf="monthBadge('weddings') as n">{{ n }}</span>
   </button>
+  <button *ngIf="canViewBirthdays()" type="button" class="layer-chip birthday-chip" [class.active]="has('birthdays')"
+          (click)="toggleLayer('birthdays')">
+    🎂 ימי הולדת
+    <span class="chip-badge" *ngIf="monthBadge('birthdays') as n">{{ n }}</span>
+  </button>
 </nav>
 
 <!-- Sheet sub-tabs (only when schedule active) -->
@@ -480,6 +501,7 @@ interface GanttRow {
   <span class="legend-item" *ngIf="has('schedule')"><span class="legend-dot event-sample-dot"></span> אירוע (צבע לפי קטגוריה)</span>
   <span class="legend-item" *ngIf="has('exams')"><span class="legend-dot exam-dot"></span> מבחן</span>
   <span class="legend-item" *ngIf="has('weddings')">💍 חתונה</span>
+  <span class="legend-item" *ngIf="has('birthdays')">🎂 יום הולדת</span>
   <span class="legend-hint">לחצי ימני על יום להוספה מהירה</span>
 </div>
 
@@ -518,13 +540,14 @@ interface GanttRow {
         <span *ngIf="visibleItems(cd).length && !onlyScheduleOrExams()"
               class="event-markers" aria-hidden="true">
           <ng-container *ngFor="let item of visibleItems(cd).slice(0,4)">
-            <span *ngIf="item.kind !== 'wedding'" class="event-dot"
+            <span *ngIf="item.kind !== 'wedding' && item.kind !== 'birthday'" class="event-dot"
                   [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
                   [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
                   [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
                   [class.completed-dot]="item.kind==='task' && item.completed"
                   [style.background]="dotColor(item)"></span>
             <span *ngIf="item.kind === 'wedding'" class="wedding-dot-icon" title="{{ item.wedding?.name }}">💍</span>
+            <span *ngIf="item.kind === 'birthday'" class="birthday-dot-icon" title="{{ item.birthday?.name }}">🎂</span>
           </ng-container>
           <span *ngIf="visibleItems(cd).length > 4" class="more-events">+{{ visibleItems(cd).length-4 }}</span>
         </span>
@@ -537,6 +560,7 @@ interface GanttRow {
             <ng-container *ngIf="item.kind==='event'">{{ item.event?.title }}</ng-container>
             <ng-container *ngIf="item.kind==='exam'">{{ item.exam?.name }}{{ item.exam?.track ? ' · '+item.exam?.track : '' }}</ng-container>
             <ng-container *ngIf="item.kind==='wedding'">💍 {{ item.wedding?.name }}{{ item.wedding?.wedding_venue ? ' · 📍' + item.wedding?.wedding_venue : '' }}</ng-container>
+            <ng-container *ngIf="item.kind==='birthday'">🎂 {{ item.birthday?.name }}</ng-container>
           </span>
         </span>
       </button>
@@ -546,35 +570,60 @@ interface GanttRow {
 
 <!-- ── Gantt view ── -->
 <section *ngIf="viewMode()==='gantt'" class="gantt-card">
-  <div class="gantt-header">
-    <div class="gantt-label-col"></div>
-    <div class="gantt-timeline">
-      <span *ngFor="let d of ganttDays()" class="gantt-day-tick"
-            [class.today]="d === today"
-            [style.width]="(100 / ganttDays().length) + '%'">
-        {{ formatGanttDay(d) }}
-      </span>
+  <p *ngIf="!ganttEntries().length" class="empty-state">אין פריטים להצגה בחודש זה</p>
+  <nav class="gantt-legend" aria-label="מקרא צבעים">
+    <span *ngFor="let item of ganttLegend()" class="gantt-legend-item">
+      <span class="gantt-legend-swatch" [style.background]="item.color"></span>{{ item.label }}
+    </span>
+  </nav>
+  <div class="gantt-scroll">
+    <div class="gantt-board" [style.grid-template-columns]="ganttGridTemplate()">
+      <div class="gantt-day-heading gantt-hour-heading">שעה</div>
+      <div *ngFor="let date of ganttDays()" class="gantt-day-heading"
+           [class.today]="date === today" [class.selected]="date === selectedDate()"
+           (click)="selectDate(date)">
+        <strong>{{ formatHebrewGanttDate(date) }}</strong>
+        <span>{{ formatGanttDay(date) }} · {{ dayNames[dateWeekday(date)] }}</span>
+        <div class="gantt-birthday-list">
+          <button *ngFor="let entry of ganttBirthdaysForDay(date)" type="button" class="gantt-birthday"
+                  (mouseenter)="showGanttDetails($event, entry)" (mouseleave)="hideGanttDetails()"
+                  (focus)="showGanttDetails($event, entry)" (blur)="hideGanttDetails()"
+                  [attr.aria-label]="'יום הולדת: ' + entry.label">
+            🎂 {{ entry.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="gantt-hour-axis">
+        <span *ngFor="let hour of ganttHours" [style.top.px]="hour * 44 + 2">{{ formatGanttHour(hour) }}</span>
+      </div>
+      <div *ngFor="let date of ganttDays()" class="gantt-day-track"
+           [class.today]="date === today" [class.selected]="date === selectedDate()"
+           (click)="selectDate(date)">
+        <div *ngFor="let entry of ganttEntriesForDay(date)" class="gantt-time-block"
+             [style.top.px]="ganttTop(entry.startMinute)"
+             [style.height.px]="ganttHeight(entry.startMinute, entry.endMinute)"
+             [style.right.%]="entry.lane / entry.laneCount * 100"
+             [style.width.%]="100 / entry.laneCount"
+             [style.background]="entry.allDay ? ganttPastelColor(entry.color) : entry.color"
+             [style.border-color]="entry.color"
+             [style.color]="entry.allDay ? '#1e293b' : '#fff'"
+             [class.all-day]="entry.allDay"
+             (mouseenter)="showGanttDetails($event, entry)" (mouseleave)="hideGanttDetails()"
+             (focus)="showGanttDetails($event, entry)" (blur)="hideGanttDetails()"
+             tabindex="0"
+             [attr.aria-label]="entry.label + ' · ' + entry.timeLabel + (entry.details ? ' · ' + entry.details : '')">
+          <strong>{{ entry.icon }} {{ entry.label }}</strong>
+          <span *ngIf="entry.timeLabel && ganttHeight(entry.startMinute, entry.endMinute) >= 34">{{ entry.timeLabel }}</span>
+        </div>
+      </div>
     </div>
   </div>
-
-  <p *ngIf="!ganttRows().length" class="empty-state">אין פריטים להצגה בחודש זה</p>
-
-  <div *ngFor="let row of ganttRows()" class="gantt-row">
-    <div class="gantt-label-col" [title]="row.label">
-      <span class="gantt-icon">{{ row.icon }}</span>
-      <span class="gantt-label">{{ row.label }}</span>
-      <span *ngIf="row.sublabel" class="gantt-sublabel">{{ row.sublabel }}</span>
-    </div>
-    <div class="gantt-timeline">
-      <!-- today line -->
-      <div *ngIf="ganttTodayPct() >= 0" class="gantt-today-line"
-           [style.left]="ganttTodayPct() + '%'"></div>
-      <div class="gantt-bar"
-           [style.left]="row.leftPct + '%'"
-           [style.width]="row.widthPct + '%'"
-           [style.background]="row.color"
-           [title]="row.label + (row.sublabel ? ' · ' + row.sublabel : '')"></div>
-    </div>
+  <div *ngIf="ganttHover()" class="gantt-hover-card" role="tooltip"
+       [style.left.px]="ganttHover()!.left" [style.top.px]="ganttHover()!.top">
+    <strong>{{ ganttHover()!.entry.label }}</strong>
+    <span>{{ ganttHover()!.entry.timeLabel || 'כל היום' }}</span>
+    <span *ngIf="ganttHover()!.entry.details">{{ ganttHover()!.entry.details }}</span>
   </div>
 </section>
 
@@ -664,6 +713,18 @@ interface GanttRow {
         <span>{{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
         <span *ngIf="s.wedding_venue" class="wedding-venue-label">📍 {{ s.wedding_venue }}</span>
         <span *ngIf="!s.wedding_venue" class="wedding-venue-label no-venue">📍 מקום לא הוזן</span>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="has('birthdays') && selectedDayBirthdays().length">
+    <h3 class="layer-title">🎂 ימי הולדת</h3>
+    <div *ngFor="let student of selectedDayBirthdays()" class="detail-row">
+      <span class="birthday-dot-icon" aria-hidden="true">🎂</span>
+      <div class="detail-main">
+        <a [routerLink]="['/students', student.id_number]"><strong>{{ student.name }}</strong></a>
+        <span>{{ student.track || '' }}{{ student.year ? ' · שנה ' + student.year : '' }}{{ student.class_name ? ' · כיתה ' + student.class_name : '' }}</span>
+        <span>{{ formatHebrewBirthDate(student.birth_date_hebrew) }}</span>
       </div>
     </div>
   </ng-container>
@@ -774,6 +835,8 @@ interface GanttRow {
       font-size: 0.7rem; font-weight: 800;
     }
     .layer-chip:not(.active) .chip-badge { background: var(--primary-light); color: var(--primary); }
+    .birthday-chip.active { background: #db2777; border-color: #db2777; }
+    .birthday-dot-icon { font-size: .9rem; }
 
     /* ── Sheet sub-tabs ── */
     .sheet-tabs {
@@ -969,48 +1032,6 @@ interface GanttRow {
       }
     }
 
-    /* ── Gantt ── */
-    .gantt-card {
-      border: 1px solid var(--border); border-radius: var(--radius);
-      background: var(--surface); box-shadow: var(--shadow-sm);
-      overflow-x: auto;
-    }
-    .gantt-header {
-      display: flex; position: sticky; top: 0; z-index: 2;
-      background: var(--surface-2); border-bottom: 1px solid var(--border);
-    }
-    .gantt-label-col {
-      flex: 0 0 180px; min-width: 180px; padding: 6px 10px;
-      display: flex; align-items: center; gap: 6px; overflow: hidden;
-      border-left: 1px solid var(--border);
-    }
-    .gantt-icon { flex-shrink: 0; font-size: 0.85rem; }
-    .gantt-label { font-size: 0.78rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .gantt-sublabel { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .gantt-timeline {
-      flex: 1; position: relative; display: flex; min-width: 0;
-    }
-    .gantt-day-tick {
-      flex-shrink: 0; text-align: center; font-size: 0.62rem; color: var(--text-muted);
-      padding: 6px 0; border-left: 1px solid var(--border);
-      &.today { color: var(--primary); font-weight: 700; background: var(--primary-light); }
-    }
-    .gantt-row {
-      display: flex; border-bottom: 1px solid var(--border);
-      min-height: 34px;
-      &:hover { background: var(--surface-2); }
-    }
-    .gantt-bar {
-      position: absolute; top: 6px; height: calc(100% - 12px);
-      border-radius: 4px; opacity: 0.85; min-width: 4px;
-      transition: opacity 0.15s;
-      &:hover { opacity: 1; }
-    }
-    .gantt-today-line {
-      position: absolute; top: 0; bottom: 0; width: 2px;
-      background: var(--primary); opacity: 0.5; z-index: 1; pointer-events: none;
-    }
-
     @media (max-width: 560px) {
       .month-card { padding: 6px; }
       .calendar-day, .empty-day { min-height: 62px; padding: 4px; }
@@ -1051,87 +1072,112 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     [...new Set(this.calendarEvents().map(e => e.source_sheet))].sort((a,b) => a.localeCompare(b,'he'))
   );
 
-  // ── Gantt: dates in displayed month + flattened rows ──
+  readonly ganttHours = Array.from({ length: 24 }, (_, hour) => hour);
+  readonly ganttHover = signal<{ entry: GanttEntry; left: number; top: number } | null>(null);
+
+  // ── Gantt: one hourly column for each day ──
   readonly ganttDays = computed(() => {
     const cells = this.monthCells().filter((c): c is CalendarDay => c !== null);
     return cells.map(c => c.date);
   });
 
-  readonly ganttRows = computed(() => {
+  readonly ganttEntries = computed(() => {
     const days = this.ganttDays();
     if (!days.length) return [];
-    const total = days.length;
+    const entries: GanttEntry[] = [];
+    const add = (
+      kind: GanttEntry['kind'], label: string, details: string, color: string, icon: string, date: string,
+      start?: string | null, end?: string | null, allDay = false
+    ) => {
+      const range = this.ganttTimeRange(start, end, allDay);
+      entries.push({
+        kind, label, details, color, icon, date, timeLabel: range.label,
+        startMinute: range.start, endMinute: range.end, allDay: range.allDay, lane: 0, laneCount: 1
+      });
+    };
 
-    const rows: GanttRow[] = [];
+    for (const date of days) {
+      if (this.has('equipment')) {
+        for (const loan of this.loansForDate(date)) {
+          add('loan', loan.equipment_name || 'ציוד', loan.borrower_name || '', '#0f766e', '💻', date, null, null, true);
+        }
+      }
 
-    // Loans (spans: loan_date → expected_return)
-    if (this.has('equipment')) {
-      for (const loan of this.loans()) {
-        if (loan.actual_return) continue;
-        if (loan.category === 'מצלמות אישיות' || loan.category === 'מחשב נייד') continue;
-        const startIdx = days.findIndex(d => d >= loan.loan_date);
-        if (startIdx < 0) continue;
-        const endIdx = days.findIndex(d => d >= loan.expected_return);
-        const start = startIdx;
-        const end = endIdx < 0 ? total - 1 : Math.min(total - 1, endIdx);
-        rows.push({
-          kind: 'loan', label: loan.equipment_name || 'ציוד', sublabel: loan.borrower_name,
-          color: this.loanColor(loan),
-          leftPct: (start / total) * 100, widthPct: ((end - start + 1) / total) * 100,
-          date: loan.loan_date, icon: '💻'
-        });
+      if (this.has('personal')) {
+        for (const task of this.tasksForDate(date)) {
+          const color = task.completed ? '#b45309' : '#2563eb';
+          const taskDetails = [
+            task.visibility === 'public' ? `ציבורית · ${task.creator_name || ''}` : '',
+            task.visibility === 'shared' ? `משותפת · ${task.creator_name || ''}` : '',
+            task.completed ? 'בוצעה' : ''
+          ].filter(Boolean).join(' · ');
+          add('task', task.title, taskDetails, color, '☑', date, task.start_time, task.end_time);
+        }
+      }
+
+      if (this.has('schedule')) {
+        const sheet = this.selectedSourceSheet();
+        const events = this.calendarEvents().filter(event =>
+          event.event_date === date && (sheet === null || event.source_sheet === sheet)
+        );
+        const seen = new Set<string>();
+        for (const event of events) {
+          const key = `${event.source_sheet}\x00${event.event_date}\x00${event.title}\x00${event.category}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const eventDetails = [event.category, event.source_sheet, event.notes].filter(Boolean).join(' · ');
+          add('event', event.title, eventDetails, this.ganttEventColor(event.category, Boolean(event.is_school_holiday)), '📅', date,
+            event.start_time, event.end_time, Boolean(event.all_day));
+        }
+      }
+
+      if (this.has('exams')) {
+        for (const exam of this.examsForDate(date)) {
+          const examDetails = [exam.track, exam.year ? `שנה ${exam.year}` : ''].filter(Boolean).join(' · ');
+          add('exam', exam.name, examDetails, '#dc2626', '📝', date, exam.start_time, exam.end_time);
+        }
+      }
+
+      if (this.has('weddings')) {
+        for (const student of this.weddingsForDate(date)) {
+          const weddingDetails = [student.track, student.class_name && `כיתה ${student.class_name}`, student.wedding_venue]
+            .filter(Boolean).join(' · ');
+          add('wedding', student.name, weddingDetails, '#9333ea', '💍', date, null, null, true);
+        }
+      }
+
+      if (this.has('birthdays')) {
+        for (const student of this.birthdaysForDate(date)) {
+          const birthdayDetails = [student.track, student.class_name && `כיתה ${student.class_name}`]
+            .filter(Boolean).join(' · ');
+          add('birthday', student.name, birthdayDetails, '#db2777', '🎂', date, null, null, true);
+        }
       }
     }
 
-    // Events (single day)
-    if (this.has('schedule')) {
-      const sheet = this.selectedSourceSheet();
-      const seen = new Set<string>();
-      for (const ev of this.calendarEvents()) {
-        if (sheet !== null && ev.source_sheet !== sheet) continue;
-        const key = `${ev.source_sheet}\x00${ev.title}\x00${ev.category}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const idx = days.indexOf(ev.event_date);
-        if (idx < 0) continue;
-        rows.push({
-          kind: 'event', label: ev.title, sublabel: ev.category,
-          color: this.categoryToColor(ev.category),
-          leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
-          date: ev.event_date, icon: '📅'
-        });
+    const byDate = new Map<string, GanttEntry[]>();
+    for (const entry of entries) {
+      if (entry.kind === 'birthday') continue;
+      const dayEntries = byDate.get(entry.date) || [];
+      dayEntries.push(entry);
+      byDate.set(entry.date, dayEntries);
+    }
+    for (const dayEntries of byDate.values()) {
+      for (const isAllDay of [true, false]) {
+        const group = dayEntries.filter(entry => entry.allDay === isAllDay)
+          .sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute);
+        const laneEnds: number[] = [];
+        for (const entry of group) {
+          let lane = laneEnds.findIndex(end => end <= entry.startMinute);
+          if (lane < 0) lane = laneEnds.length;
+          laneEnds[lane] = entry.endMinute;
+          entry.lane = lane;
+        }
+        const laneCount = Math.max(1, laneEnds.length);
+        for (const entry of group) entry.laneCount = laneCount;
       }
     }
-
-    // Exams (single day)
-    if (this.has('exams')) {
-      for (const exam of this.exams()) {
-        const idx = days.indexOf(exam.exam_date);
-        if (idx < 0) continue;
-        rows.push({
-          kind: 'exam', label: exam.name, sublabel: exam.track || '',
-          color: '#e11d48', leftPct: (idx / total) * 100, widthPct: Math.max(2.5, (1 / total) * 100),
-          date: exam.exam_date, icon: '📝'
-        });
-      }
-    }
-
-    // Weddings (single day)
-    if (this.has('weddings')) {
-      for (const w of this.weddingsForDate('')) {
-        // weddings are handled via monthCells; skip if not directly available
-      }
-    }
-
-    rows.sort((a, b) => a.date.localeCompare(b.date));
-    return rows;
-  });
-
-  readonly ganttTodayPct = computed(() => {
-    const days = this.ganttDays();
-    if (!days.length) return -1;
-    const idx = days.indexOf(this.today);
-    return idx >= 0 ? (idx / days.length) * 100 : -1;
+    return entries;
   });
 
   // ── Computed cells ──
@@ -1142,13 +1188,15 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   readonly selectedDayEvents = computed(() => this.eventsForDate(this.selectedDate()));
   readonly selectedDayExams  = computed(() => this.examsForDate(this.selectedDate()));
   readonly selectedDayWeddings = computed(() => this.weddingsForDate(this.selectedDate()));
+  readonly selectedDayBirthdays = computed(() => this.birthdaysForDate(this.selectedDate()));
 
   readonly selectedDayCount = computed(() =>
     (this.has('equipment') ? this.selectedDayLoans().length   : 0) +
     (this.has('personal')  ? this.selectedDayTasks().length   : 0) +
     (this.has('schedule')  ? this.selectedDayEvents().length  : 0) +
     (this.has('exams')     ? this.selectedDayExams().length   : 0) +
-    (this.has('weddings')  ? this.selectedDayWeddings().length : 0)
+    (this.has('weddings')  ? this.selectedDayWeddings().length : 0) +
+    (this.has('birthdays') ? this.selectedDayBirthdays().length : 0)
   );
 
   readonly selectedDateLabel = computed(() => this.formatDateLabel(this.selectedDate()));
@@ -1182,10 +1230,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   weddingVenue = '';
   readonly dialogError  = signal('');
 
-  newTask = { title: '', visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
+  newTask = { title: '', start_time: '08:00', end_time: '09:00', all_day: false, visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
   taskUsers = signal<MessageUser[]>([]);
   showUserPicker = signal(false);
-  newExam  = { name: '', track: '', year: '', filterMode: 'track' as 'track' | 'class', parallel: '' };
+  newExam  = { name: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track' as 'track' | 'class', parallel: '' };
   newEvent = {
     title: '', category: '', start_date: this.today, end_date: this.today,
     all_day: true, start_time: '08:00', end_time: '09:00',
@@ -1265,6 +1313,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   has(l: CalendarLayer) { return this.layers().has(l); }
 
   toggleLayer(l: CalendarLayer) {
+    if (l === 'birthdays' && !this.canViewBirthdays()) return;
     const s = new Set(this.layers());
     if (!s.delete(l)) s.add(l);
     this.layers.set(s);
@@ -1282,6 +1331,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     if (layer === 'schedule')  return cells.reduce((s, c) => s + c.calendarEvents.length, 0);
     if (layer === 'exams')     return cells.reduce((s, c) => s + c.exams.length, 0);
     if (layer === 'weddings')  return cells.reduce((s, c) => s + c.weddings.length, 0);
+    if (layer === 'birthdays') return cells.reduce((s, c) => s + c.birthdays.length, 0);
     return 0;
   }
 
@@ -1307,6 +1357,40 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     );
   }
 
+  formatHebrewBirthDate(value?: string): string {
+    const parsed = /^(\d{1,2})-(\d{1,2})$/.exec(String(value || '').trim());
+    if (!parsed) return '';
+    const day = Number(parsed[1]);
+    const month = Number(parsed[2]);
+    const monthNames: Record<number, string> = {
+      1: 'ניסן', 2: 'אייר', 3: 'סיוון', 4: 'תמוז', 5: 'אב', 6: 'אלול',
+      7: 'תשרי', 8: 'חשוון', 9: 'כסלו', 10: 'טבת', 11: 'שבט',
+      12: 'אדר א׳', 13: 'אדר ב׳', 14: 'אדר'
+    };
+    return HEBREW_DAY_NUMERALS[day] && monthNames[month]
+      ? `${HEBREW_DAY_NUMERALS[day]} ${monthNames[month]}`
+      : '';
+  }
+
+  private birthdaysForDate(date: string): Student[] {
+    if (!this.canViewBirthdays() || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+    const hebrewDate = new HDate(new Date(`${date}T12:00:00`));
+    return this.allStudents().filter(student => {
+      const birthDate = /^(\d{1,2})-(\d{1,2})$/.exec(String(student.birth_date_hebrew || '').trim());
+      if (!birthDate || Number(birthDate[1]) !== hebrewDate.getDate()) return false;
+      const birthMonth = Number(birthDate[2]);
+      const currentMonth = hebrewDate.getMonth();
+      if (birthMonth === 14) {
+        return currentMonth === months.ADAR_I ||
+          (hebrewDate.isLeapYear() && currentMonth === months.ADAR_II);
+      }
+      if (birthMonth === months.ADAR_II && !hebrewDate.isLeapYear()) {
+        return currentMonth === months.ADAR_I;
+      }
+      return currentMonth === birthMonth;
+    });
+  }
+
   private eventsForDate(date: string): CalendarEvent[] {
     const sheet = this.selectedSourceSheet();
     const events = this.calendarEvents().filter(e =>
@@ -1327,6 +1411,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       ...(this.has('schedule')  ? day.calendarEvents.map((event): CalendarItem => ({ kind: 'event', event })) : []),
       ...(this.has('exams')     ? day.exams.map((exam): CalendarItem => ({ kind: 'exam', exam })) : []),
       ...(this.has('weddings')  ? day.weddings.map((wedding): CalendarItem => ({ kind: 'wedding', wedding })) : []),
+      ...(this.has('birthdays') ? day.birthdays.map((birthday): CalendarItem => ({ kind: 'birthday', birthday })) : []),
     ];
   }
 
@@ -1345,7 +1430,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
         gregorianDay: gr.getDate(), gregorianMonth: gr.getMonth() + 1,
         loans: this.loansForDate(date), tasks: this.tasksForDate(date),
         calendarEvents: this.eventsForDate(date), exams: this.examsForDate(date),
-        weddings: this.weddingsForDate(date),
+        weddings: this.weddingsForDate(date), birthdays: this.birthdaysForDate(date),
       });
     }
     while (cells.length % 7 !== 0) cells.push(null);
@@ -1394,7 +1479,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddTask() {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
-    this.newTask = { title: '', visibility: 'private', sharedUserIds: [] };
+    this.newTask = { title: '', start_time: '08:00', end_time: '09:00', all_day: false, visibility: 'private', sharedUserIds: [] };
     this.showUserPicker.set(false);
     this.dialogError.set('');
     this.addTaskOpen.set(true);
@@ -1414,7 +1499,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddExam() {
     this.ctxMenu.set(null);
     this.eventDetailOpen.set(false);
-    this.newExam = { name: '', track: '', year: '', filterMode: 'track', parallel: '' };
+    this.newExam = { name: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
     this.dialogError.set('');
     this.addExamOpen.set(true);
   }
@@ -1514,7 +1599,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
       title,
       this.selectedDate(),
       this.newTask.visibility,
-      this.newTask.visibility === 'shared' ? this.newTask.sharedUserIds : undefined
+      this.newTask.visibility === 'shared' ? this.newTask.sharedUserIds : undefined,
+      this.newTask.all_day ? undefined : this.newTask.start_time,
+      this.newTask.all_day ? undefined : this.newTask.end_time
     ).subscribe({
       next: task => {
         this.tasks.update(ts => [...ts, task]);
@@ -1528,7 +1615,11 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   saveExam() {
     const name = this.newExam.name.trim();
     if (!name) return;
-    const examData: any = { name, exam_date: this.selectedDate() };
+    const examData: any = {
+      name, exam_date: this.selectedDate(),
+      start_time: this.newExam.all_day ? undefined : this.newExam.start_time,
+      end_time: this.newExam.all_day ? undefined : this.newExam.end_time
+    };
     if (this.newExam.filterMode === 'class') {
       if (this.newExam.parallel) examData.parallel = this.newExam.parallel;
     } else {
@@ -1676,6 +1767,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     if (item.kind === 'loan') return this.loanColor(item.loan!);
     if (item.kind === 'exam') return '#e11d48';
     if (item.kind === 'event') return this.schoolEventColor(item.event!);
+    if (item.kind === 'birthday') return '#db2777';
     return null; // tasks use CSS class
   }
 
@@ -1683,6 +1775,10 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   canImportCalendar() {
     const r = this.auth.user()?.role;
     return r === 'admin' || r === 'secretary';
+  }
+
+  canViewBirthdays() {
+    return this.auth.hasPermission('students');
   }
 
   openEventDetail(event: CalendarEvent) {
@@ -1837,6 +1933,134 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   formatGanttDay(date: string): string {
     const d = new Date(`${date}T12:00:00`);
     return `${d.getDate()}/${d.getMonth() + 1}`;
+  }
+
+  formatHebrewGanttDate(date: string): string {
+    const hebrewDate = new HDate(new Date(`${date}T12:00:00`));
+    const monthName = hebrewDate.getMonth() === months.ADAR_I && hebrewDate.isLeapYear()
+      ? 'אדר א׳' : HEBREW_MONTH_NAMES[hebrewDate.getMonth()];
+    return `${HEBREW_DAY_NUMERALS[hebrewDate.getDate()]} ${monthName || ''}`;
+  }
+
+  dateWeekday(date: string): number {
+    return new Date(`${date}T12:00:00`).getDay();
+  }
+
+  ganttGridTemplate(): string {
+    return `52px repeat(${this.ganttDays().length}, minmax(0, 1fr))`;
+  }
+
+  ganttEntriesForDay(date: string): GanttEntry[] {
+    return this.ganttEntries().filter(entry => entry.date === date && entry.kind !== 'birthday');
+  }
+
+  ganttBirthdaysForDay(date: string): GanttEntry[] {
+    return this.ganttEntries().filter(entry => entry.date === date && entry.kind === 'birthday');
+  }
+
+  ganttLegend(): { label: string; color: string }[] {
+    const fixed = [
+      { label: 'משימה', color: '#2563eb' },
+      { label: 'משימה שבוצעה', color: '#b45309' },
+      { label: 'מבחן', color: '#dc2626' },
+      { label: 'יום הולדת', color: '#db2777' },
+      { label: 'חתונה', color: '#9333ea' },
+      { label: 'ציוד', color: '#0f766e' }
+    ];
+    const visibleFixed = fixed.filter(item =>
+      (item.label === 'משימה' && this.has('personal')) ||
+      (item.label === 'משימה שבוצעה' && this.has('personal') &&
+        this.ganttEntries().some(entry => entry.kind === 'task' && entry.color === item.color)) ||
+      (item.label === 'מבחן' && this.has('exams')) ||
+      (item.label === 'יום הולדת' && this.has('birthdays')) ||
+      (item.label === 'חתונה' && this.has('weddings')) ||
+      (item.label === 'ציוד' && this.has('equipment'))
+    );
+    if (!this.has('schedule')) return visibleFixed;
+    const categories = new Map<string, { label: string; color: string }>([
+      ['חג / יום חופש', { label: 'חג / יום חופש', color: '#7c3aed' }],
+      ['טיול / סיור', { label: 'טיול / סיור', color: '#15803d' }]
+    ]);
+    for (const event of this.calendarEvents()) {
+      if (!event.category) continue;
+      const label = this.ganttEventLabel(event.category, Boolean(event.is_school_holiday));
+      categories.set(label, {
+        label,
+        color: this.ganttEventColor(event.category, Boolean(event.is_school_holiday))
+      });
+    }
+    return [...new Map(
+      [...visibleFixed, ...categories.values()]
+        .map(item => [item.label, item] as const)
+    ).values()];
+  }
+
+  ganttEventLabel(category: string, isHoliday = false): string {
+    const normalized = String(category || '').replace(/[\s־-]/g, '');
+    if (isHoliday || /חג|חופשה|אסרוחג/.test(normalized)) return 'חג / יום חופש';
+    if (/טיול|סיור|מסע/.test(normalized)) return 'טיול / סיור';
+    if (/מבחן|בחינה/.test(normalized)) return 'מבחן';
+    return category;
+  }
+
+  ganttEventColor(category: string, isHoliday = false): string {
+    const normalized = String(category || '').replace(/[\s־-]/g, '');
+    if (isHoliday || /חג|חופשה|אסרוחג/.test(normalized)) return '#7c3aed';
+    if (/טיול|סיור|מסע/.test(normalized)) return '#15803d';
+    if (/מבחן|בחינה/.test(normalized)) return '#dc2626';
+    return '#0369a1';
+  }
+
+  showGanttDetails(event: Event, entry: GanttEntry) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const width = 270;
+    const preferredLeft = rect.left >= width + 16 ? rect.left - width - 8 : rect.right + 8;
+    const left = Math.max(8, Math.min(preferredLeft, window.innerWidth - width - 8));
+    const top = Math.max(8, Math.min(rect.top, window.innerHeight - 130));
+    this.ganttHover.set({ entry, left, top });
+  }
+
+  hideGanttDetails() {
+    this.ganttHover.set(null);
+  }
+
+  ganttPastelColor(color: string): string {
+    const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color);
+    if (!match) return '#e2e8f0';
+    const hex = match[1].length === 3 ? [...match[1]].map(char => char + char).join('') : match[1];
+    const channels = [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16));
+    return `#${channels.map(channel => Math.round(channel * 0.22 + 255 * 0.78).toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  formatGanttHour(hour: number): string {
+    return `${String(hour).padStart(2, '0')}:00`;
+  }
+
+  ganttTop(minute: number): number {
+    return minute * 44 / 60;
+  }
+
+  ganttHeight(startMinute: number, endMinute: number): number {
+    return (endMinute - startMinute) * 44 / 60;
+  }
+
+  private ganttTimeRange(start?: string | null, end?: string | null, allDay = false) {
+    const startMinute = this.ganttTimeToMinutes(start);
+    const endMinute = this.ganttTimeToMinutes(end);
+    if (allDay || startMinute === null || endMinute === null || endMinute <= startMinute) {
+      return { start: 0, end: 1440, label: '', allDay: true };
+    }
+    return {
+      start: startMinute,
+      end: endMinute,
+      label: `${start}–${end}`,
+      allDay: false
+    };
+  }
+
+  private ganttTimeToMinutes(value?: string | null): number | null {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || ''));
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
   }
 
   private isValidDate(v: string): boolean {

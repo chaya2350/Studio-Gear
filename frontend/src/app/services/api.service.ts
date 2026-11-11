@@ -163,7 +163,7 @@ export class ApiService {
   addStudentWedding(id: string, date: string, venue: string) {
     return this.http.post<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id)}/wedding`, { date, venue });
   }
-  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string }) {
+  createStudent(data: { id_number: string; name: string; phone?: string; track?: string; year?: string; parallel?: string; address?: string; birth_date?: string; birth_date_hebrew?: string }) {
     return this.http.post<{ id_number: string; name: string }>(`${this.base}/students`, data);
   }
   getStudentClasses() { return this.http.get<{ parallel: string; label: string; count: number }[]>(`${this.base}/students/classes`); }
@@ -177,7 +177,7 @@ export class ApiService {
   updateStudentPhoto(id_number: string, photo_url: string) {
     return this.http.patch<{ success: boolean }>(`${this.base}/students/${encodeURIComponent(id_number)}/photo`, { photo_url });
   }
-  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & Partial<Pick<Student, 'address' | 'marital_status' | 'married_name' | 'personal_phone' | 'wedding_date' | 'wedding_venue'>> & { parallel?: string }) {
+  updateStudent(id_number: string, data: Pick<Student, 'name' | 'phone' | 'track' | 'year' | 'phone_code' | 'extra_data'> & Partial<Pick<Student, 'address' | 'birth_date' | 'birth_date_hebrew' | 'marital_status' | 'married_name' | 'personal_phone' | 'wedding_date' | 'wedding_venue'>> & { parallel?: string }) {
     return this.http.put(`${this.base}/students/${encodeURIComponent(id_number)}`, data);
   }
   deleteStudent(id_number: string) {
@@ -238,7 +238,7 @@ export class ApiService {
   // ── Exams ──
   getExams() { return this.http.get<any[]>(`${this.base}/exams`); }
   getExam(id: number) { return this.http.get<any>(`${this.base}/exams/${id}`); }
-  createExam(data: { name: string; track?: string; year?: string; exam_date?: string; parallel?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
+  createExam(data: { name: string; track?: string; year?: string; exam_date?: string; parallel?: string; start_time?: string; end_time?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
   deleteExam(id: number) { return this.http.delete(`${this.base}/exams/${id}`); }
   generateExamCodes(id: number, data: { track?: string; year?: string; id_number?: string; parallel?: string }) { return this.http.post<{ created: number }>(`${this.base}/exams/${id}/codes`, data); }
   getExamCode(code: string) { return this.http.get<any>(`${this.base}/exam-codes/${encodeURIComponent(code)}`); }
@@ -307,6 +307,36 @@ export class ApiService {
   createLessonPeriod(data: any) { return this.http.post<{id:number}>(`${this.base}/schedule/periods`, data); }
   updateLessonPeriod(id: number, data: any) { return this.http.put(`${this.base}/schedule/periods/${id}`, data); }
   deleteLessonPeriod(id: number) { return this.http.delete(`${this.base}/schedule/periods/${id}`); }
+  getTrackScheduleMeta() {
+    return this.http.get<{
+      tracks: { id: number; name: string; years: { year: string; student_count: number }[] }[];
+      teachers: { id: number; name: string; subject: string | null; specialization: string | null }[];
+      periods: { id: number; name: string; start_time: string; end_time: string; is_break: number }[];
+      rooms: { number: string; name: string }[];
+    }>(`${this.base}/track-schedules`);
+  }
+  getTrackSchedule(trackId: number, studyYear: string) {
+    return this.http.get<{
+      track: { id: number; name: string };
+      study_year: string;
+      student_count: number;
+      slots: any[];
+    }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`);
+  }
+  createTrackScheduleSlot(trackId: number, studyYear: string, data: {
+    teacher_id: number; day_of_week: number; start_time: string; end_time: string;
+    subject?: string; room_number?: string | null;
+  }) {
+    return this.http.post<{ id: number }>(`${this.base}/track-schedules/${trackId}/${encodeURIComponent(studyYear)}`, data);
+  }
+  updateTrackScheduleSlot(id: number, data: {
+    teacher_id: number; start_time: string; end_time: string; subject?: string; room_number?: string | null;
+  }) {
+    return this.http.put<{ success: boolean }>(`${this.base}/track-schedules/slots/${id}`, data);
+  }
+  deleteTrackScheduleSlot(id: number) {
+    return this.http.delete<{ success: boolean }>(`${this.base}/track-schedules/slots/${id}`);
+  }
   copyWeekSchedule(from: string, to: string, change: { change_category: string; change_reason: string }) {
     return this.http.post<{copied:number; skipped:number; to_week:string}>(`${this.base}/schedule/copy-week`, { from_week: from, to_week: to, ...change });
   }

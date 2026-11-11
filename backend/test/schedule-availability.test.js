@@ -38,8 +38,11 @@ test('classifies Kodesh, instruction, and track periods for each grade and day',
 
   assert.equal(getPeriodAvailability('ה', 0, period('08:30', '09:50')), 'instruction');
   assert.equal(getPeriodAvailability('ה', 1, period('11:40', '12:20')), 'kodesh');
+  assert.equal(getPeriodAvailability('ה', 1, period('12:00', '12:45')), 'kodesh');
   assert.equal(getPeriodAvailability('ה', 2, period('13:30', '14:10')), 'instruction');
+  assert.equal(getPeriodAvailability('ה', 2, period('14:30', '15:30')), 'instruction');
   assert.equal(getPeriodAvailability('ה', 2, period('14:50', '15:30')), 'track');
+  assert.equal(getPeriodAvailability('ה', 2, period('18:30', '20:45')), 'track');
   assert.equal(getPeriodAvailability('ה', 3, period('08:30', '09:50')), 'track');
   assert.equal(getPeriodAvailability('ו', 1, period('08:30', '09:50')), 'track');
   assert.equal(getPeriodAvailability('ו', 2, period('11:40', '12:20')), 'kodesh');

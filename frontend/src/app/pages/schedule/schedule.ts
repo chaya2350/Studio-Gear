@@ -5,6 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { Observable } from 'rxjs';
 import { formatHebrewDate, todayLocalDate } from '../../hebrew-date';
+import { getPeriodAvailability } from '../../utils/schedule-availability';
 
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 const YEARS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו'];
@@ -67,6 +68,7 @@ function formatHebrewDayHeading(dateStr: string): string {
     <h1>מערכת שעות</h1>
   </div>
   <div class="header-actions">
+    <a routerLink="/schedule/tracks" class="btn btn-secondary">מערכות שעות למסלולים</a>
     <button *ngIf="activeTab() === 'grid'" type="button" class="btn btn-secondary" (click)="activeTab.set('manage')">ניהול שיעורים</button>
     <button *ngIf="activeTab() === 'manage'" type="button" class="btn btn-secondary" (click)="activeTab.set('grid')">חזרה למערכת</button>
     <a routerLink="/schedule/rooms" class="btn btn-secondary">מפת חדרים</a>
@@ -965,19 +967,7 @@ export class ScheduleComponent implements OnInit {
   }
 
   periodAvailability(classYear: string, day: number, period: any): 'kodesh' | 'instruction' | 'track' {
-    const year = String(classYear || '').trim().replace(/^שנה\s*/, '').replace(/[\u05f3\u05f4'"]/g, '');
-    const normalizedDay = String(Number(day));
-    const start = String(period?.start_time || '');
-    const end = String(period?.end_time || '');
-    if (!start || !end || end <= start) return 'track';
-
-    const kodeshCutoff = this.kodeshAvailability().kodesh[year]?.[normalizedDay];
-    if (kodeshCutoff && end <= kodeshCutoff) return 'kodesh';
-
-    const instruction = this.kodeshAvailability().instruction[year]?.[normalizedDay];
-    if (instruction && start >= instruction.start && end <= instruction.end) return 'instruction';
-
-    return 'track';
+    return getPeriodAvailability(classYear, day, period, this.kodeshAvailability());
   }
 
   periodAvailabilityLabel(availability: 'kodesh' | 'instruction' | 'track') {
