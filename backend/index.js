@@ -12,7 +12,8 @@ const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
 const { buildStudentUpdateNotice } = require('./student-update-notice');
 const {
-  parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber
+  parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber,
+  mergeStudentExtraFields
 } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
@@ -2513,22 +2514,6 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
       return values.join(' / ');
     };
 
-    const mergeExtraFields = (existing, incoming) => {
-      const merged = { ...existing };
-      let added = 0;
-      for (const [key, value] of Object.entries(incoming)) {
-        const cleanKey = String(key || '').trim();
-        const cleanValue = String(value || '').trim();
-        if (!cleanKey || !cleanValue) continue;
-        const existingValue = String(merged[cleanKey] || '').trim();
-        if (!existingValue) {
-          merged[cleanKey] = cleanValue;
-          added++;
-        }
-      }
-      return { merged, added };
-    };
-
     const importMany = db.transaction((rows) => {
       for (const row of rows) {
         const id_number = normalizeIdNumber(row.id_number || '');
@@ -2548,7 +2533,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         if (existing) mergedExisting++;
 
         const existingExtra = parseExtraData(existing?.extra_data);
-        const mergedExtra = mergeExtraFields(existingExtra, extraFields);
+        const mergedExtra = mergeStudentExtraFields(existingExtra, extraFields);
         addedExtraFields += mergedExtra.added;
 
         const mergedName = pickValue(existing?.name, name);

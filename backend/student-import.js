@@ -212,15 +212,35 @@ const knownHeaderSet = new Set(
     .map((header) => compactHeader(header))
 );
 
-const credentialHeaderAliases = [
-  'סיסמא', 'סיסמה', 'סיסמת גוב', 'סיסמא לגוב', 'סיסמה לגוב',
-  'סיסמא בגוב', 'סיסמה בגוב', 'סיסמא לgov', 'סיסמה לgov',
-  'סיסמת משתמש', 'סיסמת gov', 'gov password', 'password', 'password gov'
-];
-const headerDetectionSet = new Set([
-  ...knownHeaderSet,
-  ...credentialHeaderAliases.map((header) => compactHeader(header))
-]);
+function isPasswordHeader(value) {
+  const header = compactHeader(value);
+  return header.includes('סיסמ') || header.includes('ססמ')
+    || header.includes('password') || header.includes('passwd') || header === 'pass';
+}
+
+function mergeStudentExtraFields(existing, incoming) {
+  const merged = { ...existing };
+  let added = 0;
+  for (const [rawKey, rawValue] of Object.entries(incoming || {})) {
+    const key = String(rawKey || '').trim();
+    const value = String(rawValue ?? '').trim();
+    if (!key || !value) continue;
+
+    if (isPasswordHeader(key)) {
+      const oldPasswordKeys = Object.keys(merged).filter(isPasswordHeader);
+      if (!oldPasswordKeys.length) added++;
+      for (const oldKey of oldPasswordKeys) delete merged[oldKey];
+      merged[key] = value;
+      continue;
+    }
+
+    if (!String(merged[key] ?? '').trim()) {
+      merged[key] = value;
+      added++;
+    }
+  }
+  return { merged, added };
+}
 
 function buildRowsFromSheet(sheetName, sheet) {
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
@@ -230,7 +250,7 @@ function buildRowsFromSheet(sheetName, sheet) {
     const row = Array.isArray(matrix[i]) ? matrix[i] : [];
     const matches = row
       .map((cell) => compactHeader(cell))
-      .filter((token) => token && headerDetectionSet.has(token)).length;
+      .filter((token) => token && (knownHeaderSet.has(token) || isPasswordHeader(token))).length;
     if (matches >= 2) {
       headerRowIndex = i;
       break;
@@ -362,5 +382,7 @@ module.exports = {
   canonicalYearValue,
   normalizeAliasText,
   normalizeBirthDate,
-  normalizeHebrewBirthDate
+  normalizeHebrewBirthDate,
+  isPasswordHeader,
+  mergeStudentExtraFields
 };

@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const XLSX = require('xlsx');
 const {
-  parseStudentWorkbook, canonicalTrackValue, normalizeBirthDate, normalizeHebrewBirthDate
+  parseStudentWorkbook, canonicalTrackValue, normalizeBirthDate, normalizeHebrewBirthDate,
+  mergeStudentExtraFields
 } = require('../student-import');
 
 test('keeps הוראה distinct from הוראה מתקנת when normalizing imported track values', () => {
@@ -45,11 +46,11 @@ test('parses imported Gregorian and Hebrew birth dates separately', () => {
   assert.equal(rows[0].birth_date_hebrew, '23-11');
 });
 
-test('detects a password-only worksheet from its ID and government password headers', () => {
+test('detects the exact government-password header and retains numeric values', () => {
   const workbook = XLSX.utils.book_new();
   const sheet = {};
   setCell(sheet, 'A1', 'מספר זהות');
-  setCell(sheet, 'B1', 'סיסמה לגוב');
+  setCell(sheet, 'B1', 'סיסמא לגוב');
   setCell(sheet, 'A2', '123456789');
   setCell(sheet, 'B2', 0);
   sheet['!ref'] = 'A1:B2';
@@ -59,7 +60,19 @@ test('detects a password-only worksheet from its ID and government password head
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id_number, '123456789');
-  assert.equal(rows[0].extra_fields['סיסמה לגוב'], '0');
+  assert.equal(rows[0].extra_fields['סיסמא לגוב'], '0');
+});
+
+test('reimported password replaces an older password header spelling', () => {
+  const result = mergeStudentExtraFields(
+    { 'סיסמה לגוב': 'old', 'פרט אחר': 'keep' },
+    { 'סיסמא לגוב': 'new' }
+  );
+
+  assert.deepEqual(result, {
+    merged: { 'פרט אחר': 'keep', 'סיסמא לגוב': 'new' },
+    added: 0
+  });
 });
 
 function setCell(sheet, address, value) {
