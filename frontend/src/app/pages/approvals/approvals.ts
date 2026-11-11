@@ -6,6 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { formatHebrewDate } from './hebrew-date';
 import { toStudyYear } from './study-year';
+import { printApprovalDocument } from './print-document';
 
 @Component({
 selector: 'app-approvals',
@@ -273,7 +274,10 @@ const additionalStudents = students.length - 1;
 const documentTitle = `${type.name} - ${firstStudentName}${additionalStudents ? ` ועוד ${additionalStudents}` : ''}`;
 
 const win = window.open('', '_blank', 'width=800,height=900');
-if (!win) return;
+if (!win) {
+window.alert('חלון ההדפסה נחסם. אפשרי חלונות קופצים לאתר ונסי שוב.');
+return;
+}
 win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
 <title>${this.escapeHtml(documentTitle)}</title>
 <style>
@@ -313,12 +317,7 @@ html, body { width: 148mm; margin: 0; }
 ${pages}
 </body></html>`);
 win.document.close();
-Promise.all(Array.from(win.document.images).map(image => image.decode()))
-.then(() => win.print())
-.catch(error => {
-console.error('Could not load approval print images', error);
-win.alert('לא ניתן לטעון את תמונת הרקע או החתימה. בדקי שהקבצים קיימים בתיקיית public והדפיסי שוב.');
-});
+printApprovalDocument(win);
 }
 
 escapeHtml(value: string): string {

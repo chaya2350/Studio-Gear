@@ -7,6 +7,7 @@ import { combineLatest } from 'rxjs';
 import { Student } from '../../models';
 import { formatHebrewDate } from './hebrew-date';
 import { toStudyYear } from './study-year';
+import { printApprovalDocument } from './print-document';
 
 @Component({
 selector: 'app-single-approval',
@@ -261,6 +262,7 @@ const documentTitle = `${this.approvalType.name} - ${this.name}`;
 
 const win = window.open('', '_blank', 'width=800,height=900');
 if (!win) {
+window.alert('חלון ההדפסה נחסם. אפשרי חלונות קופצים לאתר ונסי שוב.');
 return;
 }
 win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
@@ -319,12 +321,7 @@ ${this.useBlankBackground ? `<img src="${assetUrl('/blank-background.png')}" cla
 </div>
 </body></html>`);
 win.document.close();
-Promise.all(Array.from(win.document.images).map(image => image.decode()))
-.then(() => win.print())
-.catch(error => {
-console.error('Could not load approval print images', error);
-win.alert('לא ניתן לטעון את תמונת הרקע או החתימה. בדקי שהקבצים קיימים בתיקיית public והדפיסי שוב.');
-});
+printApprovalDocument(win);
 }
 
 private escapeHtml(value: string): string {
