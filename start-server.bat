@@ -9,6 +9,10 @@ echo Building the frontend...
 call npm run build
 if errorlevel 1 goto build_error
 
+echo Installing backend dependencies...
+call npm install --prefix "%~dp0backend"
+if errorlevel 1 goto dependency_error
+
 cd /d "%~dp0backend"
 if errorlevel 1 goto directory_error
 
@@ -25,6 +29,12 @@ exit /b
 :build_error
 echo.
 echo Frontend build failed. Check the error above.
+pause
+exit /b 1
+
+:dependency_error
+echo.
+echo Backend dependency installation failed. Check the error above.
 pause
 exit /b 1
 
