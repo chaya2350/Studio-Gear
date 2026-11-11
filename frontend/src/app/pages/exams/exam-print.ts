@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { splitTrackNames } from '../../utils/track-names';
+import { printA4LabelSheet } from '../../utils/label-print';
 
 
 @Component({
@@ -121,6 +122,15 @@ export class ExamPrintComponent implements OnInit {
   private openPrintWindow(students: any[], template: any | null, exam: any, barcodesOnly: boolean) {
     const base = window.location.origin;
     const logoUrl = `${base}/logo.png`;
+    if (barcodesOnly) {
+      printA4LabelSheet(students.map(student => ({
+        title: student.name,
+        subtitle: exam.name,
+        code: student.code,
+        barcodeUrl: `${base}/api/exam-codes/${encodeURIComponent(student.code)}/barcode`,
+      })), `מדבקות ברקוד — ${exam.name}`);
+      return;
+    }
 
     const renderQuestion = (q: any, i: number, type: string): string => {
       if (type === 'multiple_choice') {
@@ -149,23 +159,10 @@ export class ExamPrintComponent implements OnInit {
       return qs.map((q: any, i: number) => renderQuestion(q, i, tmpl.template_type)).join('');
     };
 
-    const questionsHtml = barcodesOnly ? '' : renderQuestionsHtml(template);
+    const questionsHtml = renderQuestionsHtml(template);
 
     const pages = students.map(s => {
       const barcodeUrl = `${base}/api/exam-codes/${encodeURIComponent(s.code)}/barcode`;
-      if (barcodesOnly) {
-        return `<div class="barcode-page">
-          <div class="bc-header">
-            <img class="logo-small" src="${logoUrl}" onerror="this.style.display='none'">
-            <div>
-              <div class="bc-name">${esc(s.name)}</div>
-              <div class="bc-exam">${esc(exam.name)}</div>
-            </div>
-          </div>
-          <img class="bc-img" src="${barcodeUrl}">
-          <div class="bc-code">${esc(s.code)}</div>
-        </div>`;
-      }
       return `<div class="exam-page">
         <div class="exam-header">
           <img class="logo" src="${logoUrl}" onerror="this.style.display='none'">
@@ -187,17 +184,7 @@ export class ExamPrintComponent implements OnInit {
       </div>`;
     }).join('');
 
-    const style = barcodesOnly ? `
-      body { font-family:'David','Times New Roman',serif; direction:rtl; margin:0; background:white; }
-      .barcode-page { display:inline-block; border:1.5px dashed #999; border-radius:10px; padding:12px 16px; margin:8px; text-align:center; width:200px; vertical-align:top; page-break-inside:avoid; }
-      .bc-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-      .logo-small { width:36px; height:36px; object-fit:contain; }
-      .bc-name { font-weight:800; font-size:13px; }
-      .bc-exam { font-size:10px; color:#555; }
-      .bc-img { width:90%; display:block; margin:4px auto; }
-      .bc-code { font-family:monospace; font-size:9px; color:#666; }
-      @media print { .barcode-page { page-break-inside:avoid; } }
-    ` : `
+    const style = `
       body { font-family:'David','Times New Roman',serif; direction:rtl; margin:0; background:white; font-size:13px; }
       .exam-page { padding:20px 28px; min-height:100vh; box-sizing:border-box; page-break-after:always; }
       .exam-page:last-child { page-break-after:auto; }
@@ -222,7 +209,11 @@ export class ExamPrintComponent implements OnInit {
     `;
 
     const win = window.open('', '_blank', 'width=900,height=1000');
-    const title = barcodesOnly ? `ברקודים — ${exam.name}` : `מבחנים — ${exam.name}`;
+    if (!win) {
+      window.alert('חלון ההדפסה נחסם. אפשרי חלונות קופצים לאתר ונסי שוב.');
+      return;
+    }
+    const title = `מבחנים — ${exam.name}`;
     win!.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>${title}</title><style>${style}</style></head><body>${pages}</body></html>`);
     win!.document.close();
 

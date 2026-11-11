@@ -1,8 +1,47 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+
+interface GoogleCredentialResponse {
+  credential: string;
+}
+
+interface GoogleIdentityApi {
+  accounts: {
+    id: {
+      initialize(options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }): void;
+      renderButton(element: HTMLElement, options: { theme: string; size: string; shape: string; width: number }): void;
+    };
+  };
+}
+
+declare global {
+  interface Window {
+    google?: GoogleIdentityApi;
+  }
+}
+
+let googleScriptLoad: Promise<void> | null = null;
+
+function loadGoogleIdentityScript(): Promise<void> {
+  if (window.google) return Promise.resolve();
+  if (!googleScriptLoad) {
+    googleScriptLoad = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        googleScriptLoad = null;
+        reject(new Error('Google sign-in script failed to load'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return googleScriptLoad;
+}
 
 @Component({
 selector: 'app-login',
@@ -47,6 +86,12 @@ required
 {{ loading() ? 'מתחברת...' : 'התחברות' }}
 </button>
 </form>
+<div class="google-login" [hidden]="!googleClientId()">
+<div class="login-divider"><span>או</span></div>
+<div #googleButton class="google-button"></div>
+<div *ngIf="googleError()" class="alert alert-error" role="alert">{{ googleError() }}</div>
+</div>
+<p *ngIf="googleUnavailable()" class="google-config-note">{{ googleUnavailable() }}</p>
 </section>
 `,
 styles: [
@@ -112,16 +157,26 @@ width: 100%;
 margin-top: 6px;
 justify-content: center;
 }
+.google-login { margin-top: 14px; }
+.login-divider { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: .82rem; }
+.login-divider::before, .login-divider::after { content: ''; height: 1px; flex: 1; background: var(--border); }
+.google-button { display: flex; justify-content: center; margin-top: 14px; min-height: 40px; }
+.google-login .alert { margin-top: 10px; }
+.google-config-note { margin: 14px 0 0; color: var(--text-muted); font-size: .78rem; }
 `,
 ],
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
+@ViewChild('googleButton', { static: true }) googleButton!: ElementRef<HTMLDivElement>;
 email = '';
 password = '';
 showPassword = false;
 remember = false;
 loading = signal(false);
 error = signal('');
+googleError = signal('');
+googleClientId = signal('');
+googleUnavailable = signal('');
 
 constructor(
 private auth: AuthService,
@@ -129,21 +184,68 @@ private route: ActivatedRoute,
 private router: Router,
 ) {}
 
+ngOnInit() {
+this.auth.getGoogleAuthConfiguration().subscribe({
+next: config => {
+const clientId = config.clientId;
+if (!config.enabled || !clientId) {
+this.googleUnavailable.set('כניסה עם Google עדיין לא הוגדרה במערכת.');
+return;
+}
+this.googleClientId.set(clientId);
+void loadGoogleIdentityScript().then(() => {
+if (!window.google) throw new Error('Google Identity Services is unavailable');
+window.google.accounts.id.initialize({
+client_id: clientId,
+callback: response => this.submitGoogleCredential(response.credential),
+});
+window.google.accounts.id.renderButton(this.googleButton.nativeElement, {
+theme: 'outline',
+size: 'large',
+shape: 'rectangular',
+width: Math.min(this.googleButton.nativeElement.clientWidth || 320, 360),
+});
+}).catch(error => {
+console.error('Could not initialize Google sign-in:', error);
+this.googleError.set('לא ניתן לטעון כניסה עם Google כרגע. אפשר להתחבר עם אימייל וסיסמה.');
+});
+},
+error: error => {
+console.error('Could not load Google sign-in configuration:', error);
+this.googleUnavailable.set('לא ניתן לטעון כרגע את אפשרות הכניסה עם Google.');
+},
+});
+}
+
 submit() {
 if (this.loading()) return;
 this.loading.set(true);
 this.error.set('');
 this.auth.login(this.email.trim(), this.password, this.remember).subscribe({
-next: () => {
-const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/';
-const destination =
-returnUrl.startsWith('/') && !returnUrl.startsWith('//') ? returnUrl : '/';
-this.router.navigateByUrl(destination);
-},
+next: () => this.navigateAfterLogin(),
 error: (error) => {
 this.error.set(error.error?.error || 'לא ניתן להתחבר כרגע. נסי שוב.');
 this.loading.set(false);
 },
 });
+}
+
+private submitGoogleCredential(credential: string) {
+if (this.loading()) return;
+this.loading.set(true);
+this.googleError.set('');
+this.auth.loginWithGoogle(credential, this.remember).subscribe({
+next: () => this.navigateAfterLogin(),
+error: error => {
+this.googleError.set(error.error?.error || 'לא ניתן להתחבר עם Google כרגע. נסי שוב.');
+this.loading.set(false);
+},
+});
+}
+
+private navigateAfterLogin() {
+const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/';
+const destination = returnUrl.startsWith('/') && !returnUrl.startsWith('//') ? returnUrl : '/';
+this.router.navigateByUrl(destination);
 }
 }

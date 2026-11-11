@@ -7,6 +7,7 @@ import { CartService } from '../../services/cart.service';
 import { Equipment, Loan } from '../../models';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { EquipmentTimelineComponent } from '../../components/equipment-timeline/equipment-timeline';
+import { printA4LabelSheet } from '../../utils/label-print';
 
 @Component({
 selector: 'app-equipment-detail',
@@ -1136,15 +1137,11 @@ this.api.deleteEquipment(this.item()!.id).subscribe(() => this.router.navigate([
 
 printBarcode() {
 const item = this.item()!;
-const url = this.api.getBarcodeUrl(item.id);
-const win = window.open('', '_blank', 'width=400,height=300');
-if (!win) return;
-win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>ברקוד - ${item.name}</title>
-<style>body{font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;background:white;}
-.name{font-size:18px;font-weight:700;margin-bottom:12px;color:#1e1e2e;}.barcode-num{font-size:13px;color:#666;margin-top:8px;font-family:monospace;}img{max-width:280px;}
-@media print{body{height:auto;padding:20px;}}</style></head>
-<body><div class="name">${item.name}</div><img src="${url}" onload="window.print();window.close();">
-<div class="barcode-num">${item.barcode}</div></body></html>`);
-win.document.close();
+printA4LabelSheet([{
+title: item.name,
+subtitle: [item.category, item.subcategory].filter(Boolean).join(' · '),
+code: item.barcode,
+barcodeUrl: this.api.getBarcodeUrl(item.id),
+}], `מדבקת ברקוד — ${item.name}`);
 }
 }

@@ -7,6 +7,7 @@ const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const { createHash, randomBytes } = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 const { hashPassword, verifyPassword, initializeAuthSchema, sessionCookie: makeSessionCookie, SESSION_SECONDS } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
@@ -104,6 +105,8 @@ if (fs.existsSync(frontendDir)) {
 
 const sessionCookie = 'studio_session';
 const sessionDurationSeconds = SESSION_SECONDS;
+const googleOAuthClient = new OAuth2Client();
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || '';
 const certDirForCheck = process.env.STUDIO_CERT_DIR || path.join(__dirname, 'certs');
 const useHttps = fs.existsSync(path.join(certDirForCheck, 'key.pem')) && fs.existsSync(path.join(certDirForCheck, 'cert.pem'));
 
@@ -169,6 +172,23 @@ function getRoleName(role) {
   return db.prepare('SELECT name FROM system_roles WHERE role_key = ?').get(role)?.name || role;
 }
 
+function createUserSession(user, res, remember) {
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + sessionDurationSeconds * 1000).toISOString();
+  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+    .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
+  appendSessionCookie(res, token, remember);
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    coordinator_track: user.coordinator_track || null,
+    role_name: getRoleName(user.role),
+    permissions: getUserPermissions(user.role)
+  };
+}
+
 function authorizeApi(req, res, next) {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isAllowedOrigin(req)) {
     return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
@@ -190,6 +210,10 @@ function authorizePermission(req, res, next) {
   next();
 }
 
+app.get('/api/auth/google-config', (_req, res) => {
+  res.json({ enabled: Boolean(googleClientId), clientId: googleClientId || null });
+});
+
 app.post('/api/auth/login', (req, res) => {
   if (!isAllowedOrigin(req)) return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -203,12 +227,39 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'האימייל או הסיסמה שגויים' });
   }
 
-  const token = randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + sessionDurationSeconds * 1000).toISOString();
-  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(createHash('sha256').update(token).digest('hex'), user.id, expiresAt);
-  appendSessionCookie(res, token, req.body?.remember === true);
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, coordinator_track: user.coordinator_track || null, role_name: getRoleName(user.role), permissions: getUserPermissions(user.role) });
+  res.json(createUserSession(user, res, req.body?.remember === true));
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  if (!isAllowedOrigin(req)) return res.status(403).json({ error: 'מקור הבקשה אינו מורשה' });
+  if (!googleClientId) return res.status(503).json({ error: 'התחברות Google לא הוגדרה במערכת' });
+
+  const credential = req.body?.credential;
+  if (typeof credential !== 'string' || credential.length > 10000) {
+    return res.status(400).json({ error: 'נתוני ההתחברות של Google אינם תקינים' });
+  }
+
+  let payload;
+  try {
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: googleClientId
+    });
+    payload = ticket.getPayload();
+  } catch (error) {
+    console.error('Google sign-in token verification failed:', error.message);
+    return res.status(401).json({ error: 'לא ניתן לאמת את חשבון Google. נסי להתחבר שוב.' });
+  }
+
+  const email = payload?.email?.trim().toLowerCase();
+  if (payload?.email_verified !== true || !email) {
+    return res.status(401).json({ error: 'כתובת האימייל בחשבון Google אינה מאומתת' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE AND active = 1').get(email);
+  if (!user) return res.status(403).json({ error: 'אין חשבון פעיל במערכת עבור כתובת האימייל הזו' });
+
+  res.json(createUserSession(user, res, req.body?.remember === true));
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -2726,6 +2777,7 @@ app.get('/api/equipment/:id/barcode', async (req, res) => {
       scale: 3,
       height: 14,
       includetext: false,
+      paddingwidth: 8,
       backgroundcolor: 'ffffff',
     });
     res.set('Content-Type', 'image/png');
@@ -3196,7 +3248,7 @@ app.get('/api/exam-codes/:code/barcode', async (req, res) => {
   `).get(req.params.code);
   if (!row) return res.status(404).json({ error: 'קוד לא נמצא' });
   try {
-    const png = await bwipjs.toBuffer({ bcid: 'code128', text: row.code, scale: 3, height: 12, includetext: false });
+    const png = await bwipjs.toBuffer({ bcid: 'code128', text: row.code, scale: 3, height: 12, includetext: false, paddingwidth: 8 });
     res.type('image/png');
     res.set('X-Student-Name', encodeURIComponent(row.name));
     res.send(png);

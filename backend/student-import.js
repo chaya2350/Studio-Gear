@@ -361,6 +361,8 @@ function parseStudentWorkbook(buffer) {
         acc[String(header).trim()] = cleanValue;
         return acc;
       }, {});
+      if (firstName) extra_fields['שם פרטי'] = firstName;
+      if (lastName) extra_fields['שם משפחה'] = lastName;
 
       return {
         id_number,

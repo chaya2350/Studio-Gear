@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Equipment, Category } from '../../models';
+import { printA4LabelSheet } from '../../utils/label-print';
 
 type View = 'categories' | 'subcategories' | 'items';
 
@@ -703,57 +704,11 @@ return map[cat] ?? '';
 
 printAllBarcodes() {
 const items = this.all();
-const base = '/api';
-const sizeMap: Record<string, { w: string; h: string }> = {
-'מצלמות': { w: '50mm', h: '20mm' },
-'עדשות': { w: '35mm', h: '15mm' },
-'חצובות': { w: '65mm', h: '28mm' },
-'תאורה': { w: '75mm', h: '32mm' },
-'שמע': { w: '55mm', h: '22mm' },
-};
-const getSize = (cat: string) => sizeMap[cat] ?? { w: '50mm', h: '20mm' };
-const rows = items.map(item => {
-const s = getSize(item.category);
-return `
-<div class="bc-item" style="width:${s.w}; height:${s.h}">
-<div class="bc-name">${item.name}</div>
-<img src="${base}/equipment/${item.id}/barcode">
-<div class="bc-code">${item.barcode}</div>
-</div>`;
-}).join('');
-
-const win = window.open('', '_blank', 'width=900,height=700')!;
-win.document.write(`
-<!DOCTYPE html><html dir="rtl"><head>
-<meta charset="utf-8">
-<title>ברקודים — ציוד הסטודיו</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; background: #fff; padding: 6px; }
-h2 { text-align: center; font-size: 0.85rem; margin-bottom: 8px; color: #333; border-bottom: 1px solid #6c63ff; padding-bottom: 5px; }
-.grid { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
-.bc-item {
-border: 0.5px solid #999; display: flex; flex-direction: column;
-align-items: stretch; overflow: hidden; break-inside: avoid; padding: 2px;
-}
-.bc-name { font-size: 6pt; font-weight: 700; color: #222; text-align: center; padding: 1.5px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
-.bc-code { font-size: 5.5pt; font-family: monospace; color: #444; text-align: center; padding: 1px 2px; flex-shrink: 0; letter-spacing: 0.3px; }
-img { width: 100%; flex: 1; object-fit: fill; display: block; min-height: 0; }
-@media print { body { padding: 4px; } @page { margin: 5mm; size: A4; } }
-</style></head><body>
-<h2> ברקודים — ציוד הסטודיו (${items.length} פריטים)</h2>
-<div class="grid">${rows}</div>
-<script>
-const imgs = document.querySelectorAll('img');
-let loaded = 0;
-if (!imgs.length) { window.print(); window.close(); }
-imgs.forEach(img => {
-const done = () => { if (++loaded === imgs.length) { window.print(); window.close(); } };
-if (img.complete) done(); else { img.onload = done; img.onerror = done; }
-});
-<\/script>
-</body></html>
-`);
-win.document.close();
+printA4LabelSheet(items.map(item => ({
+title: item.name,
+subtitle: [item.category, item.subcategory].filter(Boolean).join(' · '),
+code: item.barcode,
+barcodeUrl: this.api.getBarcodeUrl(item.id),
+})), `מדבקות ברקוד — ציוד הסטודיו`);
 }
 }
