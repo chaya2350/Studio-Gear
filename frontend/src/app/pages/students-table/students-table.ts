@@ -352,6 +352,11 @@ export class StudentsTableComponent implements OnInit {
     return String(student.extra_data?.['שם פרטי'] || '').trim().replace(/\s+/g, ' ');
   }
 
+  private compareByFamilyAndGivenName(a: TableStudent, b: TableStudent): number {
+    return this.studentFamilyName(a).localeCompare(this.studentFamilyName(b), 'he')
+      || this.studentGivenNames(a).localeCompare(this.studentGivenNames(b), 'he');
+  }
+
   displayStudentName(student: TableStudent, order: string = this.sortBy()): string {
     const name = student.name.trim().replace(/\s+/g, ' ');
     const familyName = this.studentFamilyName(student);
@@ -387,13 +392,15 @@ export class StudentsTableComponent implements OnInit {
       );
     }
     return [...list].sort((a, b) => {
-      if (this.sortBy() === 'family') return this.studentFamilyName(a).localeCompare(this.studentFamilyName(b), 'he')
-        || this.displayStudentName(a).localeCompare(this.displayStudentName(b), 'he');
+      if (this.sortBy() === 'family') return this.compareByFamilyAndGivenName(a, b);
       if (this.sortBy() === 'name') return this.studentGivenNames(a).localeCompare(this.studentGivenNames(b), 'he')
         || this.studentFamilyName(a).localeCompare(this.studentFamilyName(b), 'he');
-      if (this.sortBy() === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he');
-      if (this.sortBy() === 'missing') return b.missingRequired - a.missingRequired;
-      if (this.sortBy() === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1);
+      if (this.sortBy() === 'class')   return `${a.class_name}${a.parallel}`.localeCompare(`${b.class_name}${b.parallel}`, 'he')
+        || this.compareByFamilyAndGivenName(a, b);
+      if (this.sortBy() === 'missing') return b.missingRequired - a.missingRequired
+        || this.compareByFamilyAndGivenName(a, b);
+      if (this.sortBy() === 'avg')     return (b.examAvg ?? -1) - (a.examAvg ?? -1)
+        || this.compareByFamilyAndGivenName(a, b);
       return 0;
     });
   });
