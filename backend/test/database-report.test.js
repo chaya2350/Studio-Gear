@@ -134,7 +134,7 @@ test('minimizeClassReport excludes personal student and exam fields', () => {
 
 test('buildScopedStudentReport returns counts and name lists for class, school, and track scopes', () => {
   const students = [
-    { id_number: '111', name: 'שרה א', year: 'א', parallel: '1', track: 'הוראה / עיצוב', photo_url: '/uploads/student.jpg' },
+    { id_number: '111', name: 'שרה א', year: 'א', parallel: '1', track: 'הוראה / עיצוב', photo_url: '/uploads/student.jpg', birth_date: '2005-04-03' },
     { id_number: '222', name: 'שרה ב', year: 'א', parallel: '2', track: 'הוראה' },
     { id_number: '333', name: 'שרה ג', year: 'ב', parallel: '1', track: 'עיצוב' },
     { id_number: '444', name: 'בוגרת', year: 'בוגרות', parallel: null, track: 'הוראה' }
@@ -159,6 +159,21 @@ test('buildScopedStudentReport returns counts and name lists for class, school, 
   assert.equal(trackReport.rows.some(row => 'id_number' in row), false);
   assert.equal(linkedReport.rows[0].id_number, '111');
   assert.equal(linkedReport.rows[0].photo_url, '/uploads/student.jpg');
+  assert.equal(linkedReport.rows[0].birth_date, '2005-04-03');
+});
+
+test('buildScopedStudentReport reads legacy Gregorian birth dates from extra data', () => {
+  const report = buildScopedStudentReport([
+    {
+      id_number: '111',
+      name: 'שרה א',
+      year: 'א',
+      track: 'הוראה',
+      extra_data: { 'ת.לידה': '3/4/2005' }
+    }
+  ], [], {}, { scope: 'school', includeProfileData: true });
+
+  assert.equal(report.rows[0].birth_date, '2005-04-03');
 });
 
 test('buildTrackReport shows only track-specific exams and credentials without phone prefix', () => {

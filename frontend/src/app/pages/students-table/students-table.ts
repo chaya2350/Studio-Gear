@@ -18,6 +18,7 @@ interface TableStudent {
   parallel?: string;
   phone?: string;
   birth_date?: string;
+  birth_date_hebrew?: string;
   address?: string;
   extra_data?: Record<string, any>;
   // computed
@@ -47,7 +48,7 @@ interface TableStudent {
     <p class="subtitle">תצוגת Excel — כל הפרטים במקום אחד</p>
   </div>
   <div class="header-actions">
-    <button class="btn btn-secondary" (click)="exportExcel()" [disabled]="!filtered().length">⬇ ייצוא Excel</button>
+    <button class="btn btn-secondary" (click)="exportExcel()" [disabled]="!filtered().length || exporting()">⬇ ייצוא Excel</button>
     <button class="btn btn-secondary" (click)="printTable()" [disabled]="!filtered().length">🖨 הדפסה</button>
   </div>
 </div>
@@ -120,6 +121,11 @@ interface TableStudent {
   </div>
 </div>
 
+<div *ngIf="!loading() && filtered().length && !hasBirthDates()" class="alert alert-warning" role="status">
+  לא נשמרו תאריכי לידה עבור הבחירה. כדי להציגם, ייבאי מחדש קובץ תלמידות עם עמודת תאריך לידה.
+</div>
+<div *ngIf="exportError()" class="alert alert-danger" role="alert">{{ exportError() }}</div>
+
 <!-- טבלה -->
 <div class="table-wrap card" *ngIf="filtered().length">
   <div class="table-scroll" id="print-area">
@@ -162,7 +168,7 @@ interface TableStudent {
           <td class="col-track">{{ s.track || '' }}</td>
           <td class="col-year">{{ toStudyYear(s.year) }}</td>
           <td class="col-phone mono">{{ s.phone || '' }}</td>
-          <td class="col-birth">{{ s.birth_date || '' }}</td>
+          <td class="col-birth">{{ displayBirthDate(s) }}</td>
           <td class="col-reqs">
             <span class="reqs-bar">
               <span class="reqs-fill" [style.width.%]="s.totalReqs ? (s.completedReqs/s.totalReqs*100) : 100"></span>
@@ -269,6 +275,8 @@ export class StudentsTableComponent implements OnInit {
   showExtra = false;
 
   popupPhoto = signal<TableStudent | null>(null);
+  exporting = signal(false);
+  exportError = signal('');
 
   private allStudents = signal<TableStudent[]>([]);
   private allClasses = signal<{ parallel: string; label: string; count: number }[]>([]);
@@ -407,6 +415,8 @@ export class StudentsTableComponent implements OnInit {
     });
   });
 
+  hasBirthDates = computed(() => this.filtered().some(s => s.birth_date || s.birth_date_hebrew));
+
   constructor(private api: ApiService, public auth: AuthService) {}
 
   // מרכזת מסלול רואה רק את המסלול שלה
@@ -445,36 +455,73 @@ export class StudentsTableComponent implements OnInit {
     });
   }
 
-  exportExcel() {
-    const rows = this.filtered();
-    const headers = ['שם', 'ת.ז', 'כיתה', 'מסלול', 'שנה', 'טלפון', 'תאריך לידה', 'דרישות הושלמו', 'חסרות חובה', 'ממוצע מבחנים'];
-    if (this.showExtra) headers.push(...this.extraKeys());
+  displayBirthDate(student: TableStudent): string {
+    return this.formatBirthDate(student.birth_date) || student.birth_date_hebrew || 'לא הוזן';
+  }
 
-    const data = rows.map(s => {
-      const row: string[] = [
-        this.displayStudentName(s), s.id_number,
-        `${s.class_name || ''}${s.parallel && s.parallel !== '0' ? s.parallel : ''}`,
-        s.track || '', toStudyYear(s.year), s.phone || '',
-        s.birth_date || '',
-        `${s.completedReqs}/${s.totalReqs}`,
-        String(s.missingRequired),
-        s.examAvg != null ? String(s.examAvg.toFixed(1)) : ''
-      ];
-      if (this.showExtra) this.extraKeys().forEach(k => row.push(s.extra_data?.[k] ?? ''));
-      return row;
-    });
+  private formatBirthDate(value?: string): string {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
+  }
 
-    const csv = '\uFEFF' + [headers, ...data].map(r =>
-      r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-    ).join('\r\n');
+  async exportExcel(): Promise<void> {
+    if (this.exporting()) return;
+    this.exporting.set(true);
+    this.exportError.set('');
+    try {
+      const rows = this.filtered();
+      const extraKeys = this.showExtra ? this.extraKeys() : [];
+      const headers = ['שם', 'ת.ז', 'כיתה', 'מסלול', 'שנה', 'טלפון', 'תאריך לידה', 'דרישות הושלמו', 'חסרות חובה', 'ממוצע מבחנים', ...extraKeys];
+      const { default: ExcelJS } = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('תלמידות', {
+        views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }]
+      });
+      const columnWidths = [28, 16, 12, 24, 10, 16, 16, 16, 14, 16, ...extraKeys.map(() => 24)];
+      worksheet.columns = headers.map((_header, index) => ({ width: columnWidths[index] || 18 }));
+      worksheet.addRow(headers);
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).alignment = { horizontal: 'right', vertical: 'middle' };
+      worksheet.autoFilter = {
+        from: 'A1',
+        to: `${worksheet.getColumn(headers.length).letter}1`
+      };
+      worksheet.getColumn(2).numFmt = '@';
+      worksheet.getColumn(6).numFmt = '@';
+      worksheet.getColumn(7).numFmt = '@';
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `תלמידות_${new Date().toLocaleDateString('he-IL').replace(/\//g, '-')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      rows.forEach(s => {
+        const row: (string | number)[] = [
+          this.displayStudentName(s), String(s.id_number || ''),
+          `${s.class_name || ''}${s.parallel && s.parallel !== '0' ? s.parallel : ''}`,
+          s.track || '', toStudyYear(s.year), s.phone || '',
+          this.displayBirthDate(s),
+          `${s.completedReqs}/${s.totalReqs}`,
+          String(s.missingRequired),
+          s.examAvg != null ? String(s.examAvg.toFixed(1)) : '',
+          ...extraKeys.map(k => String(s.extra_data?.[k] ?? ''))
+        ];
+        const worksheetRow = worksheet.addRow(row);
+        worksheetRow.eachCell(cell => { cell.alignment = { horizontal: 'right', vertical: 'middle' }; });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([new Uint8Array(buffer)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `תלמידות_${new Date().toLocaleDateString('he-IL').replace(/\//g, '-')}.xlsx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error('Students table Excel export failed:', error);
+      this.exportError.set('ייצוא הקובץ נכשל. נסי שוב.');
+    } finally {
+      this.exporting.set(false);
+    }
   }
 
   printTable() {

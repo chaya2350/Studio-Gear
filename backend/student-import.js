@@ -199,7 +199,10 @@ const knownHeaders = {
   phoneCode: ['קוד לטלפון', 'קידומת', 'קוד טלפון', 'phone code', 'phone_code', 'קוד-טלפון'],
   track: ['התמחות', 'מסלול', 'התמחות 1', 'מגמה', 'track', 'מסלול/התמחות'],
   year: ['כיתה', 'שנה', 'year', 'class'],
-  birthDate: ['ת. לידה לועזי', 'תאריך לידה לועזי', 'תאריך לידה', 'birth_date', 'date_of_birth'],
+  birthDate: [
+    'ת. לידה לועזי', 'תאריך לידה לועזי', 'ת. לידה', 'ת.לידה',
+    'תאריך לידה', 'birth_date', 'date_of_birth'
+  ],
   birthDateHebrew: ['ת. לידה עברי', 'תאריך לידה עברי', 'birth_date_hebrew', 'hebrew_birth_date'],
   address: ['כתובת', 'כתובת מגורים', 'address'],
   house: ['מספר בית', 'מס בית', 'בית'],

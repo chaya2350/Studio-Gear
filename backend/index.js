@@ -1712,7 +1712,10 @@ function mapStudentRow(row) {
       ? null
       : (buildStudentClassName(row.year, row.parallel) || String(row.class_name || '').trim()),
     track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
-    birth_date: normalizeBirthDate(row.birth_date),
+    birth_date: normalizeBirthDate(row.birth_date ||
+      extraData['ת. לידה לועזי'] || extraData['תאריך לידה לועזי'] ||
+      extraData['ת. לידה'] || extraData['ת.לידה'] || extraData['תאריך לידה'] ||
+      extraData.birth_date || extraData.date_of_birth),
     birth_date_hebrew: normalizeHebrewBirthDate(row.birth_date_hebrew ||
       extraData['ת. לידה עברי'] || extraData['תאריך לידה עברי']),
     extra_data: extraData
@@ -2560,7 +2563,7 @@ app.get('/api/reports/data', (req, res) => {
   if (scope === 'track' && !track) return res.status(400).json({ error: 'יש לבחור מסלול' });
 
   const students = db.prepare(`
-    SELECT id_number, name, year, parallel, track, extra_data, photo_url
+    SELECT id_number, name, year, parallel, track, extra_data, photo_url, birth_date, birth_date_hebrew
     FROM students ORDER BY name
   `).all();
   const exams = db.prepare('SELECT id, name, year, track FROM exams').all();

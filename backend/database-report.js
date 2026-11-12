@@ -1,3 +1,5 @@
+const { normalizeBirthDate } = require('./student-import');
+
 function parseExtraData(rawValue) {
   if (!rawValue) return {};
   if (typeof rawValue === 'object') return rawValue;
@@ -320,6 +322,10 @@ function buildScopedStudentReport(students, exams, gradesByExam, options) {
     };
     if (options.includeProfileData) {
       row.id_number = student.id_number || '';
+      row.birth_date = normalizeBirthDate(student.birth_date ||
+        extra['ת. לידה לועזי'] || extra['תאריך לידה לועזי'] ||
+        extra['ת. לידה'] || extra['ת.לידה'] || extra['תאריך לידה'] ||
+        extra.birth_date || extra.date_of_birth) || student.birth_date_hebrew || '';
       row.photo_url = student.photo_url || '';
     }
     for (const exam of safeExams) row[`exam_${exam.id}`] = gradesByExam?.[exam.id]?.[student.id_number] ?? '';
