@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds } = require('../database-report');
+const {
+  buildTrackReport, buildClassReport, buildScopedStudentReport, minimizeClassReport,
+  splitTrackValues, studentHasTrack, resolveStudentTrackIds
+} = require('../database-report');
 
 test('splitTrackValues separates combined track values without merging distinct track names', () => {
   assert.deepEqual(splitTrackValues('הוראה / אדריכלות'), ['הוראה', 'אדריכלות']);
@@ -111,6 +114,51 @@ test('buildClassReport canonicalizes aliases without merging distinct track name
   const report = buildClassReport(students, [], {}, 'ה2');
 
   assert.equal(report.rows[0].track, 'חינוך מיוחד / הוראה / הוראה מתקנת');
+});
+
+test('minimizeClassReport excludes personal student and exam fields', () => {
+  const report = minimizeClassReport({
+    class_name: 'יב2',
+    year: 'יב',
+    exams: [{ id: 8, name: 'מבחן', year: 'יב', track: 'חשאי' }],
+    rows: [{ name: 'רחל', id_number: '123456789', phone: '0501234567', address: 'כתובת', exam_8: 91 }]
+  });
+
+  assert.deepEqual(report.exams, [{ id: 8, name: 'מבחן', year: 'יב' }]);
+  assert.deepEqual(report.rows, [{ name: 'רחל', exam_8: 91 }]);
+  assert.deepEqual(report.columns, [
+    { key: 'name', label: 'שם' },
+    { key: 'exam_8', label: 'מבחן' }
+  ]);
+});
+
+test('buildScopedStudentReport returns counts and name lists for class, school, and track scopes', () => {
+  const students = [
+    { id_number: '111', name: 'שרה א', year: 'א', parallel: '1', track: 'הוראה / עיצוב', photo_url: '/uploads/student.jpg' },
+    { id_number: '222', name: 'שרה ב', year: 'א', parallel: '2', track: 'הוראה' },
+    { id_number: '333', name: 'שרה ג', year: 'ב', parallel: '1', track: 'עיצוב' },
+    { id_number: '444', name: 'בוגרת', year: 'בוגרות', parallel: null, track: 'הוראה' }
+  ];
+  const exams = [
+    { id: 1, name: 'מבחן א', year: 'א', track: 'הוראה' },
+    { id: 2, name: 'מבחן ב', year: 'ב', track: 'עיצוב' }
+  ];
+  const grades = { 1: { 111: 90, 222: 80 }, 2: { 333: 95 } };
+
+  const classReport = buildScopedStudentReport(students, exams, grades, { scope: 'class', className: 'א1' });
+  const linkedReport = buildScopedStudentReport(students, exams, grades, {
+    scope: 'class', className: 'א1', includeProfileData: true
+  });
+  const schoolReport = buildScopedStudentReport(students, exams, grades, { scope: 'school' });
+  const trackReport = buildScopedStudentReport(students, exams, grades, { scope: 'track', track: 'הוראה' });
+
+  assert.equal(classReport.count, 1);
+  assert.deepEqual(classReport.rows.map(row => row.name), ['שרה א']);
+  assert.equal(schoolReport.count, 3);
+  assert.deepEqual(trackReport.rows.map(row => row.name), ['שרה א', 'שרה ב']);
+  assert.equal(trackReport.rows.some(row => 'id_number' in row), false);
+  assert.equal(linkedReport.rows[0].id_number, '111');
+  assert.equal(linkedReport.rows[0].photo_url, '/uploads/student.jpg');
 });
 
 test('buildTrackReport shows only track-specific exams and credentials without phone prefix', () => {

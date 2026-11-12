@@ -20,6 +20,8 @@ interface DashboardStats {
   totalStudents?: number;
 }
 
+type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
+
 @Component({
   selector: 'app-home',
   imports: [RouterLink, CommonModule],
@@ -70,6 +72,32 @@ interface DashboardStats {
     </div>
   </section>
 
+  <div class="dashboard-tools">
+    <button type="button" class="dashboard-customize-btn" (click)="customizeOpen.update(open => !open)"
+            [attr.aria-expanded]="customizeOpen()" aria-controls="dashboard-customizer">
+      <span aria-hidden="true">✦</span> התאמת לוח הבית
+    </button>
+  </div>
+  <section *ngIf="customizeOpen()" id="dashboard-customizer" class="dashboard-customizer" aria-label="התאמת לוח הבית">
+    <div class="customizer-heading">
+      <div><strong>הלוח שלך</strong><small>בחרי כרטיסים וסדרי אותם כרצונך</small></div>
+      <button type="button" class="customizer-reset" (click)="resetDashboard()">איפוס</button>
+    </div>
+    <div class="customizer-widgets">
+      <div *ngFor="let widget of dashboardWidgets" class="customizer-widget">
+        <label><input type="checkbox" [checked]="widgetVisible(widget.key)"
+                      (change)="setWidgetVisible(widget.key, $any($event.target).checked)">{{ widget.label }}</label>
+        <div class="customizer-order">
+          <button type="button" (click)="moveWidget(widget.key, -1)" [disabled]="widgetOrder(widget.key) === 0"
+                  [attr.aria-label]="'הזזת ' + widget.label + ' למעלה'">↑</button>
+          <button type="button" (click)="moveWidget(widget.key, 1)"
+                  [disabled]="widgetOrder(widget.key) === dashboardWidgets.length - 1"
+                  [attr.aria-label]="'הזזת ' + widget.label + ' למטה'">↓</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ══════════════  BODY  ══════════════ -->
   <div class="body-grid">
 
@@ -77,7 +105,8 @@ interface DashboardStats {
     <div class="panels-stack">
 
       <!-- Tasks -->
-      <article *ngIf="auth.hasPermission('messages')" class="card card--tasks">
+      <article *ngIf="widgetVisible('tasks') && auth.hasPermission('messages')" class="card card--tasks"
+               [style.order]="widgetOrder('tasks')">
         <header class="card-header">
           <span class="card-eyebrow">היום</span>
           <h2 class="card-title">משימות</h2>
@@ -132,7 +161,8 @@ interface DashboardStats {
       </article>
 
       <!-- Events -->
-      <article *ngIf="auth.hasPermission('calendar')" class="card card--events">
+      <article *ngIf="widgetVisible('events') && auth.hasPermission('calendar')" class="card card--events"
+               [style.order]="widgetOrder('events')">
         <header class="card-header">
           <span class="card-eyebrow">לוח שנה</span>
           <h2 class="card-title">אירועים היום</h2>
@@ -181,6 +211,26 @@ interface DashboardStats {
             }
           </footer>
         }
+      </article>
+
+      <article *ngIf="widgetVisible('classes') && auth.hasPermission('students')" class="card class-overview-card"
+               [style.order]="widgetOrder('classes')">
+        <header class="card-header">
+          <span class="card-eyebrow">תלמידות</span>
+          <h2 class="card-title">תמונת מצב כיתתית</h2>
+          <a routerLink="/students-table" class="card-cta">לכל התלמידות</a>
+        </header>
+        <div *ngIf="classesLoading()" class="shimmer-stack">
+          <div class="shimmer w-full"></div><div class="shimmer w-3q"></div>
+        </div>
+        <div *ngIf="!classesLoading() && !classCounts().length" class="nil-state"><p>אין נתוני כיתות להצגה</p></div>
+        <ul *ngIf="!classesLoading() && classCounts().length" class="class-count-list">
+          <li *ngFor="let group of classCounts()">
+            <a routerLink="/students-table">{{ group.label }}</a>
+            <span class="class-count-track"><span [style.width.%]="classCountPercent(group.count)"></span></span>
+            <strong>{{ group.count }}</strong>
+          </li>
+        </ul>
       </article>
 
     </div>
@@ -394,6 +444,33 @@ interface DashboardStats {
       flex-direction: column;
       gap: 20px;
     }
+    .dashboard-tools { display:flex; justify-content:flex-end; padding:12px 44px 0; }
+    .dashboard-customize-btn,.customizer-reset {
+      border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--primary);
+      padding:8px 14px; font:inherit; font-size:.8rem; font-weight:700; cursor:pointer;
+    }
+    .dashboard-customize-btn:hover,.customizer-reset:hover { border-color:var(--primary); background:var(--primary-light); }
+    .dashboard-customizer {
+      margin:8px 44px 0; padding:16px 18px; border:1px solid var(--border); border-radius:var(--radius);
+      background:var(--surface); box-shadow:var(--shadow-sm);
+    }
+    .customizer-heading,.customizer-widget { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .customizer-heading strong,.customizer-heading small { display:block; }
+    .customizer-heading small { margin-top:3px; color:var(--text-muted); font-size:.78rem; }
+    .customizer-widgets { display:flex; flex-wrap:wrap; gap:10px 24px; margin-top:14px; }
+    .customizer-widget { min-width:190px; }
+    .customizer-widget label { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.85rem; }
+    .customizer-widget input { accent-color:var(--primary); }
+    .customizer-order { display:flex; gap:4px; }
+    .customizer-order button { border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); cursor:pointer; }
+    .customizer-order button:disabled { opacity:.35; cursor:default; }
+    .class-count-list { list-style:none; padding:10px 22px 18px; }
+    .class-count-list li { display:grid; grid-template-columns:70px 1fr 30px; gap:12px; align-items:center; padding:9px 0; }
+    .class-count-list a { color:var(--text); font-weight:700; text-decoration:none; }
+    .class-count-list a:hover { color:var(--primary); }
+    .class-count-track { height:8px; border-radius:10px; background:var(--surface-3); overflow:hidden; }
+    .class-count-track span { display:block; height:100%; border-radius:inherit; background:var(--grad-primary); transition:width .25s ease; }
+    .class-count-list strong { color:var(--primary); text-align:left; font-variant-numeric:tabular-nums; }
 
     /* ══════════════════════════════════════════════════════
        CARD (base)
@@ -748,6 +825,8 @@ interface DashboardStats {
        RESPONSIVE
     ══════════════════════════════════════════════════════ */
     @media (max-width: 1060px) {
+      .dashboard-tools { padding:12px 24px 0; }
+      .dashboard-customizer { margin-inline:24px; }
       .body-grid {
         grid-template-columns: 1fr;
         padding: 24px 24px 48px;
@@ -791,6 +870,16 @@ export class HomeComponent implements OnInit {
   readonly tasks         = signal<Task[]>([]);
   readonly events        = signal<CalendarEvent[]>([]);
   readonly stats         = signal<DashboardStats | null>(null);
+  readonly customizeOpen = signal(false);
+  readonly classesLoading = signal(true);
+  readonly classCounts = signal<{ parallel: string; label: string; count: number }[]>([]);
+  readonly dashboardOrder = signal<DashboardWidgetKey[]>(['tasks', 'events', 'classes']);
+  readonly dashboardVisibility = signal<Record<DashboardWidgetKey, boolean>>({ tasks: true, events: true, classes: true });
+  readonly dashboardWidgets: { key: DashboardWidgetKey; label: string }[] = [
+    { key: 'tasks', label: 'משימות היום' },
+    { key: 'events', label: 'אירועים' },
+    { key: 'classes', label: 'תמונת מצב כיתתית' },
+  ];
 
   readonly todayStr = new Date().toISOString().slice(0, 10);
 
@@ -845,9 +934,73 @@ export class HomeComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.restoreDashboard();
     this.loadTasks();
     this.loadEvents();
     this.loadStats();
+    if (this.auth.hasPermission('students')) this.loadClassCounts();
+    else this.classesLoading.set(false);
+  }
+
+  widgetVisible(key: DashboardWidgetKey): boolean { return this.dashboardVisibility()[key]; }
+  widgetOrder(key: DashboardWidgetKey): number { return this.dashboardOrder().indexOf(key); }
+  classCountPercent(count: number): number {
+    const largest = Math.max(1, ...this.classCounts().map(group => group.count));
+    return Math.max(4, Math.round(count / largest * 100));
+  }
+
+  setWidgetVisible(key: DashboardWidgetKey, visible: boolean): void {
+    this.dashboardVisibility.update(current => ({ ...current, [key]: visible }));
+    this.saveDashboard();
+  }
+
+  moveWidget(key: DashboardWidgetKey, direction: -1 | 1): void {
+    const order = [...this.dashboardOrder()];
+    const from = order.indexOf(key);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    [order[from], order[to]] = [order[to], order[from]];
+    this.dashboardOrder.set(order);
+    this.saveDashboard();
+  }
+
+  resetDashboard(): void {
+    this.dashboardOrder.set(['tasks', 'events', 'classes']);
+    this.dashboardVisibility.set({ tasks: true, events: true, classes: true });
+    this.saveDashboard();
+  }
+
+  private dashboardStorageKey(): string { return `dashboard:${this.auth.user()?.id ?? 'guest'}`; }
+
+  private restoreDashboard(): void {
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.dashboardStorageKey()) || 'null');
+      const keys: DashboardWidgetKey[] = ['tasks', 'events', 'classes'];
+      if (Array.isArray(saved?.order) && saved.order.length === keys.length &&
+          keys.every(key => saved.order.includes(key))) this.dashboardOrder.set(saved.order);
+      if (saved?.visibility && keys.every(key => typeof saved.visibility[key] === 'boolean')) {
+        this.dashboardVisibility.set(saved.visibility);
+      }
+    } catch {
+      this.resetDashboard();
+    }
+  }
+
+  private saveDashboard(): void {
+    try {
+      localStorage.setItem(this.dashboardStorageKey(), JSON.stringify({
+        order: this.dashboardOrder(), visibility: this.dashboardVisibility()
+      }));
+    } catch {
+      console.warn('Unable to save dashboard preferences');
+    }
+  }
+
+  private loadClassCounts(): void {
+    this.api.getStudentClasses().subscribe({
+      next: rows => { this.classCounts.set(rows); this.classesLoading.set(false); },
+      error: () => this.classesLoading.set(false),
+    });
   }
 
   private loadTasks(): void {

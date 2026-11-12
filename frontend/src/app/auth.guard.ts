@@ -35,6 +35,7 @@ function routePermission(path: string): { feature: string; action: PermissionAct
   if (path.startsWith('/loans')) return { feature: 'loans', action: 'view' };
   if (path.startsWith('/messages')) return { feature: 'messages', action: 'view' };
   if (path.startsWith('/pages')) return { feature: 'pages', action: 'view' };
+  if (path === '/reports') return { feature: 'reports', action: 'view' };
   if (path.startsWith('/database')) return { feature: 'reports', action: 'view' };
   return null;
 }

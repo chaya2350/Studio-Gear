@@ -17,7 +17,10 @@ const {
   parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber,
   mergeStudentExtraFields
 } = require('./student-import');
-const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
+const {
+  buildTrackReport, buildClassReport, buildScopedStudentReport, minimizeClassReport, splitTrackValues,
+  studentHasTrack, resolveStudentTrackIds, buildClassName
+} = require('./database-report');
 const { getWeekStart, collectTeacherUpcomingLessons, collectTeacherTrackOccurrences } = require('./teacher-profile');
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { copyScheduleAcrossYear } = require('./schedule-year-copy');
@@ -946,6 +949,21 @@ app.get('/api/activity', (req, res) => {
     const feature = itemPermissions[row.item_type];
     return feature && permissions[feature]?.view;
   }));
+});
+
+app.get('/api/students/:id_number/activity', (req, res) => {
+  if (!getUserPermissions(req.user.role).students?.view) {
+    return res.status(403).json({ error: 'אין לך הרשאת צפייה בתלמידות' });
+  }
+  const student = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'התלמידה לא נמצאה' });
+  const rows = db.prepare(`
+    SELECT a.id, a.action, a.item_type, a.item_id, a.details, a.created_at, u.name AS user_name
+    FROM activity_log a LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.item_type = 'student' AND a.item_id = ?
+    ORDER BY a.created_at DESC, a.id DESC LIMIT 50
+  `).all(student.id_number);
+  res.json(rows);
 });
 
 app.get('/api/favorites', (req, res) => {
@@ -1882,6 +1900,7 @@ app.post('/api/students', (req, res) => {
     INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, birth_date_hebrew, extra_data)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
   `).run(id_number, name, phone, track, year, parallel, className, address, birth_date, birth_date_hebrew);
+  logActivity(req.user.id, 'נרשמה תלמידה חדשה', 'student', id_number, 'נוספה למערכת');
   res.status(201).json({ id_number, name });
 });
 
@@ -2014,6 +2033,7 @@ app.put('/api/students/:id_number', (req, res) => {
       `).run(req.params.id_number, updateNotice.title, updateNotice.body, todayInIsrael(), req.user?.id || null);
     }
   })();
+  logActivity(req.user.id, 'עודכנו פרטי תלמידה', 'student', req.params.id_number, 'פרטים אישיים עודכנו');
   res.json({ success: true, notice_created: Boolean(updateNotice) });
 });
 
@@ -2110,12 +2130,16 @@ app.post('/api/students/:id_number/notices', (req, res) => {
     INSERT INTO student_notices (id_number, title, body, notice_date, visibility, created_by)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(req.params.id_number, title, body, notice_date, visibility, req.user.id);
+  logActivity(req.user.id, 'נוספה מודעה לתלמידה', 'student', req.params.id_number, title);
   res.status(201).json({ id: result.lastInsertRowid });
 });
 
 app.delete('/api/students/:id_number/notices/:notice_id', (req, res) => {
+  const notice = db.prepare('SELECT title FROM student_notices WHERE id = ? AND id_number = ?')
+    .get(Number(req.params.notice_id), req.params.id_number);
   db.prepare('DELETE FROM student_notices WHERE id = ? AND id_number = ?')
     .run(Number(req.params.notice_id), req.params.id_number);
+  if (notice) logActivity(req.user.id, 'נמחקה מודעה מתלמידה', 'student', req.params.id_number, notice.title);
   res.json({ success: true });
 });
 
@@ -2449,6 +2473,8 @@ app.put('/api/students/:id_number/requirements/:requirement_id', (req, res) => {
     db.prepare('DELETE FROM student_requirements WHERE id_number = ? AND requirement_id = ?')
       .run(student.id_number, requirement.id);
   }
+  logActivity(req.user.id, req.body.completed ? 'הושלמה דרישה לתלמידה' : 'בוטלה השלמת דרישה לתלמידה',
+    'student', student.id_number, requirement.title);
   res.json({ success: true });
 });
 
@@ -2519,6 +2545,70 @@ app.get('/api/reports/track', (req, res) => {
   res.json(report);
 });
 
+app.get('/api/reports/classes', (_req, res) => {
+  const rows = db.prepare(`
+    SELECT year, COALESCE(parallel, '') AS parallel, COUNT(*) AS count
+    FROM students
+    WHERE year IS NOT NULL AND year != ''
+      AND year != 'בוגרות'
+    GROUP BY year, parallel
+    ORDER BY year, parallel
+  `).all();
+  res.json(rows.map(row => {
+    const className = buildClassName(row.year, row.parallel);
+    return {
+      parallel: `${row.year}_${row.parallel}`,
+      class_name: className,
+      label: `כיתה ${className}`,
+      count: row.count
+    };
+  }));
+});
+
+app.get('/api/reports/tracks', (_req, res) => {
+  const rows = db.prepare("SELECT track FROM students WHERE year IS NOT NULL AND year != '' AND year != 'בוגרות'").all();
+  const counts = new Map();
+  for (const row of rows) {
+    for (const track of splitTrackValues(row.track)) counts.set(track, (counts.get(track) || 0) + 1);
+  }
+  res.json([...counts].map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'he')));
+});
+
+app.get('/api/reports/data', (req, res) => {
+  const scope = String(req.query.scope || '');
+  const className = String(req.query.class_name || '').trim();
+  const track = String(req.query.track || '').trim();
+  if (!['class', 'school', 'track'].includes(scope)) {
+    return res.status(400).json({ error: 'יש לבחור סוג דוח' });
+  }
+  if (scope === 'class' && !className) return res.status(400).json({ error: 'יש לבחור כיתה' });
+  if (scope === 'track' && !track) return res.status(400).json({ error: 'יש לבחור מסלול' });
+
+  const students = db.prepare(`
+    SELECT id_number, name, year, parallel, track, extra_data, photo_url
+    FROM students ORDER BY name
+  `).all();
+  const exams = db.prepare('SELECT id, name, year, track FROM exams').all();
+  const gradesByExam = {};
+  const gradeRows = db.prepare(`
+    SELECT c.id_number, e.id AS exam_id, g.grade
+    FROM exam_codes c
+    JOIN exams e ON e.id = c.exam_id
+    LEFT JOIN exam_grades g ON g.code = c.code
+  `).all();
+  for (const row of gradeRows) {
+    if (row.grade == null) continue;
+    if (!gradesByExam[row.exam_id]) gradesByExam[row.exam_id] = {};
+    gradesByExam[row.exam_id][row.id_number] = row.grade;
+  }
+  const permissions = getUserPermissions(req.user.role);
+  const includeProfileData = req.user.role === 'admin' || Boolean(permissions.students?.view);
+  res.json(buildScopedStudentReport(students, exams, gradesByExam, {
+    scope, className, track, includeProfileData
+  }));
+});
+
 app.get('/api/reports/class', (req, res) => {
   const className = String(req.query.class_name || req.query.year || '').trim();
   if (!className) return res.status(400).json({ error: 'יש לבחור כיתה' });
@@ -2529,7 +2619,7 @@ app.get('/api/reports/class', (req, res) => {
     return match ? { year: match[1] } : { year: raw };
   })();
 
-  const students = db.prepare('SELECT * FROM students ORDER BY name').all();
+  const students = db.prepare('SELECT id_number, name, year, parallel, extra_data FROM students ORDER BY name').all();
   const exams = db.prepare('SELECT * FROM exams WHERE year IS NULL OR year = ? ORDER BY created_at DESC').all(year);
   const gradeRows = db.prepare(`
     SELECT e.id AS exam_id, c.id_number, g.grade
@@ -2545,8 +2635,7 @@ app.get('/api/reports/class', (req, res) => {
     if (row.grade != null) gradesByExam[row.exam_id][row.id_number] = row.grade;
   }
 
-  const report = buildClassReport(students, exams, gradesByExam, className);
-  res.json(report);
+  res.json(minimizeClassReport(buildClassReport(students, exams, gradesByExam, className)));
 });
 
 app.get('/api/tracks/:id/stats', (req, res) => {
@@ -4229,6 +4318,13 @@ app.put('/api/schedule/:id', async (req, res) => {
   const current = db.prepare('SELECT * FROM schedule_slots WHERE id=?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
   if (change.error) return res.status(400).json({ error: change.error });
+  const rawRequestedDay = req.body?.day_of_week;
+  const requestedDay = rawRequestedDay === undefined ? Number(current.day_of_week) : Number(rawRequestedDay);
+  if (!Number.isInteger(requestedDay) || requestedDay < 0 || requestedDay > 4 ||
+      (rawRequestedDay !== undefined && typeof rawRequestedDay !== 'number' &&
+       (typeof rawRequestedDay !== 'string' || !/^[0-4]$/.test(rawRequestedDay)))) {
+    return res.status(400).json({ error: 'יש לבחור יום תקין' });
+  }
   const hasRequestedRoom = Object.prototype.hasOwnProperty.call(req.body || {}, 'room_number');
   const currentRoom = db.prepare('SELECT room_number FROM room_lesson_bookings WHERE slot_id = ?').get(current.id)?.room_number || null;
   const requestedRoomNumber = hasRequestedRoom ? req.body.room_number : currentRoom;
@@ -4236,9 +4332,13 @@ app.put('/api/schedule/:id', async (req, res) => {
   if (selectedRoom && !db.prepare('SELECT 1 FROM rooms WHERE number = ? AND usable = 1').get(selectedRoom)) {
     return res.status(400).json({ error: 'החדר שנבחר אינו זמין לשיבוץ' });
   }
-  const { class_year, class_parallel, day_of_week } = current;
-  const currentHoliday = schoolHolidayForDate(addDays(current.week_start, Number(day_of_week)));
+  const { class_year, class_parallel } = current;
+  const currentHoliday = schoolHolidayForDate(addDays(current.week_start, Number(current.day_of_week)));
   if (currentHoliday) return res.status(409).json({ error: `אין לימודים בחג ${currentHoliday.title}` });
+  if (change.scope === 'once') {
+    const targetHoliday = schoolHolidayForDate(addDays(current.week_start, requestedDay));
+    if (targetHoliday) return res.status(409).json({ error: `אין לימודים בחג ${targetHoliday.title}` });
+  }
   if (change.scope === 'permanent' && current.week_start < currentScheduleWeek()) {
     return res.status(400).json({ error: 'שינוי קבוע מתחיל מהשבוע הנוכחי; בחרי שיעור מהשבוע הנוכחי או משבוע עתידי' });
   }
@@ -4251,13 +4351,12 @@ app.put('/api/schedule/:id', async (req, res) => {
       weeks: weeksForScheduleChange(current.week_start, current.day_of_week, change.scope)
     });
     if (planned.error) return res.status(409).json({ error: planned.error });
-    targets = planned.targets.filter(target =>
-      !schoolHolidayForDate(addDays(target.week_start, Number(target.day_of_week)))
-    );
+    targets = planned.targets.filter(target => !schoolHolidayForDate(addDays(target.week_start, requestedDay)));
   }
+  if (!targets.length) return res.status(409).json({ error: 'לא נמצאו מועדים תקינים לעדכון' });
   const conflicts = new Set();
   for (const target of targets) {
-    const targetDate = addDays(target.week_start, Number(target.day_of_week));
+    const targetDate = addDays(target.week_start, requestedDay);
     const eventConflict = db.prepare(`
       SELECT * FROM calendar_events
       WHERE event_date = ? AND source_sheet = 'ידני' AND class_scope != 'none'
@@ -4265,21 +4364,21 @@ app.put('/api/schedule/:id', async (req, res) => {
       event, targetDate, target.class_year, target.class_parallel, start_time, end_time
     ));
     if (eventConflict) return res.status(409).json({ error: `לא ניתן לקבוע שיעור בזמן האירוע "${eventConflict.title}" בתאריך ${targetDate}` });
-    const availability = validateConfiguredKodeshSlot({ class_year: target.class_year, day_of_week: target.day_of_week, start_time, end_time });
+    const availability = validateConfiguredKodeshSlot({ class_year: target.class_year, day_of_week: requestedDay, start_time, end_time });
     if (!availability.valid) return res.status(400).json({ error: availability.error });
     if (findClassTimeConflict(db, {
       class_year: target.class_year, class_parallel: target.class_parallel,
-      day_of_week: target.day_of_week, start_time, end_time,
+      day_of_week: requestedDay, start_time, end_time,
       week_start: target.week_start, excludeId: target.id || 0
     })) {
       return res.status(409).json({ error: `כבר קיים שיעור לכיתה ${target.class_year}${target.class_parallel} בשעה זו בשבוע ${target.week_start}` });
     }
     if (findTeacherClassDayConflict({
       teacher_id, class_year: target.class_year, class_parallel: target.class_parallel,
-      day_of_week: target.day_of_week, week_start: target.week_start, excludeId: target.id || 0
+      day_of_week: requestedDay, week_start: target.week_start, excludeId: target.id || 0
     })) conflicts.add('sameClassDay');
     const teacherConflicts = findTeacherTimeConflicts(db, {
-      teacher_id, day_of_week: target.day_of_week, start_time, end_time,
+      teacher_id, day_of_week: requestedDay, start_time, end_time,
       week_start: target.week_start, excludeId: target.id || 0
     });
     if (teacherConflicts.some(teacherConflict =>
@@ -4291,7 +4390,7 @@ app.put('/api/schedule/:id', async (req, res) => {
     return res.status(409).json(scheduleConflictConfirmation(conflicts));
   }
   const update = db.prepare(`
-    UPDATE schedule_slots SET teacher_id=?, start_time=?, end_time=?, subject=?, series_id=?,
+    UPDATE schedule_slots SET teacher_id=?, day_of_week=?, start_time=?, end_time=?, subject=?, series_id=?,
       change_scope=?, change_category=?, change_reason=?, change_from_teacher_id=?, change_from_teacher_name=?
     WHERE id=?
   `);
@@ -4311,27 +4410,27 @@ app.put('/api/schedule/:id', async (req, res) => {
     });
     if (target.isNewOccurrence) {
       slotId = insert.run(
-        teacher_id, target.class_year, target.class_parallel, target.day_of_week,
+        teacher_id, target.class_year, target.class_parallel, requestedDay,
         start_time, end_time, subject || null, target.week_start, seriesId, occurrenceChange.change_scope,
         occurrenceChange.change_category, occurrenceChange.change_reason,
         occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name
       ).lastInsertRowid;
       if (!hasRequestedRoom) copyLessonRoom(db, current.id, slotId);
     } else {
-      update.run(teacher_id, start_time, end_time, subject || null, seriesId, occurrenceChange.change_scope,
+      update.run(teacher_id, requestedDay, start_time, end_time, subject || null, seriesId, occurrenceChange.change_scope,
         occurrenceChange.change_category, occurrenceChange.change_reason,
         occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name, target.id);
     }
     if (selectedRoom) {
       assignLesson(db, {
-        id: Number(slotId), week_start: target.week_start, day_of_week: target.day_of_week,
+        id: Number(slotId), week_start: target.week_start, day_of_week: requestedDay,
         start_time, end_time
       }, selectedRoom);
     } else {
       db.prepare('DELETE FROM room_lesson_bookings WHERE slot_id = ?').run(slotId);
     }
     recordScheduleChange({
-      slot: { ...target, id: slotId, series_id: seriesId, start_time, end_time, subject },
+      slot: { ...target, id: slotId, series_id: seriesId, day_of_week: requestedDay, start_time, end_time, subject },
       action: 'update', change, fromTeacherId: target.teacher_id, toTeacherId: teacher_id,
       userId: req.user?.id
     });

@@ -95,8 +95,18 @@ export interface TrackReport {
 }
 
 export interface ClassReport {
+  class_name: string;
   year: string;
   columns: DataReportColumn[];
+  rows: Record<string, string | number>[];
+  exams: { id: number; name: string; year: string | null }[];
+}
+
+export interface ScopedStudentReport {
+  scope: 'class' | 'school' | 'track';
+  class_name: string;
+  track: string;
+  count: number;
   rows: Record<string, string | number>[];
   exams: { id: number; name: string; year: string | null }[];
 }
@@ -266,6 +276,18 @@ export class ApiService {
   getDatabaseClassReport(className: string) {
     return this.http.get<ClassReport>(`${this.base}/reports/class`, { params: { class_name: className } });
   }
+  getReportClasses() {
+    return this.http.get<{ parallel: string; class_name: string; label: string; count: number }[]>(`${this.base}/reports/classes`);
+  }
+  getReportTracks() {
+    return this.http.get<{ name: string; count: number }[]>(`${this.base}/reports/tracks`);
+  }
+  getScopedStudentReport(params: { scope: 'class' | 'school' | 'track'; class_name?: string; track?: string }) {
+    const query: Record<string, string> = { scope: params.scope };
+    if (params.class_name) query['class_name'] = params.class_name;
+    if (params.track) query['track'] = params.track;
+    return this.http.get<ScopedStudentReport>(`${this.base}/reports/data`, { params: query });
+  }
   requirementFileUrl(id_number: string, requirementId: number) {
     return `${this.base}/students/${encodeURIComponent(id_number)}/requirements/${requirementId}/file`;
   }
@@ -351,7 +373,7 @@ export class ApiService {
   }
   createScheduleSlot(data: any) { return this.http.post<{ id?: number; ids?: number[]; count?: number; weeks?: number }>(`${this.base}/schedule`, data); }
   updateScheduleSlot(id: number, data: {
-    teacher_id: number; start_time: string; end_time: string | null; subject: string | null;
+    teacher_id: number; day_of_week: number; start_time: string; end_time: string | null; subject: string | null;
     change_scope: 'once' | 'permanent'; change_category: string; change_reason: string; allow_conflicts?: boolean;
   }) {
     return this.http.put<{success:boolean}>(`${this.base}/schedule/${id}`, data);

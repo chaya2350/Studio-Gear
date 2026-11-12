@@ -119,6 +119,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/database/database').then((m) => m.DatabaseComponent),
       },
       {
+        path: 'reports',
+        loadComponent: () => import('./pages/reports').then((m) => m.ReportsComponent),
+      },
+      {
         path: 'pages',
         loadComponent: () => import('./pages/pages/pages').then((m) => m.PagesComponent),
       },

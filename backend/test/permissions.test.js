@@ -136,5 +136,8 @@ test('API routes map to granular view, create, edit and delete permissions', () 
   assert.deepEqual(getApiPermission('/attendance/sessions/12/absent', 'POST'), { feature: 'attendance', action: 'edit' });
   assert.deepEqual(getApiPermission('/admin/reset-database', 'POST'), { feature: 'students', action: 'delete' });
   assert.deepEqual(getApiPermission('/reports/class', 'GET'), { feature: 'reports', action: 'view' });
+  assert.deepEqual(getApiPermission('/reports/classes', 'GET'), { feature: 'reports', action: 'view' });
+  assert.deepEqual(getApiPermission('/reports/data', 'GET'), { feature: 'reports', action: 'view' });
+  assert.deepEqual(getApiPermission('/reports/tracks', 'GET'), { feature: 'reports', action: 'view' });
   assert.equal(getApiPermission('/unmapped-endpoint', 'GET'), null);
 });

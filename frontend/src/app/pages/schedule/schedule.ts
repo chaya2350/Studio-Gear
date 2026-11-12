@@ -77,6 +77,7 @@ function formatHebrewDayHeading(dateStr: string): string {
 </div>
 
 <p *ngIf="kodeshAvailabilityError()" class="error-msg" role="alert">{{ kodeshAvailabilityError() }}</p>
+<p *ngIf="dragError()" class="error-msg" role="alert">{{ dragError() }}</p>
 
 <!-- GRID VIEW -->
 <div *ngIf="activeTab() === 'grid'" class="grid-view">
@@ -161,7 +162,10 @@ function formatHebrewDayHeading(dateStr: string): string {
                  class="day-grid-cell"
                  [class.cell-kodesh]="entry.availability === 'kodesh'"
                  [class.cell-instruction]="entry.availability === 'instruction'"
-                 [class.cell-track]="entry.availability === 'track'">
+                 [class.cell-track]="entry.availability === 'track'"
+                 [class.drop-target]="isScheduleDropTarget(entry.availability, entry.row.classYear, entry.row.classParallel)"
+                 (dragover)="allowScheduleDrop($event, entry.availability)"
+                 (drop)="dropScheduleSlot($event, selectedDay(), entry.row.classYear, entry.row.classParallel, entry.period, entry.availability)">
 
               <ng-container *ngIf="entry.availability === 'kodesh'; else unavailablePeriod">
                 <ng-container *ngIf="eventForPeriod(addDays(weekStart(), selectedDay()), entry.row.classYear, entry.row.classParallel, entry.period) as event; else dayLesson">
@@ -169,7 +173,8 @@ function formatHebrewDayHeading(dateStr: string): string {
                 </ng-container>
                 <ng-template #dayLesson>
                   <div *ngFor="let slot of slotsForPeriod(entry.row.byDay[selectedDay()], entry.period)"
-                       class="day-lesson" [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || ''">
+                       class="day-lesson" [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || 'גררי את השיעור לשעה אחרת'"
+                       draggable="true" (dragstart)="startSlotDrag($event, slot)" (dragend)="endSlotDrag()">
                     <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                        [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                     <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
@@ -235,7 +240,10 @@ function formatHebrewDayHeading(dateStr: string): string {
                 </td>
                 <td *ngFor="let cell of scheduleRow.days" class="day-class-cell"
                     [ngClass]="cell && schoolHolidayForDate(addDays(weekStart(), cell.day)) ? 'period-holiday' : 'period-' + (cell?.availability || 'empty')"
-                    [attr.aria-disabled]="cell?.availability !== 'kodesh'">
+                    [attr.aria-disabled]="cell?.availability !== 'kodesh'"
+                    [class.drop-target]="isScheduleDropTarget(cell?.availability, selectedClass.classYear, selectedClass.classParallel)"
+                    (dragover)="allowScheduleDrop($event, cell?.availability)"
+                    (drop)="dropScheduleSlot($event, cell?.day, selectedClass.classYear, selectedClass.classParallel, cell?.period, cell?.availability)">
                   <ng-container *ngIf="cell as periodCell">
                     <ng-container *ngIf="!schoolHolidayForDate(addDays(weekStart(), periodCell.day))">
                     <ng-container *ngIf="periodCell.availability === 'kodesh'; else unavailableClassPeriod">
@@ -244,7 +252,8 @@ function formatHebrewDayHeading(dateStr: string): string {
                       </ng-container>
                       <ng-template #classDayLesson>
                             <div *ngFor="let slot of slotsForPeriod(selectedClass.byDay[periodCell.day], periodCell.period)" class="day-lesson"
-                              [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || ''">
+                              [class.schedule-changed]="slot.change_reason" [title]="slot.change_reason || 'גררי את השיעור לשעה אחרת'"
+                              draggable="true" (dragstart)="startSlotDrag($event, slot)" (dragend)="endSlotDrag()">
                           <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                              [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                           <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
@@ -533,11 +542,16 @@ function formatHebrewDayHeading(dateStr: string): string {
       <option *ngFor="let t of kodeshTeachers()" [ngValue]="t.id">{{ t.name }}</option>
       </select>
     </label>
+    <label>יום:
+      <select [ngModel]="editSlotDraft.day_of_week" (ngModelChange)="onEditDayChange($event)">
+        <option *ngFor="let day of DAYS; let index = index" [ngValue]="index">יום {{ day }}</option>
+      </select>
+    </label>
     <div class="edit-time-fields">
       <label>שעה:
         <select [ngModel]="editSlotDraft.period_id" (ngModelChange)="pickPeriod(editSlotDraft, $event)">
           <option value="">בחרי שעה</option>
-          <option *ngFor="let p of kodeshPeriodsForYear(editingSlot()!.class_year, editingSlot()!.day_of_week)"
+          <option *ngFor="let p of kodeshPeriodsForYear(editingSlot()!.class_year, editSlotDraft.day_of_week)"
                   [value]="p.id">{{ p.name }} ({{ p.start_time }}–{{ p.end_time }})</option>
         </select>
       </label>
@@ -665,6 +679,9 @@ function formatHebrewDayHeading(dateStr: string): string {
   &.cell-instruction { background: #fffaf0; border-color: #f1d89e; }
   &.cell-track { background: var(--surface-2); border-color: var(--border); opacity: 0.5; }
 }
+.day-grid-cell.drop-target,.day-class-cell.drop-target { outline:2px dashed var(--primary); outline-offset:-3px; background:var(--primary-light); }
+.day-lesson[draggable="true"] { cursor:grab; }
+.day-lesson[draggable="true"]:active { cursor:grabbing; opacity:.72; }
 .day-period-label {
   font-size: 0.6rem; font-weight: 700; color: var(--text-muted);
   text-align: center; margin: auto; padding: 2px 4px;
@@ -935,9 +952,11 @@ export class ScheduleComponent implements OnInit {
   savingQuickSlot = signal(false);
   editingSlot = signal<any | null>(null);
   editSlotDraft = {
-    teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '', room_number: null as string | null,
+    teacher_id: 0, day_of_week: 0, period_id: '', start_time: '', end_time: '', subject: '', room_number: null as string | null,
     change_scope: '', change_category: '', change_reason: ''
   };
+  draggedSlot = signal<any | null>(null);
+  dragError = signal('');
   savingEditSlot = signal(false);
   editSlotError = signal('');
   deletingSlot = signal<any | null>(null);
@@ -1329,6 +1348,7 @@ export class ScheduleComponent implements OnInit {
       .find(period => period.start_time === slot.start_time && period.end_time === slot.end_time);
     this.editSlotDraft = {
       teacher_id: Number(slot.teacher_id),
+      day_of_week: Number(slot.day_of_week),
       period_id: matchingPeriod ? String(matchingPeriod.id) : '',
       start_time: slot.start_time,
       end_time: slot.end_time || '',
@@ -1336,6 +1356,70 @@ export class ScheduleComponent implements OnInit {
       change_scope: '', change_category: '', change_reason: ''
     };
     this.editSlotError.set('');
+  }
+
+  startSlotDrag(event: DragEvent, slot: any): void {
+    this.draggedSlot.set(slot);
+    this.dragError.set('');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', String(slot.id));
+    }
+  }
+
+  endSlotDrag(): void { this.draggedSlot.set(null); }
+
+  allowScheduleDrop(event: DragEvent, availability: string | undefined): void {
+    if (this.draggedSlot() && availability === 'kodesh') {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  isScheduleDropTarget(availability: string | undefined, classYear: string, classParallel: string): boolean {
+    const slot = this.draggedSlot();
+    return !!slot && availability === 'kodesh' &&
+      String(slot.class_year) === String(classYear) &&
+      String(slot.class_parallel) === String(classParallel);
+  }
+
+  dropScheduleSlot(
+    event: DragEvent,
+    day: number | undefined,
+    classYear: string,
+    classParallel: string,
+    period: any,
+    availability: string | undefined
+  ): void {
+    event.preventDefault();
+    const slot = this.draggedSlot();
+    this.draggedSlot.set(null);
+    if (!slot || availability !== 'kodesh' || !period || day == null) return;
+    if (String(slot.class_year) !== String(classYear) ||
+        String(slot.class_parallel) !== String(classParallel)) {
+      this.dragError.set('אפשר להעביר שיעור רק בתוך אותה כיתה');
+      return;
+    }
+    if (Number(slot.day_of_week) === Number(day) &&
+        slot.start_time === period.start_time && slot.end_time === period.end_time) return;
+    if (this.schoolHolidayForDate(addDays(this.weekStart(), Number(day)))) {
+      this.dragError.set('לא ניתן להעביר שיעור ליום חופשה');
+      return;
+    }
+
+    this.dragError.set('');
+    this.startEditSlot(slot);
+    this.editSlotDraft.day_of_week = Number(day);
+    this.editSlotDraft.period_id = String(period.id);
+    this.editSlotDraft.start_time = period.start_time;
+    this.editSlotDraft.end_time = period.end_time;
+  }
+
+  onEditDayChange(day: number): void {
+    this.editSlotDraft.day_of_week = Number(day);
+    this.editSlotDraft.period_id = '';
+    this.editSlotDraft.start_time = '';
+    this.editSlotDraft.end_time = '';
   }
 
   cancelEditSlot() {
@@ -1380,7 +1464,12 @@ export class ScheduleComponent implements OnInit {
     }
     const changeError = this.validateChangeDraft(this.editSlotDraft);
     if (changeError) { this.editSlotError.set(changeError); return; }
-    if (!this.kodeshPeriodsForYear(slot.class_year, slot.day_of_week).some(period =>
+    if (!Number.isInteger(Number(this.editSlotDraft.day_of_week)) ||
+        Number(this.editSlotDraft.day_of_week) < 0 || Number(this.editSlotDraft.day_of_week) > 4) {
+      this.editSlotError.set('יש לבחור יום תקין');
+      return;
+    }
+    if (!this.kodeshPeriodsForYear(slot.class_year, this.editSlotDraft.day_of_week).some(period =>
       period.start_time === this.editSlotDraft.start_time && period.end_time === this.editSlotDraft.end_time
     )) {
       this.editSlotError.set('השעה שבחרת אינה זמינה לשיעור קודש בכיתה זו');
@@ -1391,6 +1480,7 @@ export class ScheduleComponent implements OnInit {
     this.editSlotError.set('');
     const data = {
       teacher_id: this.editSlotDraft.teacher_id,
+      day_of_week: Number(this.editSlotDraft.day_of_week),
       start_time: this.editSlotDraft.start_time,
       end_time: this.editSlotDraft.end_time || null,
       subject: this.editSlotDraft.subject.trim() || null,

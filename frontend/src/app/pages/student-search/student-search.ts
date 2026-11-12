@@ -60,6 +60,21 @@ autofocus
 </div>
 </div>
 
+<div class="saved-searches" *ngIf="savedSearches().length || query.trim().length >= 2">
+  <div class="saved-search-header">
+    <strong>חיפושים שמורים</strong>
+    <button *ngIf="query.trim().length >= 2" type="button" class="save-search-btn" (click)="saveSearch()">שמירת החיפוש הנוכחי</button>
+  </div>
+  <div class="saved-search-list">
+    <span *ngFor="let saved of savedSearches()" class="saved-search-item">
+      <button type="button" (click)="applySavedSearch(saved)" [title]="'חיפוש: ' + saved">{{ saved }}</button>
+      <button type="button" class="remove-saved-search" (click)="removeSavedSearch(saved)"
+              [attr.aria-label]="'הסרת החיפוש השמור ' + saved">×</button>
+    </span>
+  </div>
+  <p *ngIf="savedSearchMessage()" class="saved-search-message" role="status">{{ savedSearchMessage() }}</p>
+</div>
+
 <!-- תוצאה נבחרת -->
 <div *ngIf="selected()" class="result-card">
 
@@ -126,6 +141,15 @@ width: 100%; background: var(--surface); border: 1.5px solid var(--border);
 border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
 display: flex; flex-direction: column; gap: 14px;
 }
+.saved-searches { width:100%; padding:12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); }
+.saved-search-header { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--text-muted); font-size:.78rem; }
+.save-search-btn { border:0; background:none; color:var(--primary); font:inherit; font-size:.76rem; font-weight:700; cursor:pointer; }
+.saved-search-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.saved-search-item { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; background:var(--surface); overflow:hidden; }
+.saved-search-item button { border:0; background:none; color:var(--text); padding:5px 9px; font:inherit; font-size:.78rem; cursor:pointer; }
+.saved-search-item button:hover { color:var(--primary); }
+.saved-search-item .remove-saved-search { padding-inline:7px; color:var(--text-muted); border-inline-start:1px solid var(--border); }
+.saved-search-message { margin:8px 0 0; color:var(--text-muted); font-size:.75rem; }
 .search-top-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
@@ -259,9 +283,53 @@ focused = false;
 photoOpen = false;
 suggestions = signal<Student[]>([]);
 selected = signal<Student | null>(null);
+savedSearches = signal<string[]>([]);
+savedSearchMessage = signal('');
 today = new Date().toISOString().split('T')[0];
 
-constructor(private api: ApiService, public auth: AuthService) {}
+constructor(private api: ApiService, public auth: AuthService) {
+  this.loadSavedSearches();
+}
+
+private savedSearchesKey(): string { return `student-searches:${this.auth.user()?.id ?? 'guest'}`; }
+
+private loadSavedSearches(): void {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(this.savedSearchesKey()) || '[]');
+    this.savedSearches.set(Array.isArray(saved) ? saved.filter((value): value is string => typeof value === 'string').slice(0, 8) : []);
+  } catch {
+    this.savedSearchMessage.set('לא ניתן לטעון חיפושים שמורים בדפדפן זה');
+  }
+}
+
+saveSearch(): void {
+  const query = this.query.trim();
+  if (query.length < 2) return;
+  const updated = [query, ...this.savedSearches().filter(item => item.toLocaleLowerCase() !== query.toLocaleLowerCase())].slice(0, 8);
+  try {
+    localStorage.setItem(this.savedSearchesKey(), JSON.stringify(updated));
+    this.savedSearches.set(updated);
+    this.savedSearchMessage.set('החיפוש נשמר');
+  } catch {
+    this.savedSearchMessage.set('לא ניתן לשמור חיפוש בדפדפן זה');
+  }
+}
+
+applySavedSearch(query: string): void {
+  this.query = query;
+  this.onInput();
+}
+
+removeSavedSearch(query: string): void {
+  const updated = this.savedSearches().filter(item => item !== query);
+  try {
+    localStorage.setItem(this.savedSearchesKey(), JSON.stringify(updated));
+    this.savedSearches.set(updated);
+    this.savedSearchMessage.set('');
+  } catch {
+    this.savedSearchMessage.set('לא ניתן להסיר את החיפוש השמור');
+  }
+}
 
 get coordinatorTrack(): string | null {
   const u = this.auth.user();

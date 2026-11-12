@@ -8,6 +8,15 @@ import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
 import { StudentProfileCardComponent } from '../../components/student-profile-card/student-profile-card';
 import { isHiddenStudentField } from '../../utils/hidden-student-fields';
+import { ActivityItem, WorkspaceService } from '../../services/workspace.service';
+
+interface StudentTimelineEntry {
+  id: string;
+  title: string;
+  detail: string;
+  date: Date;
+  icon: string;
+}
 
 const HEBREW_MONTH_NAMES: Record<number, string> = {
   [months.TISHREI]: 'תשרי', [months.CHESHVAN]: 'חשוון', [months.KISLEV]: 'כסלו',
@@ -537,6 +546,26 @@ type="checkbox"
 </ng-template>
 </div>
 
+<div class="card student-timeline-card">
+  <div class="section-title">ציר זמן</div>
+  <p *ngIf="activityError()" class="req-note" role="alert">{{ activityError() }}</p>
+  <div *ngIf="activityLoading()" class="timeline-loading" role="status">טוענת פעילות…</div>
+  <div *ngIf="!activityLoading() && studentTimeline().length" class="student-timeline">
+    <article *ngFor="let item of studentTimeline()" class="timeline-entry">
+      <span class="timeline-icon" aria-hidden="true">{{ item.icon }}</span>
+      <span class="timeline-line" aria-hidden="true"></span>
+      <div class="timeline-content">
+        <strong>{{ item.title }}</strong>
+        <p *ngIf="item.detail">{{ item.detail }}</p>
+        <time>{{ item.date | date:'dd/MM/yyyy HH:mm' }}</time>
+      </div>
+    </article>
+  </div>
+  <p *ngIf="!activityLoading() && !activityError() && !studentTimeline().length" class="req-note">
+    הפעילות והמבחנים של התלמידה יופיעו כאן.
+  </p>
+</div>
+
 <div class="card" style="margin-top:20px;">
 <div class="section-title"> היסטוריית השאלות ({{ student()!.loans?.length || 0 }})</div>
 <div *ngIf="!student()!.loans?.length" class="empty-state" style="padding:30px 0;">
@@ -996,6 +1025,21 @@ border-radius: 12px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700;
 &.late { background: #fffbeb; color: #d97706; }
 &.total { background: var(--surface-2); color: var(--text-muted); }
 }
+.student-timeline-card { margin-top:20px; padding:20px; }
+.student-timeline-card .section-title { margin-bottom:14px; }
+.timeline-loading { color:var(--text-muted); padding:12px 0; }
+.student-timeline { display:flex; flex-direction:column; }
+.timeline-entry { position:relative; display:grid; grid-template-columns:34px 1fr; gap:0 12px; min-height:66px; }
+.timeline-icon {
+  z-index:1; grid-column:1; grid-row:1; width:32px; height:32px; display:grid; place-items:center;
+  border:1px solid var(--primary-glow); border-radius:50%; background:var(--primary-light); color:var(--primary); font-weight:800;
+}
+.timeline-line { grid-column:1; grid-row:1; justify-self:center; width:2px; margin-top:32px; background:var(--border); }
+.timeline-entry:last-child .timeline-line { display:none; }
+.timeline-content { grid-column:2; grid-row:1; padding:1px 0 16px; }
+.timeline-content strong { color:var(--text); font-size:.88rem; }
+.timeline-content p { margin:4px 0; color:var(--text-muted); font-size:.8rem; }
+.timeline-content time { color:var(--text-light); font-size:.72rem; }
 `]
 })
 export class StudentComponent implements OnInit {
@@ -1019,6 +1063,43 @@ requirementError = signal('');
 savingRequirementId = signal<number | null>(null);
 exams = signal<any[]>([]);
 attendance = signal<any>(null);
+studentActivity = signal<ActivityItem[]>([]);
+activityLoading = signal(true);
+activityError = signal('');
+studentTimeline = computed<StudentTimelineEntry[]>(() => {
+  const dateValue = (value: string): Date => {
+    const dateString = String(value || '');
+    return /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+      ? new Date(`${dateString}T12:00:00`)
+      : new Date(`${dateString.replace(' ', 'T')}Z`);
+  };
+  const entries: StudentTimelineEntry[] = [
+    ...this.studentActivity().map(item => ({
+      id: `activity-${item.id}`,
+      title: item.action,
+      detail: [item.details, item.user_name].filter(Boolean).join(' · '),
+      date: dateValue(item.created_at),
+      icon: '✦',
+    })),
+    ...this.exams().filter(exam => exam.exam_date).map((exam, index) => ({
+      id: `exam-${exam.id ?? index}`,
+      title: `מבחן: ${exam.exam_name || exam.name || 'מבחן'}`,
+      detail: exam.grade == null ? 'טרם הוזן ציון' : `ציון: ${exam.grade}`,
+      date: dateValue(exam.exam_date),
+      icon: '✎',
+    })),
+    ...this.visibleNotices().map((notice, index) => ({
+      id: `notice-${notice.id ?? index}`,
+      title: `מודעה: ${notice.title}`,
+      detail: notice.created_by_name || '',
+      date: dateValue(notice.notice_date || notice.created_at),
+      icon: '▤',
+    })),
+  ];
+  return entries.filter(item => Number.isFinite(item.date.getTime()))
+    .sort((first, second) => second.date.getTime() - first.date.getTime())
+    .slice(0, 30);
+});
 gradeSheetError = signal('');
 examsLoaded = signal(false);
 exportFormatOpen = signal(false);
@@ -1080,7 +1161,7 @@ visibleNotices = computed(() => {  const canSeeStaff = this.auth.hasPermission('
   );
 });
 
-constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
+constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router, private workspace: WorkspaceService) {}
 
 searchStudentProfile(query: string) {
   this.profileSearchQuery = query;
@@ -1254,9 +1335,19 @@ next: s => {
   this.loadAttendance(s.id_number);
   this.loadDocuments(s.id_number);
   this.loadNotices(s.id_number);
+  this.loadStudentActivity(s.id_number);
 },
 error: () => this.loading.set(false)
 });
+}
+
+loadStudentActivity(id_number: string) {
+  this.activityLoading.set(true);
+  this.activityError.set('');
+  this.workspace.getStudentActivity(id_number).subscribe({
+    next: activity => { this.studentActivity.set(activity); this.activityLoading.set(false); },
+    error: () => { this.activityError.set('לא ניתן לטעון את ציר הזמן'); this.activityLoading.set(false); },
+  });
 }
 
 loadDocuments(id_number: string) {
