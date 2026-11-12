@@ -119,6 +119,14 @@ test('API routes map to granular view, create, edit and delete permissions', () 
     feature: 'students',
     actions: ['create', 'edit']
   });
+  assert.deepEqual(getApiPermission('/students/promote-year', 'POST'), {
+    feature: 'students',
+    actions: ['create', 'edit']
+  });
+  assert.deepEqual(getApiPermission('/students/undo-promotion', 'POST'), {
+    feature: 'students',
+    actions: ['create', 'edit']
+  });
   assert.deepEqual(getApiPermission('/upload', 'POST'), {
     feature: 'equipment',
     actions: ['create', 'edit']

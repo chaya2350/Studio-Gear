@@ -174,7 +174,8 @@ function registerRoomMapRoutes(app, db) {
     const classes = db.prepare(`
       SELECT DISTINCT TRIM(year) AS class_year, TRIM(parallel) AS class_parallel
       FROM students
-      WHERE TRIM(COALESCE(year, '')) <> '' AND TRIM(COALESCE(parallel, '')) <> ''
+      WHERE TRIM(COALESCE(year, '')) <> '' AND TRIM(year) <> 'בוגרות'
+        AND TRIM(COALESCE(parallel, '')) <> ''
       ORDER BY class_year, class_parallel
     `).all();
     const activeTracks = db.prepare(`

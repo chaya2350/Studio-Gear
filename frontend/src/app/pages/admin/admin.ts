@@ -37,7 +37,7 @@ role="tab"
 class="section-tab"
 [class.active]="activeSection() === s.id"
 [attr.aria-selected]="activeSection() === s.id"
-(click)="section.set(s.id)"
+(click)="openSection(s.id)"
 >
 <span class="tab-icon">{{ s.icon }}</span>
 <span>{{ s.label }}</span>
@@ -296,12 +296,30 @@ class="section-tab"
     <div class="modal-actions confirmation-actions">
       <button class="btn btn-danger" type="button"
               [disabled]="typedConfirmationInput() !== typedConfirmation()!.expected"
-              (click)="confirmTypedAction()">אישור ומחיקה</button>
+              (click)="confirmTypedAction()">{{ typedConfirmation()!.confirmLabel }}</button>
       <button class="btn btn-secondary" type="button" (click)="cancelTypedConfirmation()">ביטול</button>
     </div>
   </section>
 </div>
 <app-tracks *ngIf="activeSection() === 'tracks'"></app-tracks>
+
+<div *ngIf="activeSection() === 'students' && canPromoteStudents()" class="card admin-card admin-promotion-card">
+  <div>
+    <div class="section-title">העלאת שנה</div>
+    <p class="user-help">עולה לשנה א׳ תעלה לשנה א׳, שנה א׳ לשנה ב׳, שנה ב׳ לשנה ג׳ ללא מקבילה, ושנה ג׳ לבוגרות. המקבילות יישמרו עד המעבר לשנה ג׳.</p>
+  </div>
+  <div class="admin-promotion-actions">
+    <button class="btn btn-primary" type="button" [disabled]="promoting() || undoingPromotion()" (click)="requestYearPromotion()">
+      {{ promoting() ? 'מעלה שנה...' : 'העלאת שנה' }}
+    </button>
+    <button *ngIf="canUndoPromotion()" class="btn btn-secondary" type="button"
+            [disabled]="undoingPromotion() || promoting()" (click)="undoYearPromotion()">
+      {{ undoingPromotion() ? 'מבטל...' : 'ביטול העלאת שנה' }}
+    </button>
+  </div>
+  <div *ngIf="promotionMessage()" class="alert alert-success" role="status">{{ promotionMessage() }}</div>
+  <div *ngIf="promotionError()" class="alert alert-error" role="alert">{{ promotionError() }}</div>
+</div>
 
 <!-- הוספת תלמידה ידנית — admin ומזכירות בלבד -->
 <div *ngIf="activeSection() === 'students' && canAddStudent()" class="card" style="max-width:760px; margin-bottom:16px;">
@@ -322,18 +340,18 @@ class="section-tab"
     <div class="form-group"><label>זהות פקטיבי</label><input [(ngModel)]="newStudentDraft.fake_id" placeholder="מס׳ זהות פקטיבי"></div>
   </div>
 
-  <!-- כיתה ומסלול -->
-  <div class="reg-section-title">כיתה ומסלול</div>
+  <!-- שנה ומסלול -->
+  <div class="reg-section-title">שנה ומסלול</div>
   <div class="form-row">
-    <div class="form-group"><label>כיתה (שנה)</label>
+    <div class="form-group"><label>שנה</label>
       <select [(ngModel)]="newStudentDraft.year">
-        <option value="">בחרי כיתה</option>
-        <option value="ד">ד</option>
-        <option value="ה">ה</option>
-        <option value="ו">ו</option>
+        <option value="">בחרי שנה</option>
+        <option value="עולה לשנה א׳">עולה לשנה א׳</option>
+        <option value="א">שנה א׳</option>
+        <option value="ב">שנה ב׳</option>
       </select>
     </div>
-    <div class="form-group"><label>מקבילה</label><input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3..."></div>
+    <div class="form-group" *ngIf="newStudentDraft.year !== 'ג'"><label>מקבילה</label><input [(ngModel)]="newStudentDraft.parallel" placeholder="1, 2, 3..."></div>
     <div class="form-group"><label>מגמה</label><input [(ngModel)]="newStudentDraft.track" placeholder="מגמה"></div>
     <div class="form-group"><label>התמחות 1</label><input [(ngModel)]="newStudentDraft.specialization1" placeholder="התמחות ראשונה"></div>
   </div>
@@ -1087,12 +1105,17 @@ savingApproval = signal(false);
 section = signal<AdminSection | null>(null);
 resettingDb = signal(false);
 resetDbMessage = signal('');
-typedConfirmation = signal<{ expected: string; description: string; action: () => void } | null>(null);
+typedConfirmation = signal<{ expected: string; description: string; action: () => void; confirmLabel: string } | null>(null);
 typedConfirmationInput = signal('');
 
 // ── הוספת תלמידה ידנית ──
 addingStudent = signal(false);
 addStudentError = signal('');
+promoting = signal(false);
+promotionError = signal('');
+promotionMessage = signal('');
+canUndoPromotion = signal(false);
+undoingPromotion = signal(false);
 newStudentDraft = {
   id_number: '', name: '', first_name: '', nickname: '', phone: '', track: '', year: '', parallel: '',
   address: '', house_number: '', city: '', zip: '', birth_date: '', birth_date_hebrew: '', birth_country: '',
@@ -1104,6 +1127,64 @@ newStudentDraft = {
 
 canAddStudent() {
   return this.auth.hasPermission('students', 'create');
+}
+
+canPromoteStudents() {
+  return this.auth.hasPermission('students', 'create') && this.auth.hasPermission('students', 'edit');
+}
+
+openSection(section: AdminSection) {
+  this.section.set(section);
+  if (section === 'students') this.loadPromotionUndoStatus();
+}
+
+loadPromotionUndoStatus() {
+  this.promotionError.set('');
+  this.api.getStudentYearPromotionStatus().subscribe({
+    next: result => this.canUndoPromotion.set(result.can_undo),
+    error: error => this.promotionError.set(error.error?.error || 'טעינת מצב העלאת השנה נכשלה')
+  });
+}
+
+requestYearPromotion() {
+  this.promotionError.set('');
+  this.promotionMessage.set('');
+  this.requestTypedConfirmation(
+    'אני מאשרת לעלות שנה',
+    'הפעולה תעביר עולה לשנה א׳ לשנה א׳, שנה א׳ לשנה ב׳, שנה ב׳ לשנה ג׳ ללא מקבילה, ושנה ג׳ לבוגרות. המקבילות יישמרו עד המעבר לשנה ג׳.',
+    () => {
+      this.promoting.set(true);
+      this.api.promoteStudentYears('אני מאשרת לעלות שנה').subscribe({
+        next: result => {
+          this.promoting.set(false);
+          this.promotionMessage.set(`העלאת השנה הושלמה. עודכנו ${result.updated} תלמידות, מתוכן ${result.graduated} עברו לבוגרות.`);
+          this.canUndoPromotion.set(result.can_undo);
+        },
+        error: error => {
+          this.promoting.set(false);
+          this.promotionError.set(error.error?.error || 'העלאת השנה נכשלה');
+        }
+      });
+    },
+    'אישור והעלאת שנה'
+  );
+}
+
+undoYearPromotion() {
+  this.promotionError.set('');
+  this.promotionMessage.set('');
+  this.undoingPromotion.set(true);
+  this.api.undoStudentYearPromotion().subscribe({
+    next: result => {
+      this.undoingPromotion.set(false);
+      this.canUndoPromotion.set(false);
+      this.promotionMessage.set(`העלאת השנה בוטלה. ${result.updated} תלמידות הוחזרו לשנה הקודמת.`);
+    },
+    error: error => {
+      this.undoingPromotion.set(false);
+      this.promotionError.set(error.error?.error || 'ביטול העלאת השנה נכשל');
+    }
+  });
 }
 
 saveNewStudent() {
@@ -1761,9 +1842,9 @@ this.resetDbMessage.set(error.error?.error || 'איפוס מסד הנתונים 
 });
 }
 
-private requestTypedConfirmation(expected: string, description: string, action: () => void) {
+private requestTypedConfirmation(expected: string, description: string, action: () => void, confirmLabel = 'אישור ומחיקה') {
   this.typedConfirmationInput.set('');
-  this.typedConfirmation.set({ expected, description, action });
+  this.typedConfirmation.set({ expected, description, action, confirmLabel });
 }
 
 cancelTypedConfirmation() {

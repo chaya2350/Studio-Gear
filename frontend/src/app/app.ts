@@ -196,6 +196,13 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>טבלת תלמידות</span>
           </a>
+          <a *ngIf="auth.hasPermission('students')" routerLink="/graduates" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'בוגרות' : ''" (click)="clearSearch()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m2 9 10-5 10 5-10 5L2 9Z"/>
+              <path d="M6 11v5c3.5 3 8.5 3 12 0v-5M22 9v6"/>
+            </svg>
+            <span>בוגרות</span>
+          </a>
           <a *ngIf="auth.hasPermission('teachers')" routerLink="/teachers/search" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'מורות' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 14c-4 0-6 2-6 4v1h12v-1c0-2-2-4-6-4z"/>

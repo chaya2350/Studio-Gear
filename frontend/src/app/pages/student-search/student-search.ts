@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { Student } from '../../models';
+import { toStudyYear } from '../approvals/study-year';
 
 @Component({
 selector: 'app-student-search',
@@ -50,7 +51,8 @@ autofocus
   <div class="sug-name">{{ s.name }}</div>
   <div class="sug-meta">
     {{ s.id_number }}
-    <span *ngIf="s.class_name || (s.year && s.parallel)"> · כיתה {{ s.class_name || (s.year! + s.parallel!) }}</span>
+    <span *ngIf="s.year === 'ג'"> · שנה {{ toStudyYear(s.year) }}</span>
+    <span *ngIf="s.year !== 'ג' && (s.class_name || (s.year && s.parallel))"> · כיתה {{ s.class_name || (s.year! + s.parallel!) }}</span>
     <span *ngIf="s.track"> · {{ s.track }}</span>
   </div>
 </div>
@@ -82,8 +84,9 @@ autofocus
 <div class="result-name">{{ selected()!.name }}</div>
 <div class="result-meta">
 <span> {{ selected()!.id_number }}</span>
-<span *ngIf="selected()!.class_name || (selected()!.year && selected()!.parallel)"> כיתה {{ selected()!.class_name || (selected()!.year! + selected()!.parallel!) }}</span>
-<span *ngIf="selected()!.track"> {{ selected()!.track }}{{ selected()!.year ? ' ' + selected()!.year : '' }}</span>
+<span *ngIf="selected()!.year === 'ג'"> שנה {{ toStudyYear(selected()!.year) }}</span>
+<span *ngIf="selected()!.year !== 'ג' && (selected()!.class_name || (selected()!.year && selected()!.parallel))"> כיתה {{ selected()!.class_name || (selected()!.year! + selected()!.parallel!) }}</span>
+<span *ngIf="selected()!.track"> {{ selected()!.track }}{{ selected()!.year ? ' ' + toStudyYear(selected()!.year) : '' }}</span>
 <span *ngIf="selected()!.phone"> {{ selected()!.phone }}</span>
 </div>
 </div>
@@ -250,6 +253,7 @@ font-size: 0.875rem; text-decoration: none;
 `]
 })
 export class StudentSearchComponent {
+  toStudyYear = toStudyYear;
 query = '';
 focused = false;
 photoOpen = false;

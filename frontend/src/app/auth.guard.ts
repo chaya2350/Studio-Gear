@@ -19,6 +19,7 @@ export const authGuard: CanActivateFn = async (_route, state) => {
 function routePermission(path: string): { feature: string; action: PermissionAction } | null {
   if (path === '/') return null;
   if (path === '/admin') return { feature: 'admin_panel', action: 'view' };
+  if (path === '/graduates') return { feature: 'students', action: 'view' };
   if (path === '/checkout') return { feature: 'loans', action: 'create' };
   if (path === '/equipment/new') return { feature: 'equipment', action: 'create' };
   if (/^\/equipment\/[^/]+\/edit$/.test(path)) return { feature: 'equipment', action: 'edit' };

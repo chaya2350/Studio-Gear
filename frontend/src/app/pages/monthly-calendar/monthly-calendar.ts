@@ -715,7 +715,7 @@ interface GanttEntry {
       <span class="wedding-heart">💍</span>
       <div class="detail-main">
         <a [routerLink]="['/students', s.id_number]"><strong>{{ s.name }}</strong></a>
-        <span>{{ s.track || '' }}{{ s.year ? ' · ' + s.year : '' }}{{ s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
+        <span>{{ s.track || '' }}{{ s.year === 'ג' ? ' · שנה ג׳' : s.year ? ' · ' + s.year : '' }}{{ s.year !== 'ג' && s.class_name ? ' · כיתה ' + s.class_name : '' }}<span *ngIf="s.married_name"> ← {{ s.married_name }}</span></span>
         <span *ngIf="s.wedding_venue" class="wedding-venue-label"> {{ s.wedding_venue }}</span>
         <span *ngIf="!s.wedding_venue" class="wedding-venue-label no-venue"> מקום לא הוזן</span>
       </div>
@@ -728,7 +728,7 @@ interface GanttEntry {
       <span class="birthday-dot-icon" aria-hidden="true">🎂</span>
       <div class="detail-main">
         <a [routerLink]="['/students', student.id_number]"><strong>{{ student.name }}</strong></a>
-        <span>{{ student.track || '' }}{{ student.year ? ' · שנה ' + student.year : '' }}{{ student.class_name ? ' · כיתה ' + student.class_name : '' }}</span>
+        <span>{{ student.track || '' }}{{ student.year === 'ג' ? ' · שנה ג׳' : student.year ? ' · שנה ' + student.year : '' }}{{ student.year !== 'ג' && student.class_name ? ' · כיתה ' + student.class_name : '' }}</span>
         <span>{{ formatHebrewBirthDate(student.birth_date_hebrew) }}</span>
       </div>
     </div>
@@ -1145,7 +1145,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
       if (this.has('weddings')) {
         for (const student of this.weddingsForDate(date)) {
-          const weddingDetails = [student.track, student.class_name && `כיתה ${student.class_name}`, student.wedding_venue]
+          const weddingDetails = [student.track, student.year === 'ג' ? 'שנה ג׳' : student.class_name && `כיתה ${student.class_name}`, student.wedding_venue]
             .filter(Boolean).join(' · ');
           add('wedding', student.name, weddingDetails, '#c026d3', '💍', date, null, null, true);
         }
@@ -1153,7 +1153,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
       if (this.has('birthdays')) {
         for (const student of this.birthdaysForDate(date)) {
-          const birthdayDetails = [student.track, student.class_name && `כיתה ${student.class_name}`]
+          const birthdayDetails = [student.track, student.year === 'ג' ? 'שנה ג׳' : student.class_name && `כיתה ${student.class_name}`]
             .filter(Boolean).join(' · ');
           add('birthday', student.name, birthdayDetails, '#db2777', '🎂', date, null, null, true);
         }
