@@ -12,11 +12,19 @@ export class LoadingService {
 
   private readonly requests = new Map<number, RequestProgress>();
   private nextRequestId = 0;
+  private showTimer: ReturnType<typeof setTimeout> | null = null;
 
   startRequest(): number {
     const id = this.nextRequestId++;
     this.requests.set(id, { loaded: 0 });
-    this.visible.set(true);
+
+    if (this.requests.size === 1 && !this.visible()) {
+      this.showTimer = setTimeout(() => {
+        this.showTimer = null;
+        if (this.requests.size > 0) this.visible.set(true);
+      }, 1000);
+    }
+
     this.updateProgress();
     return id;
   }
@@ -34,6 +42,8 @@ export class LoadingService {
     this.requests.delete(id);
 
     if (this.requests.size === 0) {
+      if (this.showTimer) clearTimeout(this.showTimer);
+      this.showTimer = null;
       this.visible.set(false);
       this.progress.set(null);
       return;

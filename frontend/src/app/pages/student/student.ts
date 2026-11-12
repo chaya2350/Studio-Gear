@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -35,7 +35,7 @@ function toHebrewDateLabel(dateStr: string): string {
 selector: 'app-student',
 imports: [CommonModule, FormsModule, RouterLink, StudentProfileCardComponent],
 template: `
-<div *ngIf="student()">
+<div *ngIf="student()" #studentProfileContent>
 <div class="page-header">
 <div class="student-actions">
   <button class="btn btn-secondary" (click)="openGradeSheetExport()" [disabled]="!gradeSheetReady()">ייצוא ציונים</button>
@@ -49,6 +49,24 @@ template: `
 </p>
 </div>
 </div>
+</div>
+
+<div class="student-profile-search no-print" role="search">
+  <label for="student-profile-search-input">חיפוש בפרטי התלמידה</label>
+  <div class="student-profile-search-controls">
+    <input id="student-profile-search-input" type="text" [ngModel]="profileSearchQuery"
+           (ngModelChange)="searchStudentProfile($event)" placeholder="חפשי שם, טלפון, כתובת, דרישה ועוד">
+    <button *ngIf="profileSearchQuery" type="button" class="student-profile-search-clear"
+            aria-label="ניקוי החיפוש" (click)="clearStudentProfileSearch()">✕</button>
+    <span *ngIf="profileSearchQuery.trim()" class="student-profile-search-count" role="status" aria-live="polite">
+      <ng-container *ngIf="profileSearchResults.length">{{ profileSearchIndex + 1 }} מתוך {{ profileSearchResults.length }}</ng-container>
+      <ng-container *ngIf="!profileSearchResults.length">לא נמצאו תוצאות</ng-container>
+    </span>
+    <button *ngIf="profileSearchResults.length > 1" type="button" class="student-profile-search-nav"
+            aria-label="התוצאה הקודמת" (click)="moveToStudentSearchResult(-1)">↑</button>
+    <button *ngIf="profileSearchResults.length > 1" type="button" class="student-profile-search-nav"
+            aria-label="התוצאה הבאה" (click)="moveToStudentSearchResult(1)">↓</button>
+  </div>
 </div>
 
 <div *ngIf="exportFormatOpen()" class="modal-backdrop" (click)="exportFormatOpen.set(false)">
@@ -549,7 +567,6 @@ type="checkbox"
 </table>
 </div>
 </div>
-</div>
 
 <!-- ── תיק סרוק ── -->
 <div class="card" style="margin-top:20px;">
@@ -571,6 +588,7 @@ type="checkbox"
     <button class="doc-del" (click)="deleteDocument(doc)" title="מחיקה">✕</button>
   </div>
 </div>
+</div>
 
 <div *ngIf="!student() && !loading()" class="empty-state"><div class="empty-icon"></div>
 <p>תלמידה לא נמצאה</p>
@@ -588,6 +606,49 @@ transition: all var(--transition); box-shadow: var(--shadow-xs);
 .photo-upload-bar {
   display: flex; align-items: center; gap: 8px; margin: 8px 0 16px; flex-wrap: wrap;
 }
+.student-profile-search {
+  position: sticky;
+  top: 68px;
+  z-index: 20;
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+}
+.student-profile-search > label { color: var(--text-muted); font-size: .78rem; font-weight: 800; }
+.student-profile-search-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.student-profile-search-controls input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.student-profile-search-controls input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.student-profile-search-clear, .student-profile-search-nav {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+.student-profile-search-count { flex: 0 0 auto; color: var(--text-muted); font-size: .78rem; white-space: nowrap; }
+.student-search-match { scroll-margin-top: 140px; }
+.student-search-current { outline: 3px solid var(--primary); outline-offset: 3px; }
 .photo-upload-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 14px; border-radius: var(--radius-sm);
@@ -938,8 +999,13 @@ border-radius: 12px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700;
 `]
 })
 export class StudentComponent implements OnInit {
+@ViewChild('studentProfileContent') private studentProfileContent?: ElementRef<HTMLElement>;
+
 student = signal<Student | null>(null);
 loading = signal(true);
+profileSearchQuery = '';
+profileSearchResults: HTMLElement[] = [];
+profileSearchIndex = -1;
 editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
@@ -1015,6 +1081,125 @@ visibleNotices = computed(() => {  const canSeeStaff = this.auth.hasPermission('
 });
 
 constructor(private route: ActivatedRoute, private api: ApiService, public auth: AuthService, private location: Location, private router: Router) {}
+
+searchStudentProfile(query: string) {
+  this.profileSearchQuery = query;
+  for (const result of this.profileSearchResults) {
+    result.classList.remove('student-search-match', 'student-search-current');
+  }
+  this.profileSearchResults = [];
+  this.profileSearchIndex = -1;
+
+  const term = query.trim().toLocaleLowerCase();
+  const root = this.studentProfileContent?.nativeElement;
+  if (!term || !root) return;
+
+  const selector = '.info-row, .section-title, h2, h3, .req-item, .notice-pin, .loan-row, .stat-tile, tr, .doc-row, .card, .field, label';
+  const matches = new Set<HTMLElement>();
+  const addMatch = (element: Element | null) => {
+    const target = element instanceof HTMLElement ? element : null;
+    if (target && !target.closest('.student-profile-search')) matches.add(target);
+  };
+
+  const headings = Array.from(root.querySelectorAll<HTMLElement>('.section-title, h2, h3'));
+  const headingMatches = headings.filter(heading =>
+    this.profileHeadingMatches(heading.textContent || '', term)
+  );
+
+  if (headingMatches.length) {
+    headingMatches.forEach(heading => addMatch(heading));
+  } else {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+
+    while (node) {
+      if (node.textContent?.toLocaleLowerCase().includes(term)) {
+        const parent = node.parentElement;
+        if (parent && !parent.closest('.student-profile-search')) {
+          addMatch(parent.closest(selector) || parent);
+        }
+      }
+      node = walker.nextNode();
+    }
+
+    const fields = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select');
+    for (const field of Array.from(fields)) {
+      if (field.closest('.student-profile-search')) continue;
+      const value = field instanceof HTMLSelectElement ? field.selectedOptions[0]?.textContent || field.value : field.value;
+      if (value.toLocaleLowerCase().includes(term)) addMatch(field.closest(selector) || field);
+    }
+  }
+
+  this.profileSearchResults = [...matches];
+  if (!this.profileSearchResults.length) return;
+
+  this.profileSearchResults.forEach(result => result.classList.add('student-search-match'));
+  this.moveToStudentSearchResult(0);
+}
+
+private profileHeadingMatches(heading: string, query: string): boolean {
+  const normalize = (value: string) => value
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const headingWords = normalize(heading);
+  const queryWords = normalize(query);
+
+  return queryWords.every(queryWord => headingWords.some(headingWord =>
+    headingWord.includes(queryWord) ||
+    (queryWord.length >= 3 && this.profileWordsAreClose(queryWord, headingWord))
+  ));
+}
+
+private profileWordsAreClose(first: string, second: string): boolean {
+  const firstLetters = Array.from(first);
+  const secondLetters = Array.from(second);
+  if (firstLetters.length === secondLetters.length &&
+      [...firstLetters].sort().join('') === [...secondLetters].sort().join('')) {
+    return true;
+  }
+  if (Math.abs(firstLetters.length - secondLetters.length) > 1) return false;
+
+  let firstIndex = 0;
+  let secondIndex = 0;
+  let differences = 0;
+  while (firstIndex < firstLetters.length && secondIndex < secondLetters.length) {
+    if (firstLetters[firstIndex] === secondLetters[secondIndex]) {
+      firstIndex++;
+      secondIndex++;
+      continue;
+    }
+    if (++differences > 1) return false;
+    if (firstLetters.length === secondLetters.length) {
+      firstIndex++;
+      secondIndex++;
+    } else if (firstLetters.length > secondLetters.length) {
+      firstIndex++;
+    } else {
+      secondIndex++;
+    }
+  }
+
+  return differences + (firstLetters.length - firstIndex) + (secondLetters.length - secondIndex) <= 1;
+}
+
+moveToStudentSearchResult(direction: number) {
+  const count = this.profileSearchResults.length;
+  if (!count) return;
+
+  this.profileSearchIndex = direction === 0 || this.profileSearchIndex < 0
+    ? 0
+    : (this.profileSearchIndex + direction + count) % count;
+  this.profileSearchResults.forEach((result, index) => {
+    result.classList.toggle('student-search-current', index === this.profileSearchIndex);
+  });
+  this.profileSearchResults[this.profileSearchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+clearStudentProfileSearch() {
+  this.searchStudentProfile('');
+}
 
 uploadPhoto(event: Event) {
   const input = event.target as HTMLInputElement;
