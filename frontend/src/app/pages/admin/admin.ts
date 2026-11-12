@@ -608,7 +608,10 @@ class="section-tab"
     </ul>
   </div>
 
-  <!-- רשימת מורות -->
+</div><!-- /schedule_admin -->
+
+<!-- רשימת מורות — בטאב מורות -->
+<div *ngIf="activeSection() === 'teachers'" class="teachers-admin" style="margin-top:0">
   <div class="card" style="max-width:640px;">
     <div class="section-title-row">
       <div class="section-title" style="margin-bottom:0">
@@ -659,7 +662,7 @@ class="section-tab"
       </div>
     </div>
   </div>
-</div><!-- /schedule_admin -->
+</div>
 `,
 styles: [`
 .section-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
