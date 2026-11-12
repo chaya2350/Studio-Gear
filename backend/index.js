@@ -18,7 +18,7 @@ const {
   mergeStudentExtraFields
 } = require('./student-import');
 const { buildTrackReport, buildClassReport, splitTrackValues, studentHasTrack, resolveStudentTrackIds, buildClassName } = require('./database-report');
-const { getWeekStart, collectTeacherUpcomingLessons } = require('./teacher-profile');
+const { getWeekStart, collectTeacherUpcomingLessons, collectTeacherTrackOccurrences } = require('./teacher-profile');
 const { copyScheduleWeekIfEmpty } = require('./schedule-week-copy');
 const { copyScheduleAcrossYear } = require('./schedule-year-copy');
 const { findClassTimeConflict, findTeacherTimeConflicts } = require('./schedule-conflicts');
@@ -3595,6 +3595,36 @@ app.get('/api/teachers/:id', (req, res) => {
   res.json(teacher);
 });
 
+function getTeacherUpcomingLessons(teacherId, today, weekStart) {
+  const classLessons = db.prepare(`
+    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject,
+      b.room_number, r.name AS room_name
+    FROM schedule_slots s
+    JOIN teachers t ON t.id = s.teacher_id
+    LEFT JOIN room_lesson_bookings b ON b.slot_id = s.id
+    LEFT JOIN rooms r ON r.number = b.room_number
+    WHERE s.teacher_id = ?
+      AND s.week_start >= ?
+      AND s.week_start <= ?
+    ORDER BY s.week_start, s.day_of_week, s.start_time
+  `).all(teacherId, weekStart, addDays(weekStart, 7)).filter(slot =>
+    !schoolHolidayForDate(addDays(slot.week_start, Number(slot.day_of_week)))
+  );
+  const trackSlots = db.prepare(`
+    SELECT s.*, tr.name AS track_name, t.subject AS teacher_subject, r.name AS room_name
+    FROM track_schedule_slots s
+    JOIN tracks tr ON tr.id = s.track_id
+    JOIN teachers t ON t.id = s.teacher_id
+    LEFT JOIN rooms r ON r.number = s.room_number
+    WHERE s.teacher_id = ?
+    ORDER BY s.day_of_week, s.start_time
+  `).all(teacherId);
+  const trackLessons = collectTeacherTrackOccurrences(trackSlots, weekStart, date =>
+    Boolean(schoolHolidayForDate(date))
+  );
+  return collectTeacherUpcomingLessons([...classLessons, ...trackLessons], today);
+}
+
 app.get('/api/teachers/profile', async (req, res) => {
   await ensureSchoolYearHolidays();
   const teacher = db.prepare('SELECT * FROM teachers ORDER BY id LIMIT 1').get();
@@ -3602,19 +3632,7 @@ app.get('/api/teachers/profile', async (req, res) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const weekStart = getWeekStart(today);
-  const lessons = db.prepare(`
-    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject
-    FROM schedule_slots s
-    JOIN teachers t ON t.id = s.teacher_id
-    WHERE s.teacher_id = ?
-      AND s.week_start >= ?
-      AND s.week_start <= ?
-    ORDER BY s.week_start, s.day_of_week, s.start_time
-  `).all(teacher.id, weekStart, addDays(weekStart, 7)).filter(slot =>
-    !schoolHolidayForDate(addDays(slot.week_start, Number(slot.day_of_week)))
-  );
-
-  res.json({ teacher, lessons: collectTeacherUpcomingLessons(lessons, today), week_start: weekStart });
+  res.json({ teacher, lessons: getTeacherUpcomingLessons(teacher.id, today, weekStart), week_start: weekStart });
 });
 
 app.get('/api/teachers/:id/profile', async (req, res) => {
@@ -3624,19 +3642,7 @@ app.get('/api/teachers/:id/profile', async (req, res) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const weekStart = getWeekStart(today);
-  const lessons = db.prepare(`
-    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject
-    FROM schedule_slots s
-    JOIN teachers t ON t.id = s.teacher_id
-    WHERE s.teacher_id = ?
-      AND s.week_start >= ?
-      AND s.week_start <= ?
-    ORDER BY s.week_start, s.day_of_week, s.start_time
-  `).all(teacher.id, weekStart, addDays(weekStart, 7)).filter(slot =>
-    !schoolHolidayForDate(addDays(slot.week_start, Number(slot.day_of_week)))
-  );
-
-  res.json({ teacher, lessons: collectTeacherUpcomingLessons(lessons, today), week_start: weekStart });
+  res.json({ teacher, lessons: getTeacherUpcomingLessons(teacher.id, today, weekStart), week_start: weekStart });
 });
 
 app.post('/api/teachers', (req, res) => {

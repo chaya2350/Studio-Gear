@@ -27,6 +27,19 @@ function addDays(dateStr, days) {
   return formatDate(d);
 }
 
+function collectTeacherTrackOccurrences(slots = [], weekStart, isSchoolHoliday = () => false) {
+  return [weekStart, addDays(weekStart, 7)].flatMap((week) => slots
+    .map((slot) => ({ slot, week, lessonDate: addDays(week, Number(slot.day_of_week)) }))
+    .filter(({ slot, lessonDate }) => slot && !isSchoolHoliday(lessonDate))
+    .map(({ slot, week }) => ({
+      ...slot,
+      class_year: `מסלול ${slot.track_name}`,
+      class_parallel: `שנה ${slot.study_year}`,
+      class_name: `מסלול ${slot.track_name} · שנה ${slot.study_year}׳`,
+      week_start: week
+    })));
+}
+
 function collectTeacherUpcomingLessons(slots = [], asOfDateStr) {
   const referenceWeekStart = getWeekStart(asOfDateStr || new Date().toISOString().slice(0, 10));
   const maxWeekStart = addDays(referenceWeekStart, 7);
@@ -38,13 +51,15 @@ function collectTeacherUpcomingLessons(slots = [], asOfDateStr) {
       teacher_id: slot.teacher_id,
       class_year: slot.class_year,
       class_parallel: slot.class_parallel,
-      class_name: `${slot.class_year}${slot.class_parallel}`,
+      class_name: slot.class_name || `${slot.class_year}${slot.class_parallel}`,
       day_of_week: Number(slot.day_of_week),
       day_name: DAYS_HE[Number(slot.day_of_week)] || '',
       lesson_date: addDays(slot.week_start, Number(slot.day_of_week)),
       start_time: slot.start_time,
       end_time: slot.end_time || '',
       subject: slot.subject || slot.teacher_subject || '',
+      room_number: slot.room_number || null,
+      room_name: slot.room_name || null,
       week_start: slot.week_start
     }))
     .sort((a, b) => (a.lesson_date + a.start_time).localeCompare(b.lesson_date + b.start_time));
@@ -53,5 +68,6 @@ function collectTeacherUpcomingLessons(slots = [], asOfDateStr) {
 module.exports = {
   getWeekStart,
   addDays,
-  collectTeacherUpcomingLessons
+  collectTeacherUpcomingLessons,
+  collectTeacherTrackOccurrences
 };
