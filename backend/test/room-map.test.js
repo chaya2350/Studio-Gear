@@ -28,9 +28,9 @@ test('room edits validate all fields', () => {
   assert.notEqual(validateRoomUpdate({ ...valid, name: ' ' }), '');
 });
 
-test('room API uses schedule view and change permissions', () => {
+test('room API uses schedule view and edit permissions', () => {
   assert.deepEqual(getApiPermission('/schedule/room-map', 'GET'), { feature: 'schedule', action: 'view' });
-  assert.deepEqual(getApiPermission('/schedule/room-map/001', 'PUT'), { feature: 'schedule', action: 'change' });
+  assert.deepEqual(getApiPermission('/schedule/room-map/001', 'PUT'), { feature: 'schedule', action: 'edit' });
 });
 
 test('room update persists changes and rejects missing rooms', () => {

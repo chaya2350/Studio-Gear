@@ -335,14 +335,14 @@ template: `
 <div class="card notices-card">
   <div class="section-title-row">
     <div class="section-title">📋 לוח מודעות</div>
-    <button *ngIf="auth.hasPermission('students','change')"
+    <button *ngIf="auth.hasPermission('students','create')"
             class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;"
             (click)="noticeFormOpen.set(!noticeFormOpen())">
       {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
     </button>
   </div>
 
-  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','change')" class="notice-form">
+  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','create')" class="notice-form">
     <div class="form-row">
       <div class="form-group">
         <label>כותרת *</label>
@@ -382,7 +382,7 @@ template: `
             {{ n.visibility === 'staff' ? '👩‍💼 צוות' : n.visibility === 'student' ? '👩‍🎓 תלמידה' : '🌐 כולם' }}
           </span>
           <span class="notice-date">{{ n.notice_date }}</span>
-          <button *ngIf="auth.hasPermission('students','change')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+          <button *ngIf="auth.hasPermission('students','delete')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
         </div>
         <strong class="notice-title">{{ n.title }}</strong>
         <p class="notice-body">{{ n.body }}</p>
@@ -411,11 +411,11 @@ template: `
 <p *ngIf="!reqs.track" class="req-note">לא הוגדר מסלול לתלמידה. אפשר להגדיר אותו בעריכת הפרטים.</p>
 <p *ngIf="reqs.track && !reqs.defined" class="req-note">
 עדיין לא הוגדרו דרישות למסלול הזה.
-<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להגדרת המסלול</a>
+<a *ngIf="auth.hasPermission('tracks', 'edit')" routerLink="/admin" class="req-link">להגדרת המסלול</a>
 </p>
 <p *ngIf="reqs.defined && !reqs.requirements.length" class="req-note">
 למסלול הזה עדיין אין דרישות.
-<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להוספת דרישות</a>
+<a *ngIf="auth.hasPermission('tracks', 'edit')" routerLink="/admin" class="req-link">להוספת דרישות</a>
 </p>
 <ng-container *ngIf="reqs.requirements.length">
 <div class="req-summary" [class.done]="missingRequired() === 0">

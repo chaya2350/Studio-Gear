@@ -1,23 +1,23 @@
-const PERMISSION_ACTIONS = ['view', 'change'];
+const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'];
 
 const PERMISSION_CATALOG = [
-  { key: 'students', label: 'תלמידות', description: 'צפייה בכרטיסי תלמידות, בפרטים, בתמונות וברשימות; שינוי נתוני תלמידות.' },
-  { key: 'tracks', label: 'מסלולים ודרישות', description: 'צפייה במסלולי לימוד, בדרישות ובהתקדמות; שינוי מסלולים ודרישות.' },
-  { key: 'approvals', label: 'אישורים', description: 'צפייה בסוגי אישורים ובבקשות; שינוי סוגי אישורים והפקת אישורים.' },
-  { key: 'teachers', label: 'מורות', description: 'צפייה בפרטי המורות וברשימה; שינוי פרטי מורות וייבוא נתונים.' },
-  { key: 'schedule', label: 'מערכת שעות', description: 'צפייה בשיעורים ובמערכת השעות; שינוי שיעורים ומבנה שעות.' },
-  { key: 'equipment', label: 'ציוד', description: 'צפייה בפריטי ציוד, בקטגוריות ובתמונות; שינוי פרטי הציוד והקטגוריות.' },
-  { key: 'loans', label: 'השאלות', description: 'צפייה בהשאלות ובהחזרות; פתיחה, עדכון וביטול של השאלות.' },
-  { key: 'calendar', label: 'לוח שנה ואירועים', description: 'צפייה באירועים; הוספה, עדכון וייבוא של אירועים.' },
-  { key: 'attendance', label: 'נוכחות', description: 'צפייה ברישומי נוכחות; עדכון היעדרויות ואיחורים.' },
-  { key: 'exams', label: 'מבחנים וציונים', description: 'צפייה במבחנים, בקודים ובציונים; יצירה ועדכון של נתוני מבחנים.' },
-  { key: 'messages', label: 'הודעות ומשימות', description: 'צפייה בהודעות ובמשימות; שליחה ועדכון שלהן.' },
-  { key: 'pages', label: 'דפים ובקשות גישה', description: 'צפייה בדפים ובבקשות; שינוי דפים והרשאות גישה אליהם.' },
-  { key: 'reports', label: 'דוחות', description: 'צפייה והפקת דוחות. אין באזור זה פעולות שינוי.', supportsChange: false },
-  { key: 'search', label: 'חיפוש כללי', description: 'חיפוש וצפייה בתוצאות מהאזורים המותרים. החיפוש אינו משנה נתונים.', supportsChange: false },
-  { key: 'favorites', label: 'מועדפים והערות צוות', description: 'צפייה במועדפים ובהערות צוות; הוספה והסרה של מועדפים והערות.' },
-  { key: 'notifications', label: 'התראות ופעילות', description: 'צפייה בהתראות וברשימת הפעילות. אין באזור זה פעולות שינוי.', supportsChange: false },
-  { key: 'admin_panel', label: 'מסכי ניהול', description: 'כניסה למסכי הניהול המותרים לתפקיד; כל מסך עדיין כפוף להרשאת התחום שלו.', supportsChange: false },
+  { key: 'students', label: 'תלמידות', group: 'לימודים ותלמידות', description: 'כרטיסי תלמידות, פרטים אישיים, תמונות, רשימות ונתוני רישום.' },
+  { key: 'tracks', label: 'מסלולים ודרישות', group: 'לימודים ותלמידות', description: 'מסלולי לימוד, דרישות, התקדמות ושיוך תלמידות למסלולים.' },
+  { key: 'approvals', label: 'אישורים', group: 'לימודים ותלמידות', description: 'סוגי אישורים, בקשות והפקת אישורים.' },
+  { key: 'attendance', label: 'נוכחות', group: 'לימודים ותלמידות', description: 'רישומי נוכחות, היעדרויות ואיחורים.' },
+  { key: 'exams', label: 'מבחנים וציונים', group: 'לימודים ותלמידות', description: 'מבחנים, קודים, ציונים וסטטיסטיקות.' },
+  { key: 'teachers', label: 'מורות', group: 'צוות ומערכת', description: 'פרטי המורות, הרשימות וייבוא נתונים.' },
+  { key: 'schedule', label: 'מערכת שעות', group: 'צוות ומערכת', description: 'שיעורים, חדרים, שיבוצים ומבנה מערכת השעות.' },
+  { key: 'equipment', label: 'ציוד', group: 'ציוד והשאלות', description: 'פריטי ציוד, קטגוריות, תמונות ופרטי מלאי.' },
+  { key: 'loans', label: 'השאלות', group: 'ציוד והשאלות', description: 'השאלות, החזרות וציוד נייד.' },
+  { key: 'calendar', label: 'לוח שנה ואירועים', group: 'תקשורת ומעקב', description: 'אירועים בלוח השנה וייבוא אירועים.' },
+  { key: 'messages', label: 'הודעות ומשימות', group: 'תקשורת ומעקב', description: 'הודעות, שליחה ומשימות צוות.' },
+  { key: 'favorites', label: 'מועדפים והערות צוות', group: 'תקשורת ומעקב', description: 'מועדפים והערות פנימיות לצוות.' },
+  { key: 'notifications', label: 'התראות ופעילות', group: 'תקשורת ומעקב', description: 'התראות ורשימת הפעילות. צפייה בלבד.', supportsChange: false },
+  { key: 'pages', label: 'דפים ובקשות גישה', group: 'כלים וניהול', description: 'דפים, בקשות גישה והרשאות לדפים.' },
+  { key: 'reports', label: 'דוחות', group: 'כלים וניהול', description: 'צפייה והפקת דוחות. צפייה בלבד.', supportsChange: false },
+  { key: 'search', label: 'חיפוש כללי', group: 'כלים וניהול', description: 'חיפוש וצפייה בתוצאות מהתחומים המותרים. צפייה בלבד.', supportsChange: false },
+  { key: 'admin_panel', label: 'מסכי ניהול', group: 'כלים וניהול', description: 'כניסה למסכי ניהול; כל מסך כפוף להרשאה של התחום המתאים.', supportsChange: false },
 ];
 
 const apiRoutes = [
@@ -66,18 +66,29 @@ function getApiPermission(pathname, method) {
     '/schedule/import': 'schedule',
   };
   if (method === 'POST' && importFeatures[pathname]) {
-    return { feature: importFeatures[pathname], action: 'change' };
+    return { feature: importFeatures[pathname], actions: ['create', 'edit'] };
+  }
+  if (pathname === '/upload' && method === 'POST') {
+    return { feature: 'equipment', actions: ['create', 'edit'] };
+  }
+  if (/^\/students\/[^/]+\/wedding\/?$/.test(pathname) && method === 'POST') {
+    return { feature: 'students', action: 'edit' };
   }
   if (/^\/students\/[^/]+\/photo\/?$/.test(pathname) && method === 'POST') {
-    return { feature: 'students', action: 'change' };
+    return { feature: 'students', action: 'edit' };
   }
   if (pathname === '/admin/reset-database' && method === 'POST') {
-    return { feature: 'students', action: 'change' };
+    return { feature: 'students', action: 'delete' };
+  }
+  if (/^\/attendance\/sessions\/[^/]+\/(absent|late|lock)\/?$/.test(pathname) && method === 'POST') {
+    return { feature: 'attendance', action: 'edit' };
   }
   const route = apiRoutes.find(([pattern]) => pattern.test(pathname));
   if (!route) return null;
   const action = ['GET', 'HEAD'].includes(method) ? 'view'
-    : ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'change' : null;
+    : method === 'POST' ? 'create'
+      : ['PUT', 'PATCH'].includes(method) ? 'edit'
+        : method === 'DELETE' ? 'delete' : null;
   if (!action) return null;
   return { feature: route[1], action };
 }
@@ -108,7 +119,7 @@ function initializePermissionSchema(db) {
     CREATE TABLE IF NOT EXISTS role_permissions (
       role_key TEXT NOT NULL REFERENCES system_roles(role_key) ON DELETE CASCADE,
       permission_key TEXT NOT NULL,
-      action TEXT NOT NULL CHECK (action IN ('view', 'change')),
+      action TEXT NOT NULL CHECK (action IN ('view', 'create', 'edit', 'delete')),
       enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
       PRIMARY KEY (role_key, permission_key, action)
     );
@@ -116,34 +127,35 @@ function initializePermissionSchema(db) {
   const permissionsSchema = db.prepare(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'role_permissions'"
   ).get()?.sql || '';
-  if (/['"]create['"]/.test(permissionsSchema) || /['"]delete['"]/.test(permissionsSchema)) {
+  if (!permissionsSchema.includes("'view', 'create', 'edit', 'delete'")) {
+    const oldPermissions = db.prepare(
+      'SELECT role_key, permission_key, action, enabled FROM role_permissions'
+    ).all();
     db.transaction(() => {
       db.exec(`
         CREATE TABLE role_permissions_migration_new (
           role_key TEXT NOT NULL REFERENCES system_roles(role_key) ON DELETE CASCADE,
           permission_key TEXT NOT NULL,
-          action TEXT NOT NULL CHECK (action IN ('view', 'change')),
+          action TEXT NOT NULL CHECK (action IN ('view', 'create', 'edit', 'delete')),
           enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
           PRIMARY KEY (role_key, permission_key, action)
         );
-        INSERT INTO role_permissions_migration_new (role_key, permission_key, action, enabled)
-        SELECT role_key, permission_key, 'view', MAX(enabled)
-        FROM role_permissions
-        WHERE action = 'view'
-        GROUP BY role_key, permission_key;
-        INSERT INTO role_permissions_migration_new (role_key, permission_key, action, enabled)
-        SELECT role_key, permission_key, 'change',
-          CASE
-            WHEN SUM(CASE WHEN action IN ('create', 'update', 'delete') THEN 1 ELSE 0 END) = 3
-              AND MIN(CASE WHEN action IN ('create', 'update', 'delete') THEN enabled ELSE 0 END) = 1
-            THEN 1
-            ELSE 0
-          END
-        FROM role_permissions
-        GROUP BY role_key, permission_key;
         DROP TABLE role_permissions;
         ALTER TABLE role_permissions_migration_new RENAME TO role_permissions;
       `);
+      const insert = db.prepare(
+        'INSERT OR REPLACE INTO role_permissions (role_key, permission_key, action, enabled) VALUES (?, ?, ?, ?)'
+      );
+      for (const row of oldPermissions) {
+        const action = row.action === 'update' ? 'edit' : row.action;
+        if (row.action === 'change') {
+          for (const granularAction of ['create', 'edit', 'delete']) {
+            insert.run(row.role_key, row.permission_key, granularAction, row.enabled);
+          }
+        } else if (PERMISSION_ACTIONS.includes(action)) {
+          insert.run(row.role_key, row.permission_key, action, row.enabled);
+        }
+      }
     })();
   }
   const catalogKeys = PERMISSION_CATALOG.map(({ key }) => key);

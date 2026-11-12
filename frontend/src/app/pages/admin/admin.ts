@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
-import { AuthService, PermissionAction, PermissionsConfiguration, RolePermissionSet, SystemRole, UserRole } from '../../services/auth.service';
+import { AuthService, PermissionAction, PermissionFeature, PermissionsConfiguration, RolePermissionSet, SystemRole, UserRole } from '../../services/auth.service';
 import { TracksComponent } from '../tracks/tracks';
 type AdminSection = 'tracks' | 'students' | 'approvals' | 'users' | 'teachers' | 'schedule_admin' | 'permissions';
 
@@ -138,60 +138,112 @@ class="section-tab"
 
 <div *ngIf="activeSection() === 'permissions'" class="users-tab">
 
-  <!-- ניהול תפקידים והרשאות -->
-  <div class="card admin-card">
-    <div class="section-title">ניהול תפקידים והרשאות</div>
-    <p class="user-help">מנהלת המערכת מקבלת את כל ההרשאות. כל הרשאה חדשה מתחילה כמאושרת וניתן לשנות אותה כאן.</p>
+  <div class="card admin-card permissions-page-card">
+    <div class="permissions-heading">
+      <div class="permissions-heading-icon" aria-hidden="true">✓</div>
+      <div>
+        <div class="section-title">ניהול תפקידים והרשאות</div>
+        <p class="user-help">בחרי תפקיד, ואז הגדירי בדיוק מה מותר לו לעשות בכל תחום במערכת.</p>
+      </div>
+    </div>
+
     <div class="permission-key">
-      <p><strong>צפייה</strong> — פתיחת האזור וצפייה במידע שבו.</p>
-      <p><strong>שינוי</strong> — כל פעולה שמשנה מידע: הוספה, עריכה או מחיקה.</p>
-      <p>במקום שבו מופיע מקף, אין פעולות שינוי באזור הזה.</p>
+      <div><strong>צפייה</strong><span>לפתוח ולקרוא מידע בתחום</span></div>
+      <div><strong>הוספה</strong><span>ליצור רשומה או פריט חדש</span></div>
+      <div><strong>עריכה</strong><span>לעדכן מידע קיים</span></div>
+      <div><strong>מחיקה</strong><span>למחוק או לבטל פריט</span></div>
+      <p class="permission-key-note">ייבוא נתונים דורש גם הרשאת הוספה וגם הרשאת עריכה.</p>
     </div>
-    <div class="role-create-row">
-      <input class="admin-input" [value]="newRoleName()" (input)="newRoleName.set($any($event.target).value)"
-             placeholder="שם תפקיד חדש" aria-label="שם תפקיד חדש" maxlength="60" (keyup.enter)="createRole()">
-      <button class="btn btn-primary" type="button" [disabled]="!newRoleName().trim() || savingRole()" (click)="createRole()">הוספת תפקיד</button>
+
+    <div class="role-create-panel">
+      <div>
+        <strong>תפקיד חדש</strong>
+        <span>התפקיד ייווצר ללא הרשאות — בחרי עבורו גישה לאחר מכן.</span>
+      </div>
+      <div class="role-create-row">
+        <input class="admin-input" [value]="newRoleName()" (input)="newRoleName.set($any($event.target).value)"
+               placeholder="למשל: רכזת שכבה" aria-label="שם תפקיד חדש" maxlength="60" (keyup.enter)="createRole()">
+        <button class="btn btn-primary" type="button" [disabled]="!newRoleName().trim() || savingRole()" (click)="createRole()">יצירת תפקיד</button>
+      </div>
     </div>
+
     <div *ngIf="permissionsError()" class="alert alert-error" role="alert">{{ permissionsError() }}</div>
     <div *ngIf="permissionsMessage()" class="alert alert-success" role="status">{{ permissionsMessage() }}</div>
+
     <ng-container *ngIf="permissionConfig() as config">
-      <label class="role-select-label">
-        תפקיד לעריכת הרשאות
-        <select [ngModel]="selectedPermissionRole()" (ngModelChange)="selectPermissionRole($event)">
-          <option *ngFor="let role of config.roles" [value]="role.role_key">{{ role.name }}</option>
-        </select>
-      </label>
-      <div *ngIf="selectedRolePermissions() as selectedRole" class="permissions-table-wrap">
-        <table class="permissions-table">
-          <thead>
-            <tr>
-              <th>אזור במערכת</th>
-              <th>מה נמצא באזור?</th>
-              <th *ngFor="let action of config.actions">{{ permissionActionLabel(action) }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let feature of config.catalog">
-              <th scope="row">{{ feature.label }}</th>
-              <td class="permission-description">{{ feature.description }}</td>
-              <td *ngFor="let action of config.actions">
-                <input *ngIf="action === 'view' || feature.supportsChange !== false"
-                       type="checkbox" [checked]="selectedRole.permissions[feature.key][action]"
-                       [disabled]="selectedRole.role_key === 'admin' || savingRole()"
-                       [attr.aria-label]="feature.label + ' — ' + permissionActionLabel(action)"
-                       (change)="setRolePermission(feature.key, action, $any($event.target).checked)">
-                <span *ngIf="action === 'change' && feature.supportsChange === false" aria-label="אין פעולות שינוי באזור זה">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <button class="btn btn-primary" type="button"
-                *ngIf="selectedRole.role_key !== 'admin'"
-                [disabled]="savingRole() || !permissionsDirty()"
-                (click)="saveRolePermissions()">
-          {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
-        </button>
-        <p *ngIf="selectedRole.role_key === 'admin'" class="user-help">למנהלת המערכת תמיד יש את כל ההרשאות.</p>
+      <div class="permission-role-panel">
+        <label class="role-select-label">
+          <span>תפקיד לעריכת הרשאות</span>
+          <select [ngModel]="selectedPermissionRole()" (ngModelChange)="selectPermissionRole($event)">
+            <option *ngFor="let role of config.roles" [value]="role.role_key">{{ role.name }}</option>
+          </select>
+        </label>
+
+        <ng-container *ngIf="selectedRolePermissions() as selectedRole">
+          <div class="permission-summary">
+            <div>
+              <span class="permission-summary-label">תפקיד נבחר</span>
+              <strong>{{ selectedRole.name }}</strong>
+            </div>
+            <div>
+              <span class="permission-summary-label">תחומים עם הרשאה</span>
+              <strong>{{ permissionSummary(selectedRole, config).areas }} מתוך {{ config.catalog.length }}</strong>
+            </div>
+            <div>
+              <span class="permission-summary-label">הרשאות פעילות</span>
+              <strong>{{ permissionSummary(selectedRole, config).granted }} מתוך {{ permissionSummary(selectedRole, config).total }}</strong>
+            </div>
+          </div>
+
+          <div *ngIf="selectedRole.role_key === 'admin'" class="admin-role-notice">
+            למנהלת המערכת יש תמיד גישה מלאה לכל התחומים. לא ניתן לשנות הרשאות אלה.
+          </div>
+
+          <div *ngIf="selectedRole.role_key !== 'admin'" class="permission-presets">
+            <span>בחירה מהירה:</span>
+            <button type="button" class="permission-preset" [disabled]="savingRole()" (click)="setPermissionPreset('view')">צפייה בלבד</button>
+            <button type="button" class="permission-preset" [disabled]="savingRole()" (click)="setPermissionPreset('full')">גישה מלאה</button>
+            <button type="button" class="permission-preset permission-preset-muted" [disabled]="savingRole()" (click)="setPermissionPreset('none')">ניקוי כל ההרשאות</button>
+          </div>
+
+          <div class="permission-groups">
+            <section *ngFor="let group of permissionGroups(config)" class="permission-group">
+              <h3>{{ group.label }}</h3>
+              <div *ngFor="let feature of group.features" class="permission-feature">
+                <div class="permission-feature-info">
+                  <strong>{{ feature.label }}</strong>
+                  <span>{{ feature.description }}</span>
+                </div>
+                <div class="permission-feature-actions">
+                  <ng-container *ngFor="let action of config.actions">
+                    <label *ngIf="action === 'view' || feature.supportsChange !== false"
+                           class="permission-choice"
+                           [class.permission-choice-allowed]="selectedRole.permissions[feature.key][action]"
+                           [class.permission-choice-disabled]="selectedRole.role_key === 'admin' || savingRole()"
+                           [attr.title]="feature.label + ' — ' + permissionActionLabel(action)">
+                      <input type="checkbox" [checked]="selectedRole.permissions[feature.key][action]"
+                             [disabled]="selectedRole.role_key === 'admin' || savingRole()"
+                             [attr.aria-label]="feature.label + ' — ' + permissionActionLabel(action)"
+                             (change)="setRolePermission(feature.key, action, $any($event.target).checked)">
+                      <span class="permission-choice-mark" aria-hidden="true">{{ selectedRole.permissions[feature.key][action] ? '✓' : '×' }}</span>
+                      <span>{{ permissionActionLabel(action) }}</span>
+                    </label>
+                    <span *ngIf="action !== 'view' && feature.supportsChange === false" class="permission-not-supported">—</span>
+                  </ng-container>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div *ngIf="selectedRole.role_key !== 'admin'" class="permissions-save-bar">
+            <span>{{ permissionsDirty() ? 'יש שינויים שעדיין לא נשמרו' : 'כל השינויים שמורים' }}</span>
+            <button class="btn btn-primary" type="button"
+                    [disabled]="savingRole() || !permissionsDirty()"
+                    (click)="saveRolePermissions()">
+              {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
+            </button>
+          </div>
+        </ng-container>
       </div>
     </ng-container>
   </div>
@@ -872,23 +924,57 @@ color: var(--text-muted); cursor: pointer; transition: color var(--transition), 
 .confirmation-input:focus { outline: none; border-color: #c44747; box-shadow: 0 0 0 3px rgba(196, 71, 71, .12); }
 .confirmation-actions { justify-content: center; flex-wrap: wrap; }
 .confirmation-actions .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
-.role-permissions { margin: 20px 0; padding: 18px; border: 1px solid var(--border);
-  border-radius: var(--radius); background: var(--surface-2); }
-.role-create-row { display: flex; gap: 8px; max-width: 520px; margin-bottom: 14px; }
-.role-create-row .admin-input { flex: 1; min-width: 0; }
-.role-select-label { display: grid; gap: 6px; max-width: 360px; margin: 14px 0; font-weight: 700; }
-.role-select-label select { padding: 9px 12px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
-.permissions-table-wrap { overflow-x: auto; margin: 14px 0; }
-.permission-key { margin: 12px 0 18px; padding: 12px 14px; border-inline-start: 4px solid var(--primary);
-  border-radius: 8px; background: var(--surface); color: var(--text); font-size: .88rem; }
-.permission-key p { margin: 4px 0; }
-.permissions-table { width: 100%; min-width: 760px; border-collapse: collapse; background: var(--surface); }
-.permissions-table th, .permissions-table td { padding: 9px 12px; border: 1px solid var(--border); text-align: center; }
-.permissions-table thead th { background: var(--surface-2); font-size: .86rem; }
-.permissions-table tbody th { text-align: right; white-space: nowrap; }
-.permissions-table .permission-description { min-width: 300px; text-align: right; line-height: 1.5; }
-.permissions-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+.permissions-page-card { overflow: hidden; padding: 0; }
+.permissions-heading { display: flex; align-items: center; gap: 14px; padding: 22px 24px 12px; }
+.permissions-heading-icon { display: grid; place-items: center; flex: 0 0 46px; height: 46px;
+  border-radius: 14px; background: var(--primary-light); color: var(--primary); font-size: 1.4rem; font-weight: 900; }
+.permission-key { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+  margin: 12px 24px 20px; padding: 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2); font-size: .86rem; }
+.permission-key-note { grid-column: 1 / -1; margin: 0; font-size: .8rem; }
+.role-create-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 0 24px 18px; padding: 16px; border: 1px dashed var(--border); border-radius: 12px; }
+.role-create-row { display: flex; gap: 8px; width: min(480px, 60%); }
+.permission-role-panel { padding: 20px 24px 24px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.role-select-label { display: grid; gap: 7px; width: min(420px, 100%); font-weight: 700; }
+.role-select-label select { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; }
+.permission-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.permission-summary > div { display: grid; gap: 4px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 10px; }
+.admin-role-notice { margin: 14px 0; padding: 12px 14px; border-radius: 10px; background: var(--primary-light); }
+.permission-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0 14px; }
+.permission-presets > span { margin-inline-end: 4px; color: var(--text-muted); font-size: .88rem; }
+.permission-preset { padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface); color: var(--primary); font: inherit; font-size: .85rem; font-weight: 700; cursor: pointer; }
+.permission-preset-muted { color: var(--text-muted); }
+.permission-groups { display: grid; gap: 14px; }
+.permission-group { overflow: hidden; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); }
+.permission-group h3 { margin: 0; padding: 12px 16px; background: var(--primary-light); color: var(--primary); font-size: .96rem; }
+.permission-feature { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(390px, 1.4fr);
+  align-items: center; gap: 16px; padding: 13px 16px; border-top: 1px solid var(--border); }
+.permission-feature-info { display: grid; gap: 4px; }
+.permission-feature-actions { display: grid; grid-template-columns: repeat(4, minmax(78px, 1fr)); gap: 7px; }
+.permission-choice { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px;
+  padding: 5px 7px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+  color: var(--text-muted); font-size: .78rem; cursor: pointer; user-select: none; }
+.permission-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.permission-choice:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
+.permission-choice-allowed { border-color: #b6dfc3; background: #effaf3; color: #21643b; }
+.permission-choice-disabled { opacity: .62; cursor: not-allowed; }
+.permission-choice-mark { font-weight: 900; }
+.permission-not-supported { display: grid; place-items: center; color: var(--text-muted); }
+.permissions-save-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--border); }
+@media (max-width: 760px) {
+  .permission-key { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-inline: 14px; }
+  .permissions-heading { padding-inline: 14px; }
+  .role-create-panel { align-items: stretch; flex-direction: column; margin-inline: 14px; }
+  .role-create-row { width: 100%; }
+  .permission-role-panel { padding: 16px 14px 20px; }
+  .permission-summary { grid-template-columns: 1fr; gap: 8px; }
+  .permission-feature { grid-template-columns: 1fr; gap: 10px; }
+  .permission-feature-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .permission-choice { flex-direction: column; gap: 3px; min-height: 54px; }
+}
 @keyframes confirmation-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 `]
 })
@@ -944,11 +1030,11 @@ newStudentDraft = {
   personal_phone: '', father_name: '', father_phone: '', father_external: '',
   mother_name: '', mother_phone: '', mother_external: '',
   specialization1: '', specialization2: '', option_b: '', teaching: false, practice_teaching: false,
-  marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
+  marital_status: 'רווקה', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
 };
 
 canAddStudent() {
-  return this.auth.hasPermission('students', 'change');
+  return this.auth.hasPermission('students', 'create');
 }
 
 saveNewStudent() {
@@ -1013,7 +1099,7 @@ saveNewStudent() {
         personal_phone: '', father_name: '', father_phone: '', father_external: '',
         mother_name: '', mother_phone: '', mother_external: '',
         specialization1: '', specialization2: '', option_b: '', teaching: false, practice_teaching: false,
-        marital_status: '', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
+        marital_status: 'רווקה', reg_number: '', reg_fee: '', payment_confirmed: '', notes: '', fake_id: ''
       };
       this.newStudentDraft = emptyDraft;
       this.loadTotal();
@@ -1077,7 +1163,62 @@ selectedRolePermissions(): RolePermissionSet | null {
 }
 
 permissionActionLabel(action: PermissionAction): string {
-  return ({ view: 'צפייה', change: 'שינוי' })[action];
+  return ({
+    view: 'צפייה',
+    create: 'הוספה',
+    edit: 'עריכה',
+    delete: 'מחיקה'
+  })[action];
+}
+
+permissionGroups(config: PermissionsConfiguration): { label: string; features: PermissionFeature[] }[] {
+  const groups: { label: string; features: PermissionFeature[] }[] = [];
+  for (const feature of config.catalog) {
+    const label = feature.group || 'תחומים נוספים';
+    let group = groups.find(item => item.label === label);
+    if (!group) {
+      group = { label, features: [] };
+      groups.push(group);
+    }
+    group.features.push(feature);
+  }
+  return groups;
+}
+
+permissionSummary(role: RolePermissionSet, config: PermissionsConfiguration): { areas: number; granted: number; total: number } {
+  let areas = 0;
+  let granted = 0;
+  let total = 0;
+  for (const feature of config.catalog) {
+    const actions = config.actions.filter(action => action === 'view' || feature.supportsChange !== false);
+    if (actions.some(action => role.permissions[feature.key]?.[action])) areas++;
+    total += actions.length;
+    granted += actions.filter(action => role.permissions[feature.key]?.[action]).length;
+  }
+  return { areas, granted, total };
+}
+
+setPermissionPreset(preset: 'view' | 'full' | 'none') {
+  const config = this.permissionConfig();
+  const role = this.selectedRolePermissions();
+  if (!config || !role || role.role_key === 'admin' || this.savingRole()) return;
+
+  const permissions = { ...role.permissions };
+  for (const feature of config.catalog) {
+    const enabled = preset === 'full' || preset === 'view';
+    permissions[feature.key] = {
+      view: enabled,
+      create: preset === 'full' && feature.supportsChange !== false,
+      edit: preset === 'full' && feature.supportsChange !== false,
+      delete: preset === 'full' && feature.supportsChange !== false
+    };
+  }
+  this.permissionConfig.set({
+    ...config,
+    roles: config.roles.map(item => item.role_key === role.role_key ? { ...role, permissions } : item)
+  });
+  this.permissionsDirty.set(true);
+  this.permissionsMessage.set('');
 }
 
 loadPermissionConfig() {
@@ -1138,7 +1279,7 @@ createRole() {
       this.selectedPermissionRole.set(role.role_key);
       this.loadPermissionConfig();
       this.loadUsers();
-      this.permissionsMessage.set(`התפקיד "${role.name}" נוסף עם כל ההרשאות פעילות.`);
+      this.permissionsMessage.set(`התפקיד "${role.name}" נוסף ללא הרשאות. בחרי את ההרשאות המתאימות ושמרי.`);
     },
     error: error => {
       this.savingRole.set(false);

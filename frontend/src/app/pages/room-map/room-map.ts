@@ -117,14 +117,14 @@ interface BookingResults {
                       <span class="booking-title">{{ booking.title }}</span>
                       <span class="booking-time">{{ booking.start_time }}–{{ booking.end_time }}</span>
                       <div class="booking-actions">
-                        <button class="text-button" *ngIf="booking.kind === 'manual' && auth.hasPermission('schedule', 'change')" type="button" (click)="editBooking(room, booking)">עריכת שיבוץ</button>
-                        <button class="text-button remove-button" *ngIf="auth.hasPermission('schedule', 'change')" type="button" (click)="removeBooking(booking)">הסרה</button>
+                        <button class="text-button" *ngIf="booking.kind === 'manual' && auth.hasPermission('schedule', 'edit')" type="button" (click)="editBooking(room, booking)">עריכת שיבוץ</button>
+                        <button class="text-button remove-button" *ngIf="auth.hasPermission('schedule', 'delete')" type="button" (click)="removeBooking(booking)">הסרה</button>
                       </div>
                     </div>
                   </td>
                   <td class="room-actions">
-                    <button class="small-button" *ngIf="auth.hasPermission('schedule', 'change')" type="button" (click)="editRoom(room)">פרטי חדר</button>
-                    <button class="small-button assign-button" *ngIf="room.usable && checkedDate && auth.hasPermission('schedule', 'change')" type="button" (click)="openBooking(room)">+ שיבוץ</button>
+                    <button class="small-button" *ngIf="auth.hasPermission('schedule', 'edit')" type="button" (click)="editRoom(room)">פרטי חדר</button>
+                    <button class="small-button assign-button" *ngIf="room.usable && checkedDate && auth.hasPermission('schedule', 'create')" type="button" (click)="openBooking(room)">+ שיבוץ</button>
                   </td>
                 </tr>
                 <tr *ngIf="!roomsOnFloor(floor, side).length"><td colspan="5" class="empty-side">אין חדרים בצד זה</td></tr>

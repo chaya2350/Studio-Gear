@@ -36,8 +36,8 @@ test('future wedding updates the student at the date and survives a restart', ()
   } finally { db.close(); }
 });
 
-test('adding a wedding requires student change permission', () => {
-  assert.deepEqual(getApiPermission('/students/123/wedding', 'POST'), { feature: 'students', action: 'change' });
+test('updating a wedding requires student edit permission', () => {
+  assert.deepEqual(getApiPermission('/students/123/wedding', 'POST'), { feature: 'students', action: 'edit' });
 });
 
 test('manual changes are not overwritten and invalid or duplicate weddings are rejected', () => {

@@ -1525,7 +1525,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
   openAddEventForSelected() { this.openAddEvent(); }
 
   canAddWedding() {
-    return this.auth.hasPermission('students') && this.auth.hasPermission('students', 'change');
+    return this.auth.hasPermission('students', 'view') && this.auth.hasPermission('students', 'edit');
   }
 
   openAddWedding() {

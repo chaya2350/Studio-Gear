@@ -204,7 +204,8 @@ function authorizePermission(req, res, next) {
   const required = getApiPermission(req.path, req.method);
   if (!required) return res.status(403).json({ error: 'לא הוגדרה הרשאה לפעולה זו' });
   const permissions = getUserPermissions(req.user.role);
-  if (!permissions[required.feature]?.[required.action]) {
+  const requiredActions = required.actions || [required.action];
+  if (requiredActions.some(action => !permissions[required.feature]?.[action])) {
     return res.status(403).json({ error: 'אין לך הרשאה לבצע פעולה זו' });
   }
   next();
@@ -296,7 +297,7 @@ app.post('/api/roles', (req, res) => {
     const roleKey = `custom_${randomBytes(8).toString('hex')}`;
     const insertRole = db.prepare('INSERT INTO system_roles (role_key, name, is_system) VALUES (?, ?, 0)');
     const insert = db.prepare(
-      'INSERT INTO role_permissions (role_key, permission_key, action, enabled) VALUES (?, ?, ?, 1)'
+      'INSERT INTO role_permissions (role_key, permission_key, action, enabled) VALUES (?, ?, ?, 0)'
     );
     const createRole = db.transaction(() => {
       insertRole.run(roleKey, name);

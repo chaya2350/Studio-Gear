@@ -3,7 +3,8 @@ import { Injectable, signal } from '@angular/core';
 import { catchError, firstValueFrom, Observable, of, tap, throwError } from 'rxjs';
 
 export type UserRole = string;
-export type PermissionAction = 'view' | 'change';
+export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
+export type PermissionCheckAction = PermissionAction | 'change';
 
 export interface AuthUser {
   id: number;
@@ -29,6 +30,7 @@ export interface SystemRole {
 export interface PermissionFeature {
   key: string;
   label: string;
+  group?: string;
   description: string;
   supportsChange?: boolean;
 }
@@ -50,9 +52,16 @@ export class AuthService {
 
   constructor(private http: HttpClient) {}
 
-  hasPermission(permission: string, action: PermissionAction = 'view'): boolean {
+  hasPermission(permission: string, action: PermissionCheckAction = 'view'): boolean {
     const user = this.user();
-    return user?.role === 'admin' || user?.permissions?.[permission]?.[action] === true;
+    if (user?.role === 'admin') return true;
+    const featurePermissions = user?.permissions?.[permission];
+    if (action === 'change') {
+      return featurePermissions?.create === true ||
+        featurePermissions?.edit === true ||
+        featurePermissions?.delete === true;
+    }
+    return featurePermissions?.[action] === true;
   }
 
   loadPermissions(): Observable<PermissionsConfiguration> {
