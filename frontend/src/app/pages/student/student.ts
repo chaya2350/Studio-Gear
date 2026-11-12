@@ -92,8 +92,10 @@ template: `
 <!-- העלאת תמונת פרופיל -->
 <div class="photo-upload-bar">
   <label class="photo-upload-btn" [class.uploading]="uploadingPhoto()">
-    <input type="file" accept="image/*" [disabled]="uploadingPhoto()" (change)="uploadPhoto($event)" style="display:none">
-    {{ uploadingPhoto() ? 'מעלה...' : student()!.photo_url ? '🖼 החלף תמונה' : '📷 הוסף תמונה' }}
+    <input type="file" accept="image/*" [disabled]="uploadingPhoto()" (change)="uploadPhoto($event)" style="display:none"
+           [attr.aria-label]="uploadingPhoto() ? 'מעלה תמונה' : student()!.photo_url ? 'החלף תמונה' : 'הוסף תמונה'">
+    <span *ngIf="uploadingPhoto()" class="loading-dots" role="status" aria-label="העלאת תמונה"><i></i><i></i><i></i></span>
+    <ng-container *ngIf="!uploadingPhoto()">{{ student()!.photo_url ? '🖼 החלף תמונה' : '📷 הוסף תמונה' }}</ng-container>
   </label>
   <a *ngIf="student()!.photo_url" class="photo-download-btn" [href]="student()!.photo_url" [download]="student()!.name + '.jpg'" target="_blank">⬇ הורדה</a>
   <button *ngIf="student()!.photo_url" class="photo-remove-btn" (click)="removePhoto()">הסר תמונה</button>
@@ -106,8 +108,10 @@ template: `
 <div class="section-title"> פרטים אישיים</div>
 <div class="student-actions" *ngIf="!editing()">
 <button class="btn btn-secondary" (click)="startEditing()"> עריכת פרטים</button>
-<button class="btn btn-danger" [disabled]="deleting()" (click)="deleteStudent()">
-{{ deleting() ? 'מוחק...' : ' מחיקת תלמידה' }}
+<button class="btn btn-danger" [disabled]="deleting()" [attr.aria-label]="deleting() ? 'מוחקת תלמידה' : 'מחיקת תלמידה'"
+      (click)="deleteStudent()">
+<span *ngIf="deleting()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+<ng-container *ngIf="!deleting()">מחיקת תלמידה</ng-container>
 </button>
 </div>
 </div>
@@ -366,8 +370,10 @@ template: `
       </div>
     </div>
     <p *ngIf="noticeError()" class="edit-error">{{ noticeError() }}</p>
-    <button class="btn btn-primary" [disabled]="savingNotice()" (click)="saveNotice()">
-      {{ savingNotice() ? 'שומר...' : 'הוסף מודעה' }}
+    <button class="btn btn-primary" [disabled]="savingNotice()"
+            [attr.aria-label]="savingNotice() ? 'שומרת מודעה' : 'הוסף מודעה'" (click)="saveNotice()">
+      <span *ngIf="savingNotice()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!savingNotice()">הוסף מודעה</ng-container>
     </button>
   </div>
 
@@ -550,8 +556,10 @@ type="checkbox"
   <div class="section-title-row">
     <div class="section-title">📁 תיק סרוק</div>
     <label class="upload-doc-btn" [class.uploading]="uploadingDoc()">
-      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" hidden multiple [disabled]="uploadingDoc()" (change)="uploadDocuments($event)">
-      {{ uploadingDoc() ? 'מעלה...' : '+ הוסף מסמכים' }}
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" hidden multiple [disabled]="uploadingDoc()" (change)="uploadDocuments($event)"
+             [attr.aria-label]="uploadingDoc() ? 'מעלה מסמכים' : 'הוסף מסמכים'">
+      <span *ngIf="uploadingDoc()" class="loading-dots" role="status" aria-label="העלאת מסמכים"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!uploadingDoc()">+ הוסף מסמכים</ng-container>
     </label>
   </div>
   <p *ngIf="docError()" class="edit-error" role="alert">{{ docError() }}</p>

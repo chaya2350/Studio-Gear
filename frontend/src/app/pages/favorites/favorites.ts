@@ -8,7 +8,9 @@ import { Favorite, WorkspaceService } from '../../services/workspace.service';
   selector: 'app-favorites',
   imports: [CommonModule, RouterLink],
   template: `<div class="page-header"><div><h1>מועדפים</h1><p class="subtitle">גישה מהירה לפריטים ולתלמידות שסימנת</p></div></div>
-  <p *ngIf="loading">טוען מועדפים…</p><p *ngIf="error" class="alert alert-error">{{ error }}</p>
+  <p *ngIf="loading" role="status" aria-label="טעינת המועדפים">
+    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  </p><p *ngIf="error" class="alert alert-error">{{ error }}</p>
   <div class="favorites-grid">
     <article class="card favorite-card" *ngFor="let item of items">
       <ng-container *ngIf="item.item_type === 'equipment' && equipmentById(item.item_id) as equipment">

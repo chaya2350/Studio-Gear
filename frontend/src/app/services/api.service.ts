@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Equipment, Loan, Category, Student } from '../models';
+import { backgroundLoadingContext } from './loading.interceptor';
 
 export interface CalendarEvent {
   id: number;
@@ -106,7 +107,11 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
-  getEquipment() { return this.http.get<Equipment[]>(`${this.base}/equipment`); }
+  private requestContext(background: boolean) {
+    return background ? backgroundLoadingContext() : undefined;
+  }
+
+  getEquipment(background = false) { return this.http.get<Equipment[]>(`${this.base}/equipment`, { context: this.requestContext(background) }); }
   getEquipmentById(id: number) { return this.http.get<Equipment>(`${this.base}/equipment/${id}`); }
   getEquipmentByBarcode(barcode: string) { return this.http.get<Equipment>(`${this.base}/equipment/barcode/${barcode}`); }
   createEquipment(data: Partial<Equipment>) { return this.http.post<{id: number}>(`${this.base}/equipment`, data); }
@@ -117,14 +122,14 @@ export class ApiService {
   getOrderReceiptBarcodeUrl(id: number) { return `${this.base}/loans/receipt-barcode/${id}`; }
   uploadImage(fd: FormData) { return this.http.post<{url: string}>(`${this.base}/upload`, fd); }
 
-  getLoans() { return this.http.get<Loan[]>(`${this.base}/loans`); }
-  getOverdueLoans() { return this.http.get<Loan[]>(`${this.base}/loans/overdue`); }
+  getLoans(background = false) { return this.http.get<Loan[]>(`${this.base}/loans`, { context: this.requestContext(background) }); }
+  getOverdueLoans(background = false) { return this.http.get<Loan[]>(`${this.base}/loans/overdue`, { context: this.requestContext(background) }); }
   getLoansByEquipment(id: number) { return this.http.get<Loan[]>(`${this.base}/loans/equipment/${id}`); }
   createLoan(data: Partial<Loan>) { return this.http.post<{id: number}>(`${this.base}/loans`, data); }
   returnLoan(id: number) { return this.http.put<{success:boolean; chargeAmount:number; isOverdue:boolean}>(`${this.base}/loans/${id}/return`, {}); }
   chargeLoan(id: number, amount: number) { return this.http.put<{success:boolean; message:string}>(`${this.base}/loans/${id}/charge`, { amount }); }
   cancelLoan(id: number) { return this.http.delete(`${this.base}/loans/${id}`); }
-  getCalendarEvents() { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`); }
+  getCalendarEvents(background = false) { return this.http.get<CalendarEvent[]>(`${this.base}/calendar-events`, { context: this.requestContext(background) }); }
   getCalendarEventById(id: number) { return this.http.get<CalendarEvent>(`${this.base}/calendar-events/${id}`); }
   createCalendarEvent(data: {
     title: string; event_date: string; end_date?: string; category: string; source_sheet: string;
@@ -165,9 +170,9 @@ export class ApiService {
   deleteCategory(id: number) { return this.http.delete(`${this.base}/categories/${id}`); }
   getSubcategories(category: string) { return this.http.get<string[]>(`${this.base}/subcategories/${encodeURIComponent(category)}`); }
 
-  getLaptopOverdue() { return this.http.get<any[]>(`${this.base}/laptops/overdue`); }
+  getLaptopOverdue(background = false) { return this.http.get<any[]>(`${this.base}/laptops/overdue`, { context: this.requestContext(background) }); }
 
-  getStudents(q?: string) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`); }
+  getStudents(q?: string, background = false) { return this.http.get<Student[]>(`${this.base}/students${q ? '?q=' + encodeURIComponent(q) : ''}`, { context: this.requestContext(background) }); }
   getStudentYearPromotionStatus() {
     return this.http.get<{ can_undo: boolean }>(`${this.base}/students/promotion-status`);
   }
@@ -253,7 +258,7 @@ export class ApiService {
   }
 
   // ── Exams ──
-  getExams() { return this.http.get<any[]>(`${this.base}/exams`); }
+  getExams(background = false) { return this.http.get<any[]>(`${this.base}/exams`, { context: this.requestContext(background) }); }
   getExam(id: number) { return this.http.get<any>(`${this.base}/exams/${id}`); }
   createExam(data: { name: string; subject?: string; track?: string; year?: string; exam_date?: string; parallel?: string; start_time?: string; end_time?: string }) { return this.http.post<{ id: number }>(`${this.base}/exams`, data); }
   deleteExam(id: number) { return this.http.delete(`${this.base}/exams/${id}`); }
@@ -267,7 +272,7 @@ export class ApiService {
   saveExamTemplate(id: number, data: { template_type: string; questions: any[] }) { return this.http.put<{ success: boolean }>(`${this.base}/exams/${id}/template`, data); }
 
   // ── דפים אישיים ──
-  getPageTopics() { return this.http.get<any[]>(`${this.base}/pages/topics`); }
+  getPageTopics(background = false) { return this.http.get<any[]>(`${this.base}/pages/topics`, { context: this.requestContext(background) }); }
   createPageTopic(name: string) { return this.http.post<{ id: number; name: string }>(`${this.base}/pages/topics`, { name }); }
   deletePageTopic(id: number, force = false) { return this.http.delete<{ success: boolean; deleted_pages: number }>(`${this.base}/pages/topics/${id}${force ? '?force=1' : ''}`); }
   getTopicPages(topicId: number) { return this.http.get<any[]>(`${this.base}/pages/topics/${topicId}/pages`); }
@@ -284,7 +289,7 @@ export class ApiService {
   decidePageRequest(requestId: number, status: 'approved' | 'denied') {
     return this.http.put<{ success: boolean; status: string }>(`${this.base}/pages/requests/${requestId}`, { status });
   }
-  getIncomingPageRequests() { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`); }
+  getIncomingPageRequests(background = false) { return this.http.get<any[]>(`${this.base}/pages/requests/incoming`, { context: this.requestContext(background) }); }
   globalSearch(q: string) { return this.http.get<{ students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] }>(`${this.base}/search?q=${encodeURIComponent(q)}`); }
 
   // ── Teachers ──

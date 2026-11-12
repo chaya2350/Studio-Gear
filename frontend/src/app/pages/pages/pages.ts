@@ -155,7 +155,10 @@ template: `
 </div>
 </div>
 <div class="modal-actions">
-<button class="btn btn-primary" [disabled]="saving()" (click)="savePage()">{{ saving() ? 'שומר...' : 'שמור' }}</button>
+<button class="btn btn-primary" [disabled]="saving()" [attr.aria-label]="saving() ? 'שומרת דף' : 'שמור'" (click)="savePage()">
+  <span *ngIf="saving()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <ng-container *ngIf="!saving()">שמור</ng-container>
+</button>
 <button class="btn btn-secondary" (click)="editorOpen.set(false)">ביטול</button>
 </div>
 </div>

@@ -92,7 +92,11 @@ class="section-tab"
       <span class="password-count">{{ newPassword().length }}/128</span>
     </div>
     <div class="password-actions">
-      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומר...' : 'שמירת סיסמה' }}</button>
+      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()"
+              [attr.aria-label]="savingPassword() ? 'שומרת סיסמה' : 'שמירת סיסמה'" (click)="savePassword()">
+        <span *ngIf="savingPassword()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingPassword()">שמירת סיסמה</ng-container>
+      </button>
       <button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
     </div>
   </div>
@@ -239,8 +243,10 @@ class="section-tab"
             <span>{{ permissionsDirty() ? 'יש שינויים שעדיין לא נשמרו' : 'כל השינויים שמורים' }}</span>
             <button class="btn btn-primary" type="button"
                     [disabled]="savingRole() || !permissionsDirty()"
+                    [attr.aria-label]="savingRole() ? 'שומרת הרשאות' : 'שמירת הרשאות'"
                     (click)="saveRolePermissions()">
-              {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
+              <span *ngIf="savingRole()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <ng-container *ngIf="!savingRole()">שמירת הרשאות</ng-container>
             </button>
           </div>
         </ng-container>
@@ -265,14 +271,17 @@ class="section-tab"
     <div class="form-group" *ngIf="isCoordinatorRole(editingUser()!.role)">
       <label>מסלול מנוהל</label>
       <select [(ngModel)]="editUserDraft.coordinator_track" [disabled]="loadingTracks()">
-        <option value="">{{ loadingTracks() ? 'טוען מסלולים...' : '— ללא מסלול —' }}</option>
+        <option value="">— ללא מסלול —</option>
         <option *ngFor="let t of trackNames()" [value]="t">{{ t }}</option>
       </select>
+      <span *ngIf="loadingTracks()" class="loading-dots" role="status" aria-label="טעינת מסלולים"><i></i><i></i><i></i></span>
     </div>
     <p *ngIf="userError()" class="alert alert-error" style="margin:0 0 8px;">{{ userError() }}</p>
     <div class="modal-actions">
-      <button class="btn btn-primary" [disabled]="savingEditUser()" (click)="saveEditUser()">
-        {{ savingEditUser() ? 'שומר...' : 'שמור שינויים' }}
+      <button class="btn btn-primary" [disabled]="savingEditUser()"
+              [attr.aria-label]="savingEditUser() ? 'שומרת שינויים' : 'שמור שינויים'" (click)="saveEditUser()">
+        <span *ngIf="savingEditUser()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingEditUser()">שמור שינויים</ng-container>
       </button>
       <button class="btn btn-secondary" (click)="editingUser.set(null); userError.set('')">ביטול</button>
     </div>
@@ -309,12 +318,16 @@ class="section-tab"
     <p class="user-help">עולה לשנה א׳ תעלה לשנה א׳, שנה א׳ לשנה ב׳, שנה ב׳ לשנה ג׳ ללא מקבילה, ושנה ג׳ לבוגרות. המקבילות יישמרו עד המעבר לשנה ג׳.</p>
   </div>
   <div class="admin-promotion-actions">
-    <button class="btn btn-primary" type="button" [disabled]="promoting() || undoingPromotion()" (click)="requestYearPromotion()">
-      {{ promoting() ? 'מעלה שנה...' : 'העלאת שנה' }}
+    <button class="btn btn-primary" type="button" [disabled]="promoting() || undoingPromotion()"
+            [attr.aria-label]="promoting() ? 'מעלה שנה' : 'העלאת שנה'" (click)="requestYearPromotion()">
+      <span *ngIf="promoting()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!promoting()">העלאת שנה</ng-container>
     </button>
     <button *ngIf="canUndoPromotion()" class="btn btn-secondary" type="button"
-            [disabled]="undoingPromotion() || promoting()" (click)="undoYearPromotion()">
-      {{ undoingPromotion() ? 'מבטל...' : 'ביטול העלאת שנה' }}
+            [disabled]="undoingPromotion() || promoting()"
+            [attr.aria-label]="undoingPromotion() ? 'מבטלת העלאת שנה' : 'ביטול העלאת שנה'" (click)="undoYearPromotion()">
+      <span *ngIf="undoingPromotion()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!undoingPromotion()">ביטול העלאת שנה</ng-container>
     </button>
   </div>
   <div *ngIf="promotionMessage()" class="alert alert-success" role="status">{{ promotionMessage() }}</div>
@@ -430,8 +443,10 @@ class="section-tab"
   <div *ngIf="addStudentError()" class="alert alert-error" style="margin:0 0 10px;" role="alert">{{ addStudentError() }}</div>
   <button class="btn btn-primary"
     [disabled]="addingStudent() || !newStudentDraft.id_number.trim() || !newStudentDraft.name.trim()"
+    [attr.aria-label]="addingStudent() ? 'שומרת תלמידה' : 'הוסף תלמידה'"
     (click)="saveNewStudent()">
-    {{ addingStudent() ? 'שומר...' : 'הוסף תלמידה' }}
+    <span *ngIf="addingStudent()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <ng-container *ngIf="!addingStudent()">הוסף תלמידה</ng-container>
   </button>
 </div>
 
@@ -455,7 +470,7 @@ class="section-tab"
 </div>
 
 <div *ngIf="importing()" class="import-status importing">
-<div class="spinner-sm"></div> מייבא נתונים...
+<span class="loading-dots" role="status" aria-label="ייבוא נתונים"><i></i><i></i><i></i></span>
 </div>
 
 <div *ngFor="let r of results()" class="import-status" [class.success]="r.ok" [class.error]="!r.ok">
@@ -517,8 +532,10 @@ class="section-tab"
 </div>
 <p *ngIf="approvalSaveError()" class="approval-save-error">{{ approvalSaveError() }}</p>
 <div style="display:flex; gap:10px;">
-<button class="btn btn-primary" [disabled]="savingApproval()" (click)="saveApproval()">
-{{ savingApproval() ? 'שומר...' : ' שמור' }}
+<button class="btn btn-primary" [disabled]="savingApproval()"
+        [attr.aria-label]="savingApproval() ? 'שומרת אישור' : 'שמור'" (click)="saveApproval()">
+<span *ngIf="savingApproval()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+<ng-container *ngIf="!savingApproval()">שמור</ng-container>
 </button>
 <button class="btn btn-secondary" [disabled]="savingApproval()" (click)="editingApproval.set(null)">ביטול</button>
 </div>
@@ -554,8 +571,10 @@ class="section-tab"
       <label class="field-label">טלפון
         <input [(ngModel)]="newTeacherPhone" placeholder="טלפון (אופציונלי)" class="admin-input">
       </label>
-      <button class="btn btn-primary" [disabled]="savingTeacher()" (click)="createTeacher()">
-        {{ savingTeacher() ? 'שומר...' : '+ הוסף מורה' }}
+      <button class="btn btn-primary" [disabled]="savingTeacher()"
+              [attr.aria-label]="savingTeacher() ? 'שומרת מורה' : 'הוסף מורה'" (click)="createTeacher()">
+        <span *ngIf="savingTeacher()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingTeacher()">+ הוסף מורה</ng-container>
       </button>
     </div>
     <div *ngIf="teacherMsg()" class="import-status" [class.success]="!teacherMsg()!.startsWith('שגיאה')" [class.error]="teacherMsg()!.startsWith('שגיאה')">
@@ -582,7 +601,7 @@ class="section-tab"
       <input #teacherFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="onTeacherFileChange($event)">
     </div>
     <div *ngIf="importingTeachers()" class="import-status importing">
-      <div class="spinner-sm"></div> מייבא מורות...
+      <span class="loading-dots" role="status" aria-label="ייבוא מורות"><i></i><i></i><i></i></span>
     </div>
     <div *ngIf="teacherImportResult()" class="import-status success">
       ✓ יובאו {{ teacherImportResult()!.imported }} מורות חדשות
@@ -602,8 +621,10 @@ class="section-tab"
       <label class="field-label">תאריך סיום שנת הלימודים
         <input type="date" class="admin-input" [(ngModel)]="schoolYearEndDate">
       </label>
-      <button class="btn btn-primary" [disabled]="savingSchoolYearEnd()" (click)="saveSchoolYearEnd()">
-        {{ savingSchoolYearEnd() ? 'שומר...' : 'שמירת תאריך' }}
+      <button class="btn btn-primary" [disabled]="savingSchoolYearEnd()"
+              [attr.aria-label]="savingSchoolYearEnd() ? 'שומרת תאריך' : 'שמירת תאריך'" (click)="saveSchoolYearEnd()">
+        <span *ngIf="savingSchoolYearEnd()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingSchoolYearEnd()">שמירת תאריך</ng-container>
       </button>
     </div>
     <div *ngIf="schoolYearEndMessage()" class="import-status success">{{ schoolYearEndMessage() }}</div>
@@ -613,12 +634,16 @@ class="section-tab"
   <div *ngIf="auth.user()?.role === 'admin'" class="card room-defaults-card">
     <div class="section-title">חדרי ברירת מחדל למערכות שעות</div>
     <p class="import-hint">השיעורים יקבלו את החדר שהוגדר לכיתה או למסלול ולשנה. אפשר לבחור חדר אחר בכל שיעור.</p>
-    <p *ngIf="roomDefaultsLoading()" class="import-hint">טוען כיתות, מסלולים וחדרים...</p>
+    <p *ngIf="roomDefaultsLoading()" class="import-hint" role="status" aria-label="טעינת חדרים ומסלולים">
+      <span class="loading-dots"><i></i><i></i><i></i></span>
+    </p>
     <p *ngIf="roomDefaultsError()" class="import-status error" role="alert">{{ roomDefaultsError() }}</p>
     <p *ngIf="roomDefaultsMessage()" class="import-status success" role="status">{{ roomDefaultsMessage() }}</p>
     <button class="btn btn-secondary" type="button" [disabled]="applyingRoomDefaults() || roomDefaultsLoading()"
+            [attr.aria-label]="applyingRoomDefaults() ? 'מעדכנת שיעורים' : 'החלת ברירות המחדל על שיעורים קיימים'"
             (click)="applyRoomDefaultsToExisting()">
-      {{ applyingRoomDefaults() ? 'מעדכן שיעורים...' : 'החלת ברירות המחדל על שיעורים קיימים' }}
+      <span *ngIf="applyingRoomDefaults()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!applyingRoomDefaults()">החלת ברירות המחדל על שיעורים קיימים</ng-container>
     </button>
     <div *ngIf="!roomDefaultsLoading()" class="room-defaults-grid">
       <section class="room-default-group">
@@ -720,7 +745,7 @@ class="section-tab"
       <input #scheduleFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="onScheduleFileChange($event)" [disabled]="!scheduleImportWeek">
     </div>
     <div *ngIf="importingSchedule()" class="import-status importing">
-      <div class="spinner-sm"></div> מייבא מערכת שעות...
+      <span class="loading-dots" role="status" aria-label="ייבוא מערכת שעות"><i></i><i></i><i></i></span>
     </div>
     <div *ngIf="scheduleImportResult()" class="import-status" [class.success]="!scheduleImportResult()!.error" [class.error]="scheduleImportResult()!.error">
       <ng-container *ngIf="!scheduleImportResult()!.error">
@@ -838,11 +863,6 @@ font-size: 0.875rem; display: flex; align-items: center; gap: 8px;
 &.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
 &.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 }
-.spinner-sm {
-width: 16px; height: 16px; border: 2px solid var(--primary-light);
-border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 .total-badge {
 margin-top: 16px; padding: 10px 16px; background: var(--primary-light);
 border-radius: var(--radius-sm); font-weight: 700; color: var(--primary);

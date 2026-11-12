@@ -105,8 +105,10 @@ template: `
     </div>
     <p *ngIf="error()" class="hint" style="color:var(--danger); margin:0 0 8px;">{{ error() }}</p>
     <div class="modal-actions">
-      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="saveExam()">
-        {{ saving() ? 'שומר...' : 'שמור מבחן' }}
+      <button type="button" class="btn btn-primary" [disabled]="saving()"
+              [attr.aria-label]="saving() ? 'שומרת מבחן' : 'שמור מבחן'" (click)="saveExam()">
+        <span *ngIf="saving()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!saving()">שמור מבחן</ng-container>
       </button>
       <button type="button" class="btn btn-secondary" (click)="creating.set(false); error.set('')">ביטול</button>
     </div>

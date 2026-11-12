@@ -80,7 +80,9 @@ function formatHebrewDayHeading(dateStr: string): string {
 
 <!-- GRID VIEW -->
 <div *ngIf="activeTab() === 'grid'" class="grid-view">
-  <div *ngIf="loading()" class="loading-state">טוען...</div>
+  <div *ngIf="loading()" class="loading-state" role="status" aria-label="טעינת מערכת השעות">
+    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  </div>
 
   <div *ngIf="!loading() && !slots().length && !classOptions().length" class="empty-state">
     <div class="empty-icon">📅</div>
@@ -344,7 +346,9 @@ function formatHebrewDayHeading(dateStr: string): string {
                       !kodeshPeriodsForClass(newSlot.class_key, newSlot.day_of_week).length" class="availability-hint">
           אין שעות קודש זמינות לכיתה ביום זה
         </small>
-        <small *ngIf="kodeshAvailabilityLoading()" class="availability-hint">טוען זמני קודש...</small>
+        <small *ngIf="kodeshAvailabilityLoading()" class="availability-hint" role="status" aria-label="טעינת זמני קודש">
+          <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </small>
       </label>
       <label class="field">
         <span>מקצוע (אופציונלי)</span>
@@ -373,8 +377,10 @@ function formatHebrewDayHeading(dateStr: string): string {
     </div>
 
     <div class="form-actions" *ngIf="lessonType() === 'class'">
-      <button class="btn btn-primary" [disabled]="savingSlot()" (click)="createSlot()">
-        {{ savingSlot() ? 'שומר...' : '+ הוסף שיעור' }}
+      <button class="btn btn-primary" [disabled]="savingSlot()"
+              [attr.aria-label]="savingSlot() ? 'שומרת שיעור' : 'הוסף שיעור'" (click)="createSlot()">
+        <span *ngIf="savingSlot()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingSlot()">+ הוסף שיעור</ng-container>
       </button>
     </div>
     <p *ngIf="slotError()" class="error-msg">{{ slotError() }}</p>
@@ -391,8 +397,10 @@ function formatHebrewDayHeading(dateStr: string): string {
       <span>שבוע מקור לכל השנה</span>
       <input type="date" [(ngModel)]="copyYearSourceWeek">
     </label>
-    <button class="btn btn-primary" [disabled]="copyYearLoading()" (click)="copySchoolYearSchedule()">
-      {{ copyYearLoading() ? 'מעתיק...' : 'השלם מערכת לשנת הלימודים' }}
+    <button class="btn btn-primary" [disabled]="copyYearLoading()"
+            [attr.aria-label]="copyYearLoading() ? 'מעתיקה מערכת' : 'השלם מערכת לשנת הלימודים'" (click)="copySchoolYearSchedule()">
+      <span *ngIf="copyYearLoading()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!copyYearLoading()">השלם מערכת לשנת הלימודים</ng-container>
     </button>
     <p *ngIf="copyYearMessage()" class="success-msg">{{ copyYearMessage() }}</p>
     <p *ngIf="copyYearError()" class="error-msg">{{ copyYearError() }}</p>
@@ -413,8 +421,10 @@ function formatHebrewDayHeading(dateStr: string): string {
       <textarea [(ngModel)]="copyWeekChange.change_reason" rows="2" placeholder="יש לפרט"></textarea>
     </label>
     <div class="copy-actions">
-      <button class="btn btn-primary" [disabled]="copyLoading()" (click)="doCopyWeek()">
-        {{ copyLoading() ? 'מעתיק...' : 'העתק' }}
+      <button class="btn btn-primary" [disabled]="copyLoading()"
+              [attr.aria-label]="copyLoading() ? 'מעתיקה שיעורים' : 'העתק'" (click)="doCopyWeek()">
+        <span *ngIf="copyLoading()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!copyLoading()">העתק</ng-container>
       </button>
       <button class="btn btn-secondary" (click)="showCopyWeek=false">ביטול</button>
     </div>
@@ -502,8 +512,10 @@ function formatHebrewDayHeading(dateStr: string): string {
       </select>
     </label>
     <div class="form-actions">
-      <button class="btn btn-primary" [disabled]="savingQuickSlot()" (click)="saveQuickSlot()">
-        {{ savingQuickSlot() ? 'שומר...' : 'הוסף' }}
+      <button class="btn btn-primary" [disabled]="savingQuickSlot()"
+              [attr.aria-label]="savingQuickSlot() ? 'שומרת שיעור' : 'הוסף'" (click)="saveQuickSlot()">
+        <span *ngIf="savingQuickSlot()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingQuickSlot()">הוסף</ng-container>
       </button>
       <button class="btn btn-secondary" (click)="quickAddSlot=null">ביטול</button>
     </div>
@@ -553,8 +565,10 @@ function formatHebrewDayHeading(dateStr: string): string {
     </label>
     <p *ngIf="editSlotError()" class="error-msg" role="alert">{{ editSlotError() }}</p>
     <div class="form-actions">
-      <button class="btn btn-primary" [disabled]="savingEditSlot()" (click)="saveEditedSlot()">
-        {{ savingEditSlot() ? 'שומר...' : 'שמירה' }}
+      <button class="btn btn-primary" [disabled]="savingEditSlot()"
+              [attr.aria-label]="savingEditSlot() ? 'שומרת שיעור' : 'שמירה'" (click)="saveEditedSlot()">
+        <span *ngIf="savingEditSlot()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!savingEditSlot()">שמירה</ng-container>
       </button>
       <button class="btn btn-secondary" [disabled]="savingEditSlot()" (click)="cancelEditSlot()">ביטול</button>
     </div>

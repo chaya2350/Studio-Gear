@@ -79,6 +79,77 @@ html.dark {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+.loading-dots {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  color: currentColor;
+  animation: app-loading-orbit 1s linear infinite;
+  vertical-align: middle;
+}
+.loading-dots i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.loading-dots i:nth-child(1) { transform: translateY(-8px); opacity: .7; }
+.loading-dots i:nth-child(2) { transform: translate(7px, 4px); opacity: 1; }
+.loading-dots i:nth-child(3) { transform: translate(-7px, 4px); opacity: .45; }
+@keyframes app-loading-orbit { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .loading-dots { animation: none; }
+}
+
+.global-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: grid;
+  place-items: center;
+  background: var(--grad-primary);
+  pointer-events: all;
+}
+.global-loading-dialog {
+  width: min(340px, calc(100vw - 48px));
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.2), inset 0 0 40px rgba(255, 255, 255, 0.08);
+}
+.global-loading-spinner {
+  width: 112px;
+  height: 112px;
+  flex-basis: 112px;
+}
+.global-loading-spinner i {
+  width: 20px;
+  height: 20px;
+  margin: -10px;
+}
+.global-loading-spinner i:nth-child(1) { transform: translateY(-38px); }
+.global-loading-spinner i:nth-child(2) { transform: translate(33px, 19px); }
+.global-loading-spinner i:nth-child(3) { transform: translate(-33px, 19px); }
+.global-loading-progress {
+  font-size: 3rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 .gantt-card {
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden;

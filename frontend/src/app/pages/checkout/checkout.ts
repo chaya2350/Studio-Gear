@@ -155,7 +155,7 @@ maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length >
 
 <button class="btn btn-primary btn-submit" (click)="submit()" [disabled]="submitting()">
 <span *ngIf="!submitting()"> אשר הזמנה ({{ cart.count() }} פריטים)</span>
-<span *ngIf="submitting()">שולח...</span>
+<span *ngIf="submitting()" class="loading-dots" role="status" aria-label="שליחת ההזמנה"><i></i><i></i><i></i></span>
 </button>
 </div>
 

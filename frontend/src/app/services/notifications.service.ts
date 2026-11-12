@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, signal, computed } from '@angular/core';
 import { Observable, tap, catchError, of } from 'rxjs';
+import { backgroundLoadingContext } from './loading.interceptor';
 
 export type NotificationSeverity = 'danger' | 'warning' | 'info';
 export type NotificationType = 'overdue' | 'exam' | 'pages' | 'messages' | 'tasks' | 'requirements';
@@ -34,8 +35,10 @@ export class NotificationsService {
 
   constructor(private http: HttpClient) {}
 
-  refresh(): Observable<AppNotification[]> {
-    return this.http.get<AppNotification[]>('/api/notifications').pipe(
+  refresh(background = false): Observable<AppNotification[]> {
+    return this.http.get<AppNotification[]>('/api/notifications', {
+      context: background ? backgroundLoadingContext() : undefined,
+    }).pipe(
       tap(list => this.all.set(list)),
       catchError(() => of([] as AppNotification[])),
     );

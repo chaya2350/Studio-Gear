@@ -39,7 +39,9 @@ interface TrackScheduleSlot {
     </div>
 
     <p *ngIf="pageError()" class="alert alert-error" role="alert">{{ pageError() }}</p>
-    <div *ngIf="loadingMeta()" class="loading-state">טוען מסלולים ושעות...</div>
+    <div *ngIf="loadingMeta()" class="loading-state" role="status" aria-label="טעינת מסלולים ושעות">
+      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
     <div *ngIf="!loadingMeta() && !selectableTracks().length" class="card empty-state">
       <p>לא נמצאו מסלולים עם תלמידות.</p>
       <a routerLink="/admin">מעבר לניהול מסלולים</a>
@@ -67,7 +69,9 @@ interface TrackScheduleSlot {
         </div>
       </section>
 
-      <div *ngIf="loadingSchedule()" class="loading-state">טוען מערכת...</div>
+      <div *ngIf="loadingSchedule()" class="loading-state" role="status" aria-label="טעינת המערכת">
+        <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
       <section *ngIf="!loadingSchedule() && schedule()" class="card timetable-card">
         <div class="timetable-heading">
           <div>
@@ -197,8 +201,10 @@ interface TrackScheduleSlot {
           </p>
           <p *ngIf="formError()" class="alert alert-error" role="alert">{{ formError() }}</p>
           <div class="editor-actions">
-            <button class="btn btn-primary" type="submit" [disabled]="saving() || !availabilityLoaded() || !trackTeachers().length">
-              {{ saving() ? 'שומר...' : 'שמירה' }}
+            <button class="btn btn-primary" type="submit" [disabled]="saving() || !availabilityLoaded() || !trackTeachers().length"
+                    [attr.aria-label]="saving() ? 'שומרת שיעור' : 'שמירה'">
+              <span *ngIf="saving()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <ng-container *ngIf="!saving()">שמירה</ng-container>
             </button>
             <button class="btn btn-secondary" type="button" [disabled]="saving()" (click)="closeForm()">ביטול</button>
           </div>

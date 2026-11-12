@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
+import { backgroundLoadingContext } from './loading.interceptor';
 
 export interface MessageUser {
   id: number;
@@ -59,13 +60,15 @@ export class MessagesService {
     return this.http.get<MessageUser[]>('/api/messages/users');
   }
 
-  getMessages(markRead = false): Observable<DirectMessage[]> {
+  getMessages(markRead = false, background = false): Observable<DirectMessage[]> {
     const url = markRead ? '/api/messages?markRead=1' : '/api/messages';
-    return this.http.get<DirectMessage[]>(url);
+    return this.http.get<DirectMessage[]>(url, { context: background ? backgroundLoadingContext() : undefined });
   }
 
-  refreshUnreadCount(): Observable<{ count: number }> {
-    return this.http.get<{ count: number }>('/api/messages/unread-count')
+  refreshUnreadCount(background = false): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>('/api/messages/unread-count', {
+      context: background ? backgroundLoadingContext() : undefined,
+    })
       .pipe(tap(({ count }) => this.unreadCount.set(count)));
   }
 
@@ -87,8 +90,8 @@ export class MessagesService {
     return this.http.post<{ added: boolean }>(`/api/messages/${messageId}/reactions`, { emoji });
   }
 
-  getTasks(): Observable<PersonalTask[]> {
-    return this.http.get<PersonalTask[]>('/api/tasks');
+  getTasks(background = false): Observable<PersonalTask[]> {
+    return this.http.get<PersonalTask[]>('/api/tasks', { context: background ? backgroundLoadingContext() : undefined });
   }
 
   addMessageToTasks(messageId: number, due_date: string, start_time?: string, end_time?: string): Observable<PersonalTask> {

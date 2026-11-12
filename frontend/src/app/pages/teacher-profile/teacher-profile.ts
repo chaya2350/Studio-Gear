@@ -8,7 +8,9 @@ import { formatHebrewDate } from '../../hebrew-date';
   selector: 'app-teacher-profile',
   imports: [CommonModule],
   template: `
-    <div *ngIf="loading()" class="loading-state">טוען...</div>
+    <div *ngIf="loading()" class="loading-state" role="status" aria-label="טעינת פרטי המורה">
+      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
 
     <div *ngIf="!loading() && !teacher()" class="empty-state">
       <p>מורה לא נמצאה</p>

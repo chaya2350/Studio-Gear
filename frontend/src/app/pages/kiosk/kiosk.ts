@@ -195,8 +195,10 @@ interface KioskEquipment {
             }
 
             <div class="step-actions">
-              <button class="kiosk-btn kiosk-btn--primary" [disabled]="!returnDate || submitting()" (click)="submitLoans()">
-                {{ submitting() ? 'מעבד...' : 'אישור סופי ←' }}
+              <button class="kiosk-btn kiosk-btn--primary" [disabled]="!returnDate || submitting()"
+                      [attr.aria-label]="submitting() ? 'מעבדת את ההשאלה' : 'אישור סופי'" (click)="submitLoans()">
+                <span *ngIf="submitting()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <ng-container *ngIf="!submitting()">אישור סופי ←</ng-container>
               </button>
               <button class="kiosk-btn kiosk-btn--ghost" (click)="step.set('select-equipment')">
                 חזרה

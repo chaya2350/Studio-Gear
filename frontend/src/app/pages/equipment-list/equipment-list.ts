@@ -325,7 +325,7 @@ clearInterval(this.refreshTimer);
 // Updates item data in place so the current view, filters and search are kept
 private refreshInBackground() {
 if (document.hidden) return;
-this.api.getEquipment().subscribe({
+this.api.getEquipment(true).subscribe({
 next: data => {
 const fresh = new Map(data.map(item => [item.id, item]));
 const update = (items: Equipment[]) => items.map(item => fresh.get(item.id) ?? item);

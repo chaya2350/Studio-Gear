@@ -151,8 +151,10 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
       </div>
 
       <button class="btn btn-primary btn-large" style="width:100%;margin-top:16px"
-              [disabled]="finalizing()" (click)="finalizeSession()">
-        {{ finalizing() ? 'שומר...' : '✓ סיים ושמור נוכחות' }}
+              [disabled]="finalizing()" [attr.aria-label]="finalizing() ? 'שומרת נוכחות' : 'סיים ושמור נוכחות'"
+              (click)="finalizeSession()">
+        <span *ngIf="finalizing()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!finalizing()">✓ סיים ושמור נוכחות</ng-container>
       </button>
       <button class="btn btn-secondary" style="width:100%;margin-top:8px" (click)="phase.set('absent')">
         ← חזור לנעדרות
