@@ -1,12 +1,14 @@
 import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 import { formatHebrewDate } from '../../hebrew-date';
 
 @Component({
   selector: 'app-teacher-profile',
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div *ngIf="loading()" class="loading-state" role="status" aria-label="טעינת פרטי המורה">
       <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -97,29 +99,49 @@ import { formatHebrewDate } from '../../hebrew-date';
       <div class="detail-grid">
         <!-- Personal Details -->
         <div class="card personal-details-card">
-          <div class="section-title">פרטים אישיים</div>
-          <div class="info-grid">
-            <div class="info-row highlight">
-              <span class="info-label">שם</span>
-              <span class="info-value">{{ t.name }}</span>
-            </div>
-            <div class="info-row" *ngIf="t.subject">
-              <span class="info-label">מקצוע</span>
-              <span class="info-value">{{ t.subject }}</span>
-            </div>
-            <div class="info-row" *ngIf="t.specialization">
-              <span class="info-label">התמחות</span>
-              <span class="info-value">{{ t.specialization }}</span>
-            </div>
-            <div class="info-row" *ngIf="t.phone">
-              <span class="info-label">טלפון</span>
-              <span class="info-value">{{ t.phone }}</span>
-            </div>
-            <div class="info-row" *ngIf="t.email">
-              <span class="info-label">מייל</span>
-              <span class="info-value">{{ t.email }}</span>
-            </div>
+          <div class="details-heading">
+            <div class="section-title">פרטים אישיים</div>
+            <button *ngIf="auth.hasPermission('teachers', 'change') && !editingDetails()" type="button"
+                    class="btn btn-secondary no-print" (click)="startEditingDetails(t)">עריכת פרטים</button>
           </div>
+          <form *ngIf="editingDetails(); else teacherInfo" class="teacher-edit-form" (ngSubmit)="saveTeacherDetails(t)">
+            <label>שם מלא<input name="name" [(ngModel)]="teacherDraft.name" required maxlength="120"></label>
+            <label>מקצוע<input name="subject" [(ngModel)]="teacherDraft.subject"></label>
+            <label>תחומים והתמחויות<input name="specialization" [(ngModel)]="teacherDraft.specialization" placeholder="אפשר להפריד כמה תחומים בפסיק"></label>
+            <label>טלפון<input name="phone" [(ngModel)]="teacherDraft.phone" type="tel"></label>
+            <label>מייל<input name="email" [(ngModel)]="teacherDraft.email" type="email"></label>
+            <p *ngIf="detailsError()" class="edit-error" role="alert">{{ detailsError() }}</p>
+            <div class="edit-actions no-print">
+              <button class="btn btn-primary" type="submit" [disabled]="savingDetails() || !teacherDraft.name.trim()">
+                {{ savingDetails() ? 'שומר...' : 'שמירה' }}
+              </button>
+              <button class="btn btn-secondary" type="button" [disabled]="savingDetails()" (click)="cancelEditingDetails()">ביטול</button>
+            </div>
+          </form>
+          <ng-template #teacherInfo>
+            <div class="info-grid">
+              <div class="info-row highlight">
+                <span class="info-label">שם</span>
+                <span class="info-value">{{ t.name }}</span>
+              </div>
+              <div class="info-row" *ngIf="t.subject">
+                <span class="info-label">מקצוע</span>
+                <span class="info-value">{{ t.subject }}</span>
+              </div>
+              <div class="info-row" *ngIf="t.specialization">
+                <span class="info-label">התמחות</span>
+                <span class="info-value">{{ t.specialization }}</span>
+              </div>
+              <div class="info-row" *ngIf="t.phone">
+                <span class="info-label">טלפון</span>
+                <span class="info-value">{{ t.phone }}</span>
+              </div>
+              <div class="info-row" *ngIf="t.email">
+                <span class="info-label">מייל</span>
+                <span class="info-value">{{ t.email }}</span>
+              </div>
+            </div>
+          </ng-template>
         </div>
 
         <!-- Lessons by Day -->
@@ -249,6 +271,13 @@ import { formatHebrewDate } from '../../hebrew-date';
     .week-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
 
     .info-grid { display: grid; gap: 10px; }
+    .details-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .details-heading .section-title { margin-bottom: 0; }
+    .teacher-edit-form { display: grid; gap: 10px; }
+    .teacher-edit-form label { display: grid; gap: 5px; color: var(--text-muted); font-size: .82rem; font-weight: 700; }
+    .teacher-edit-form input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+    .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .edit-error { color: var(--danger); font-size: .85rem; }
     .info-row {
       display: flex; justify-content: space-between; gap: 12px; align-items: center;
       padding: 10px 12px; border-radius: var(--radius-sm);
@@ -342,7 +371,60 @@ export class TeacherProfileComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private api: ApiService,
     private location: Location,
+    public auth: AuthService,
   ) {}
+
+  readonly editingDetails = signal(false);
+  readonly savingDetails = signal(false);
+  readonly detailsError = signal('');
+  teacherDraft = { name: '', subject: '', specialization: '', phone: '', email: '' };
+
+  startEditingDetails(teacher: any) {
+    this.teacherDraft = {
+      name: teacher.name || '',
+      subject: teacher.subject || '',
+      specialization: teacher.specialization || '',
+      phone: teacher.phone || '',
+      email: teacher.email || ''
+    };
+    this.detailsError.set('');
+    this.editingDetails.set(true);
+  }
+
+  cancelEditingDetails() {
+    if (this.savingDetails()) return;
+    this.editingDetails.set(false);
+    this.detailsError.set('');
+  }
+
+  saveTeacherDetails(teacher: any) {
+    if (!this.teacherDraft.name.trim() || this.savingDetails()) return;
+    this.savingDetails.set(true);
+    this.detailsError.set('');
+    this.api.updateTeacher(teacher.id, {
+      ...this.teacherDraft,
+      name: this.teacherDraft.name.trim(),
+      subject: this.teacherDraft.subject.trim(),
+      specialization: this.teacherDraft.specialization.trim(),
+      phone: this.teacherDraft.phone.trim(),
+      email: this.teacherDraft.email.trim(),
+      active: Number(teacher.active)
+    }).subscribe({
+      next: () => {
+        this.teacher.update(current => current ? { ...current, ...this.teacherDraft,
+          name: this.teacherDraft.name.trim(), subject: this.teacherDraft.subject.trim() || null,
+          specialization: this.teacherDraft.specialization.trim() || null,
+          phone: this.teacherDraft.phone.trim() || null, email: this.teacherDraft.email.trim() || null
+        } : current);
+        this.savingDetails.set(false);
+        this.editingDetails.set(false);
+      },
+      error: error => {
+        this.savingDetails.set(false);
+        this.detailsError.set(error.error?.error || 'שמירת פרטי המורה נכשלה');
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.clockInterval = setInterval(() => this.currentTime.set(new Date()), 30_000);

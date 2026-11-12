@@ -97,7 +97,9 @@ test('normalizes specialization aliases to their track names', () => {
   assert.equal(normalizeTrackSpecialization('ספורט'), normalizeTrackSpecialization('ספורט טיפולי'));
   assert.equal(normalizeTrackSpecialization('רו"ח'), normalizeTrackSpecialization('ראיית חשבון'));
   assert.equal(normalizeTrackSpecialization('חנ"מ'), normalizeTrackSpecialization('חינוך מיוחד'));
+  assert.equal(normalizeTrackSpecialization('הו"מ'), normalizeTrackSpecialization('הוראה מתקנת'));
   assert.equal(normalizeTrackSpecialization('תכנות'), normalizeTrackSpecialization('הנדסאים'));
+  assert.equal(normalizeTrackSpecialization('תיכנות'), normalizeTrackSpecialization('הנדסאים'));
   assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['ראיית חשבון']), true);
   assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['חינוך מיוחד']), true);
   assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['הנדסאים']), false);
