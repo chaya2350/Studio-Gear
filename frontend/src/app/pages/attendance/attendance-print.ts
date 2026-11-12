@@ -66,7 +66,9 @@ function addDays(dateStr: string, days: number): string {
     </div>
   </div>
 
-  <div *ngIf="loading()" class="loading-state">טוען דפים...</div>
+  <div *ngIf="loading()" class="loading-state" role="status" aria-label="טעינת דפים">
+    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  </div>
 
   <div *ngIf="!loading() && !currentSheets().length" class="empty-state">
     <div class="empty-icon">📄</div>

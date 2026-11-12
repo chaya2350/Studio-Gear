@@ -31,7 +31,9 @@ template: `
 <fieldset class="recipient-picker" [disabled]="usersLoading || !users.length || sending || loadingReply">
 <legend>אל</legend>
 <p class="recipient-instructions">סמני את כל מי שצריכה לקבל את ההודעה:</p>
-<div *ngIf="usersLoading" class="recipient-empty">טוען משתמשות…</div>
+<div *ngIf="usersLoading" class="recipient-empty" role="status" aria-label="טעינת משתמשות">
+  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+</div>
 <div *ngIf="!usersLoading && !users.length && !usersError" class="recipient-empty">אין משתמשות זמינות לבחירה</div>
 <div *ngIf="users.length" class="recipient-options">
   <label *ngFor="let user of users" class="recipient-option" [class.checked]="isRecipientSelected(user.id)">
@@ -79,7 +81,10 @@ placeholder="כתבי הודעה..."></textarea>
 <div class="compose-footer">
 <small>{{ body.length }}/4000</small>
 <button class="btn btn-primary" type="button" [disabled]="sending || loadingReply || usersLoading || !recipientIds.length || !body.trim()"
-(click)="send()">{{ sending ? 'שולח…' : 'שליחת הודעה ' }}</button>
+        [attr.aria-label]="sending ? 'שולחת הודעה' : 'שליחת הודעה'" (click)="send()">
+  <span *ngIf="sending" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <ng-container *ngIf="!sending">שליחת הודעה</ng-container>
+</button>
 </div>
 <div *ngIf="sendError" class="alert alert-error" role="alert">{{ sendError }}</div>
 <div *ngIf="sendSuccess" class="success-message" role="status" aria-live="polite">
@@ -105,7 +110,9 @@ placeholder="כתבי הודעה..."></textarea>
 <button type="button" [class.active]="view === 'all'" (click)="view = 'all'">רצף השיחה</button>
 </div>
 <div *ngIf="messagesError" class="alert alert-error" role="alert">{{ messagesError }}</div>
-<div *ngIf="loading" class="empty-state">טוען הודעות…</div>
+<div *ngIf="loading" class="empty-state" role="status" aria-label="טעינת הודעות">
+  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+</div>
 <div *ngIf="!loading && !visibleMessages().length" class="empty-state">
 <div class="empty-icon"></div>
 <p>אין הודעות להצגה</p>
@@ -136,7 +143,12 @@ placeholder="כתבי הודעה..."></textarea>
 <ng-container *ngIf="editingMessageId === message.id; else showBody">
 <textarea style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:8px;font:inherit;resize:vertical;margin:6px 0" [(ngModel)]="editBody" rows="3" maxlength="4000"></textarea>
 <div style="display:flex;gap:8px;margin-bottom:4px">
-<button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit || !editBody.trim()" (click)="saveEdit(message)">{{ savingEdit ? 'שומר…' : 'שמירה' }}</button>
+<button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button"
+        [disabled]="savingEdit || !editBody.trim()" [attr.aria-label]="savingEdit ? 'שומרת הודעה' : 'שמירה'"
+        (click)="saveEdit(message)">
+  <span *ngIf="savingEdit" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <ng-container *ngIf="!savingEdit">שמירה</ng-container>
+</button>
 <button class="btn btn-secondary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit" (click)="cancelEdit()">ביטול</button>
 </div>
 <p *ngIf="editError" class="alert alert-error">{{ editError }}</p>
@@ -331,7 +343,7 @@ this.loadUsers();
 this.loadMessages(true);  // בפתיחה — מסמן הכל כנקרא
 this.loadTasks();
 // רענון אוטומטי כל 30 שניות — בלי לסמן כנקרא
-interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages(false));
+interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadMessages(false, true));
 }
 
 ngOnDestroy() { this.replyRequest?.unsubscribe(); this.destroy$.next(); this.destroy$.complete(); }
@@ -502,15 +514,15 @@ this.sendError = '';
 this.sendSuccess = '';
 }
 
-loadMessages(markRead = false) {
+loadMessages(markRead = false, background = false) {
 this.loading = true;
 this.messagesError = '';
-this.messagesApi.getMessages(markRead).subscribe({
+this.messagesApi.getMessages(markRead, background).subscribe({
 next: messages => {
 this.messages = messages;
 this.loading = false;
 this.changeDetector.markForCheck();
-this.messagesApi.refreshUnreadCount().subscribe({
+this.messagesApi.refreshUnreadCount(background).subscribe({
 error: error => console.error('Could not refresh unread message count', error)
 });
 },

@@ -189,9 +189,8 @@ template: `
 <div class="charge-amount">{{ pendingCharge() }} ₪</div>
 <div class="charge-desc" *ngIf="isOverdue()">קנס איחור: {{ overduedays() }} ימים × {{ item()!.overdue_price_per_day }} ₪</div>
 <div class="charge-desc" *ngIf="activeLoan()?.loan_type === 'rental'">השכרה: {{ rentalDays() }} ימים × {{ activeLoan()?.price_per_day || item()!.rental_price_per_day }} ₪</div>
-<div *ngIf="paymentState() === 'processing'" class="payment-processing">
-<div class="spinner"></div>
-<span>מעביר לחברת האשראי...</span>
+<div *ngIf="paymentState() === 'processing'" class="payment-processing" role="status" aria-label="עיבוד התשלום">
+<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
 </div>
 <div *ngIf="paymentState() === 'success'" class="payment-success"> חיוב בוצע בהצלחה!</div>
 <button *ngIf="paymentState() === 'idle'" class="btn btn-primary" style="margin-top:10px; width:100%;" (click)="payAndReturn()"> שלם {{ pendingCharge() }} ₪ והחזר</button>
@@ -695,12 +694,6 @@ border: 1.5px solid #f59e0b; border-radius: var(--radius-sm); text-align: center
 display: flex; align-items: center; justify-content: center; gap: 10px;
 margin-top: 14px; color: #d97706; font-weight: 700; font-size: 0.9rem;
 }
-.spinner {
-width: 18px; height: 18px; border: 2.5px solid #fde68a;
-border-top-color: #d97706; border-radius: 50%;
-animation: spin 0.7s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 .payment-success { margin-top: 12px; font-weight: 800; color: #166534; font-size: 1rem; }
 .laptop-badge {
 background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe;

@@ -71,7 +71,9 @@ template: `
 <span style="font-size:2rem"></span>
 <span>לחץ לבחירת תמונה</span>
 </div>
-<div *ngIf="uploading()" class="image-placeholder">מעלה...</div>
+<div *ngIf="uploading()" class="image-placeholder" role="status" aria-label="העלאת תמונה">
+  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+</div>
 </div>
 <input #fileInput type="file" accept="image/*" style="display:none" (change)="uploadImage($event)">
 </div>

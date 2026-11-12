@@ -7,6 +7,7 @@ import { ApiService } from './services/api.service';
 import { AuthService, UserRole } from './services/auth.service';
 import { MessagesService } from './services/messages.service';
 import { NotificationsService } from './services/notifications.service';
+import { LoadingService } from './services/loading.service';
 import { NotificationDrawerComponent } from './components/notifications/notification-drawer';
 import { Subject, forkJoin, interval } from 'rxjs';
 import { filter, takeUntil } from 'rxjs/operators';
@@ -397,6 +398,13 @@ import { filter, takeUntil } from 'rxjs/operators';
 
     <!-- Notification drawer -->
     <app-notification-drawer *ngIf="notifOpen" (close)="notifOpen = false"></app-notification-drawer>
+
+    <div *ngIf="loading.visible()" class="global-loading-overlay" role="status" aria-live="polite" aria-label="טעינה">
+      <div class="global-loading-dialog">
+        <span class="loading-dots global-loading-spinner" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span *ngIf="loading.progress() !== null" class="global-loading-progress">{{ loading.progress() }}%</span>
+      </div>
+    </div>
   `,
   styles: [
     `
@@ -1214,6 +1222,7 @@ export class App implements OnInit {
     public auth: AuthService,
     public messages: MessagesService,
     public notifs: NotificationsService,
+    public loading: LoadingService,
   ) {
     this.currentPath = this.router.url.split('?')[0];
     this.currentQuery = this.router.url;
@@ -1228,7 +1237,7 @@ export class App implements OnInit {
       this.notifOpen = false;
     });
     interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => {
-      if (this.auth.user()) this.refreshUnreadMessages();
+      if (this.auth.user()) this.refreshUnreadMessages(true);
     });
     effect(() => {
       const user = this.auth.user();
@@ -1239,11 +1248,11 @@ export class App implements OnInit {
         });
         this.refreshAccessRequests();
         interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => {
-          if (this.auth.user()) this.refreshAccessRequests();
+          if (this.auth.user()) this.refreshAccessRequests(true);
         });
         this.notifs.refresh().subscribe();
         interval(60000).pipe(takeUntil(this.destroy$)).subscribe(() => {
-          if (this.auth.user()) this.notifs.refresh().subscribe();
+          if (this.auth.user()) this.notifs.refresh(true).subscribe();
         });
       } else {
         this.messages.unreadCount.set(0);
@@ -1253,18 +1262,18 @@ export class App implements OnInit {
     });
   }
 
-  private refreshUnreadMessages() {
-    this.messages.refreshUnreadCount().subscribe({
+  private refreshUnreadMessages(background = false) {
+    this.messages.refreshUnreadCount(background).subscribe({
       error: error => console.error('Could not refresh unread message count', error)
     });
   }
 
-  refreshAccessRequests() {
-    this.api.getIncomingPageRequests().subscribe({
+  refreshAccessRequests(background = false) {
+    this.api.getIncomingPageRequests(background).subscribe({
       next: (r) => this.accessRequests.set(r),
       error: () => {},
     });
-    this.api.getPageTopics().subscribe({
+    this.api.getPageTopics(background).subscribe({
       next: (t) => this.grantedCount = t.reduce((s: number, x: any) => s + (x.granted_requests || 0), 0),
       error: () => {},
     });

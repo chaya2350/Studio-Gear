@@ -230,9 +230,9 @@ this.returnBarcodeInput?.nativeElement.select();
 
 private refreshInBackground() {
 if (document.hidden) return;
-this.load();
-this.api.getOverdueLoans().subscribe({ next: d => this.overdueCount.set(d.length), error: () => {} });
-this.api.getLaptopOverdue().subscribe({ next: d => this.laptopOverdue.set(d), error: () => {} });
+this.load(true);
+this.api.getOverdueLoans(true).subscribe({ next: d => this.overdueCount.set(d.length), error: () => {} });
+this.api.getLaptopOverdue(true).subscribe({ next: d => this.laptopOverdue.set(d), error: () => {} });
 }
 
 private isHiddenFromGeneralView(l: Loan) {
@@ -241,8 +241,8 @@ return l.category === 'מצלמות אישיות' || (l.category === 'ציוד �
 
 activeCount() { return this.all().filter(l => !l.actual_return).length; }
 
-load() {
-this.api.getLoans().subscribe(data => { this.all.set(data); this.applyFilter(); });
+load(background = false) {
+this.api.getLoans(background).subscribe(data => { this.all.set(data); this.applyFilter(); });
 }
 
 setFilter(f: 'active' | 'overdue' | 'all') { this.filter.set(f); this.applyFilter(); }

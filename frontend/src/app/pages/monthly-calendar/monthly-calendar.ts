@@ -122,8 +122,9 @@ interface GanttEntry {
       <input id="wedding-student" [ngModel]="weddingQuery()" (ngModelChange)="onWeddingQueryChange($event)"
              placeholder="חפשי לפי שם או מספר זהות" autocomplete="off" [disabled]="savingWedding()"
              aria-describedby="wedding-search-hint">
-      <small id="wedding-search-hint" class="wedding-search-hint">
-        {{ weddingStudentsLoading() ? 'טוען תלמידות...' : 'הקלידי לפחות שני תווים לחיפוש' }}
+      <small id="wedding-search-hint" class="wedding-search-hint" [attr.role]="weddingStudentsLoading() ? 'status' : null">
+        <span *ngIf="weddingStudentsLoading()" class="loading-dots" aria-label="טעינת תלמידות"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!weddingStudentsLoading()">הקלידי לפחות שני תווים לחיפוש</ng-container>
       </small>
       <div *ngIf="weddingStudentId" class="wedding-selected">התלמידה שנבחרה: {{ weddingSelectedName }}</div>
       <div *ngIf="!weddingStudentId && weddingQuery().trim().length >= 2 && !weddingStudentsLoading() && !weddingStudentsLoadError()" class="wedding-results">
@@ -174,7 +175,14 @@ interface GanttEntry {
         </button>
       </div>
       <div *ngIf="showUserPicker()" class="share-picker">
-        <div *ngIf="!taskUsers().length" class="hint">טוען רשימת משתמשות...</div>
+        <div *ngIf="taskUsersLoading()" class="hint" role="status" aria-label="טעינת משתמשות">
+          <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+        <div *ngIf="taskUsersError()" class="hint error" role="alert">
+          {{ taskUsersError() }}
+          <button type="button" class="btn btn-secondary btn-sm" (click)="loadTaskUsers()">נסי שוב</button>
+        </div>
+        <div *ngIf="taskUsersLoaded() && !taskUsers().length && !taskUsersError()" class="hint">אין משתמשות זמינות</div>
         <label *ngFor="let u of taskUsers()" class="share-option">
           <input type="checkbox" [checked]="newTask.sharedUserIds.includes(u.id)"
                  (change)="toggleSharedUser(u.id)">
@@ -405,8 +413,10 @@ interface GanttEntry {
     <strong class="delete-task-name">{{ task.title }}</strong>
     <p *ngIf="deleteTaskError()" class="delete-task-error" role="alert">{{ deleteTaskError() }}</p>
     <div class="modal-actions delete-task-actions">
-      <button type="button" class="btn btn-danger" [disabled]="deletingTaskId() !== null" (click)="confirmDeleteTask()">
-        {{ deletingTaskId() === task.id ? 'מוחק...' : 'מחקי משימה' }}
+      <button type="button" class="btn btn-danger" [disabled]="deletingTaskId() !== null"
+              [attr.aria-label]="deletingTaskId() === task.id ? 'מוחקת משימה' : 'מחקי משימה'" (click)="confirmDeleteTask()">
+        <span *ngIf="deletingTaskId() === task.id" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="deletingTaskId() !== task.id">מחקי משימה</ng-container>
       </button>
       <button type="button" class="btn btn-secondary" [disabled]="deletingTaskId() !== null" (click)="cancelDeleteTask()">ביטול</button>
     </div>
@@ -482,8 +492,10 @@ interface GanttEntry {
 <!-- Upload panel (admin/secretary, schedule active) -->
 <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
   <label class="upload-button" [class.uploading]="uploading">
-    <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
-    {{ uploading ? 'מעלה ומייבא...' : 'העלאת לוח שנה מאקסל' }}
+    <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)"
+           [attr.aria-label]="uploading ? 'מעלה לוח שנה' : 'העלאת לוח שנה מאקסל'">
+    <span *ngIf="uploading" class="loading-dots" role="status" aria-label="ייבוא לוח שנה"><i></i><i></i><i></i></span>
+    <ng-container *ngIf="!uploading">העלאת לוח שנה מאקסל</ng-container>
   </label>
   <span class="upload-help">קובץ Excel ‎.xlsx — אירועים מהגיליונות יישמרו בלוח האירועים</span>
   <p *ngIf="uploadMessage" class="upload-success" role="status">{{ uploadMessage }}</p>
@@ -1237,6 +1249,9 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   newTask = { title: '', start_time: '08:00', end_time: '09:00', all_day: false, visibility: 'private' as 'private' | 'public' | 'shared', sharedUserIds: [] as number[] };
   taskUsers = signal<MessageUser[]>([]);
+  taskUsersLoading = signal(false);
+  taskUsersLoaded = signal(false);
+  taskUsersError = signal('');
   showUserPicker = signal(false);
   newExam  = { name: '', subject: '', track: '', year: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track' as 'track' | 'class', parallel: '' };
   newEvent = {
@@ -1301,17 +1316,17 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     });
 
     this.loadAll();
-    interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadAll());
+    interval(30000).pipe(takeUntil(this.destroy$)).subscribe(() => this.loadAll(true));
   }
 
   ngOnDestroy() { this.weddingStudentsRequest?.unsubscribe(); this.destroy$.next(); this.destroy$.complete(); }
 
-  private loadAll() {
-    this.api.getLoans().subscribe({ next: v => this.loans.set(v), error: () => {} });
-    this.messages.getTasks().subscribe({ next: v => this.tasks.set(v), error: () => {} });
-    this.api.getCalendarEvents().subscribe({ next: v => this.calendarEvents.set(v), error: () => {} });
-    this.api.getExams().subscribe({ next: v => this.exams.set(v), error: () => {} });
-    this.api.getStudents().subscribe({ next: v => this.allStudents.set(v), error: () => {} });
+  private loadAll(background = false) {
+    this.api.getLoans(background).subscribe({ next: v => this.loans.set(v), error: () => {} });
+    this.messages.getTasks(background).subscribe({ next: v => this.tasks.set(v), error: () => {} });
+    this.api.getCalendarEvents(background).subscribe({ next: v => this.calendarEvents.set(v), error: () => {} });
+    this.api.getExams(background).subscribe({ next: v => this.exams.set(v), error: () => {} });
+    this.api.getStudents(undefined, background).subscribe({ next: v => this.allStudents.set(v), error: () => {} });
   }
 
   // ── Layer helpers ──
@@ -1488,11 +1503,26 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
     this.showUserPicker.set(false);
     this.dialogError.set('');
     this.addTaskOpen.set(true);
-    if (!this.taskUsers().length) {
-      this.messages.getUsers().subscribe({ next: u => this.taskUsers.set(u), error: () => {} });
-    }
+    if (!this.taskUsersLoaded()) this.loadTaskUsers();
   }
   openAddTaskForSelected() { this.openAddTask(); }
+
+  loadTaskUsers() {
+    if (this.taskUsersLoading()) return;
+    this.taskUsersLoading.set(true);
+    this.taskUsersError.set('');
+    this.messages.getUsers().subscribe({
+      next: users => {
+        this.taskUsers.set(users);
+        this.taskUsersLoaded.set(true);
+        this.taskUsersLoading.set(false);
+      },
+      error: () => {
+        this.taskUsersLoading.set(false);
+        this.taskUsersError.set('טעינת רשימת המשתמשות נכשלה');
+      }
+    });
+  }
 
   toggleSharedUser(userId: number) {
     const ids = this.newTask.sharedUserIds;

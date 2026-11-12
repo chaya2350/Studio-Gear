@@ -82,8 +82,9 @@ required
 </div>
 <label class="remember"><input type="checkbox" name="remember" [(ngModel)]="remember"> זכור אותי במכשיר זה</label>
 <div *ngIf="error()" class="alert alert-error" role="alert"> {{ error() }}</div>
-<button class="btn btn-primary" type="submit" [disabled]="loading()">
-{{ loading() ? 'מתחבר...' : 'התחברות' }}
+<button class="btn btn-primary" type="submit" [disabled]="loading()" [attr.aria-label]="loading() ? 'מתחברת' : 'התחברות'">
+  <span *ngIf="loading()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <ng-container *ngIf="!loading()">התחברות</ng-container>
 </button>
 </form>
 <div class="google-login" [hidden]="!googleClientId()">

@@ -17,7 +17,9 @@ import { AuthService } from '../../services/auth.service';
     </div>
 
     <div class="card graduate-profile-list">
-      <div *ngIf="loading()" class="import-status importing">טוען בוגרות...</div>
+      <div *ngIf="loading()" class="import-status importing" role="status" aria-label="טעינת בוגרות">
+        <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
       <div *ngIf="loadError()" class="alert alert-error" role="alert">{{ loadError() }}</div>
       <div *ngIf="!loading() && !graduates().length" class="room-default-empty">עדיין אין בוגרות.</div>
       <article *ngFor="let graduate of graduates()" class="graduate-profile-card">
@@ -41,8 +43,10 @@ import { AuthService } from '../../services/auth.service';
         <div class="graduate-profile-actions">
           <button class="btn btn-primary btn-sm" type="button"
                   [disabled]="savingAddress() === graduate.id_number || !auth.hasPermission('students', 'edit')"
+                  [attr.aria-label]="savingAddress() === graduate.id_number ? 'שומרת כתובת' : 'שמירת כתובת'"
                   (click)="saveAddress(graduate)">
-            {{ savingAddress() === graduate.id_number ? 'שומר...' : 'שמירת כתובת' }}
+            <span *ngIf="savingAddress() === graduate.id_number" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <ng-container *ngIf="savingAddress() !== graduate.id_number">שמירת כתובת</ng-container>
           </button>
           <span *ngIf="savedId() === graduate.id_number" class="graduate-profile-saved" role="status">הכתובת נשמרה</span>
           <span *ngIf="saveError()" class="alert alert-error" role="alert">{{ saveError() }}</span>

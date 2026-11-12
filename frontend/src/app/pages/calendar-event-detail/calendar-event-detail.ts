@@ -54,9 +54,8 @@ function formatGregorianDate(dateStr: string): string {
   template: `
 <div class="container">
   <!-- Loading -->
-  <div *ngIf="loading()" class="loading-state">
-    <div class="spinner"></div>
-    <span>טוען...</span>
+  <div *ngIf="loading()" class="loading-state" role="status" aria-label="טעינת האירוע">
+    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
   </div>
 
   <!-- Error -->
@@ -181,8 +180,10 @@ function formatGregorianDate(dateStr: string): string {
           <p *ngIf="saveError()" class="alert alert-error save-error">{{ saveError() }}</p>
 
           <div class="form-actions">
-            <button class="btn btn-primary" [disabled]="saving()" (click)="save(ev)">
-              {{ saving() ? 'שומר...' : 'שמור שינויים' }}
+            <button class="btn btn-primary" [disabled]="saving()"
+                    [attr.aria-label]="saving() ? 'שומרת שינויים' : 'שמור שינויים'" (click)="save(ev)">
+              <span *ngIf="saving()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <ng-container *ngIf="!saving()">שמור שינויים</ng-container>
             </button>
             <button class="btn btn-secondary" [disabled]="saving()" (click)="cancelEdit()">ביטול</button>
           </div>
@@ -202,13 +203,6 @@ function formatGregorianDate(dateStr: string): string {
       display: flex; align-items: center; gap: 12px;
       padding: 40px 0; color: var(--text-muted); font-size: 0.9rem;
     }
-    .spinner {
-      width: 22px; height: 22px; border: 3px solid var(--border);
-      border-top-color: var(--primary); border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
     /* ── Page header ── */
     .page-header {
       display: flex; flex-direction: column; gap: 12px; margin-bottom: 28px;
