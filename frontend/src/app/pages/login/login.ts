@@ -83,7 +83,7 @@ required
 <label class="remember"><input type="checkbox" name="remember" [(ngModel)]="remember"> זכור אותי במכשיר זה</label>
 <div *ngIf="error()" class="alert alert-error" role="alert"> {{ error() }}</div>
 <button class="btn btn-primary" type="submit" [disabled]="loading()">
-{{ loading() ? 'מתחברת...' : 'התחברות' }}
+{{ loading() ? 'מתחבר...' : 'התחברות' }}
 </button>
 </form>
 <div class="google-login" [hidden]="!googleClientId()">

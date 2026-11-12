@@ -123,7 +123,7 @@ interface GanttEntry {
              placeholder="חפשי לפי שם או מספר זהות" autocomplete="off" [disabled]="savingWedding()"
              aria-describedby="wedding-search-hint">
       <small id="wedding-search-hint" class="wedding-search-hint">
-        {{ weddingStudentsLoading() ? 'טוענת תלמידות...' : 'הקלידי לפחות שני תווים לחיפוש' }}
+        {{ weddingStudentsLoading() ? 'טוען תלמידות...' : 'הקלידי לפחות שני תווים לחיפוש' }}
       </small>
       <div *ngIf="weddingStudentId" class="wedding-selected">התלמידה שנבחרה: {{ weddingSelectedName }}</div>
       <div *ngIf="!weddingStudentId && weddingQuery().trim().length >= 2 && !weddingStudentsLoading() && !weddingStudentsLoadError()" class="wedding-results">
@@ -406,7 +406,7 @@ interface GanttEntry {
     <p *ngIf="deleteTaskError()" class="delete-task-error" role="alert">{{ deleteTaskError() }}</p>
     <div class="modal-actions delete-task-actions">
       <button type="button" class="btn btn-danger" [disabled]="deletingTaskId() !== null" (click)="confirmDeleteTask()">
-        {{ deletingTaskId() === task.id ? 'מוחקת...' : 'מחקי משימה' }}
+        {{ deletingTaskId() === task.id ? 'מוחק...' : 'מחקי משימה' }}
       </button>
       <button type="button" class="btn btn-secondary" [disabled]="deletingTaskId() !== null" (click)="cancelDeleteTask()">ביטול</button>
     </div>
@@ -483,7 +483,7 @@ interface GanttEntry {
 <section *ngIf="has('schedule') && canImportCalendar()" class="upload-panel">
   <label class="upload-button" [class.uploading]="uploading">
     <input type="file" accept=".xlsx" [disabled]="uploading" (change)="onCalendarFileSelected($event)">
-    {{ uploading ? 'מעלה ומייבאת...' : 'העלאת לוח שנה מאקסל' }}
+    {{ uploading ? 'מעלה ומייבא...' : 'העלאת לוח שנה מאקסל' }}
   </label>
   <span class="upload-help">קובץ Excel ‎.xlsx — אירועים מהגיליונות יישמרו בלוח האירועים</span>
   <p *ngIf="uploadMessage" class="upload-success" role="status">{{ uploadMessage }}</p>

@@ -31,7 +31,7 @@ template: `
 <fieldset class="recipient-picker" [disabled]="usersLoading || !users.length || sending || loadingReply">
 <legend>אל</legend>
 <p class="recipient-instructions">סמני את כל מי שצריכה לקבל את ההודעה:</p>
-<div *ngIf="usersLoading" class="recipient-empty">טוענת משתמשות…</div>
+<div *ngIf="usersLoading" class="recipient-empty">טוען משתמשות…</div>
 <div *ngIf="!usersLoading && !users.length && !usersError" class="recipient-empty">אין משתמשות זמינות לבחירה</div>
 <div *ngIf="users.length" class="recipient-options">
   <label *ngFor="let user of users" class="recipient-option" [class.checked]="isRecipientSelected(user.id)">
@@ -79,7 +79,7 @@ placeholder="כתבי הודעה..."></textarea>
 <div class="compose-footer">
 <small>{{ body.length }}/4000</small>
 <button class="btn btn-primary" type="button" [disabled]="sending || loadingReply || usersLoading || !recipientIds.length || !body.trim()"
-(click)="send()">{{ sending ? 'שולחת…' : 'שליחת הודעה ' }}</button>
+(click)="send()">{{ sending ? 'שולח…' : 'שליחת הודעה ' }}</button>
 </div>
 <div *ngIf="sendError" class="alert alert-error" role="alert">{{ sendError }}</div>
 <div *ngIf="sendSuccess" class="success-message" role="status" aria-live="polite">
@@ -105,7 +105,7 @@ placeholder="כתבי הודעה..."></textarea>
 <button type="button" [class.active]="view === 'all'" (click)="view = 'all'">רצף השיחה</button>
 </div>
 <div *ngIf="messagesError" class="alert alert-error" role="alert">{{ messagesError }}</div>
-<div *ngIf="loading" class="empty-state">טוענת הודעות…</div>
+<div *ngIf="loading" class="empty-state">טוען הודעות…</div>
 <div *ngIf="!loading && !visibleMessages().length" class="empty-state">
 <div class="empty-icon"></div>
 <p>אין הודעות להצגה</p>
@@ -136,7 +136,7 @@ placeholder="כתבי הודעה..."></textarea>
 <ng-container *ngIf="editingMessageId === message.id; else showBody">
 <textarea style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:8px;font:inherit;resize:vertical;margin:6px 0" [(ngModel)]="editBody" rows="3" maxlength="4000"></textarea>
 <div style="display:flex;gap:8px;margin-bottom:4px">
-<button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit || !editBody.trim()" (click)="saveEdit(message)">{{ savingEdit ? 'שומרת…' : 'שמירה' }}</button>
+<button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit || !editBody.trim()" (click)="saveEdit(message)">{{ savingEdit ? 'שומר…' : 'שמירה' }}</button>
 <button class="btn btn-secondary" style="padding:4px 12px;font-size:0.8rem" type="button" [disabled]="savingEdit" (click)="cancelEdit()">ביטול</button>
 </div>
 <p *ngIf="editError" class="alert alert-error">{{ editError }}</p>

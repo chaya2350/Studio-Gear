@@ -11,6 +11,18 @@ test('generates Hebrew holiday events for the requested Israeli date range', asy
   assert.ok(events.every(event => event.event_date >= '2027-04-21' && event.event_date <= '2027-04-23'));
 });
 
+test('generates Hebrew holidays and Israeli civic observances only', async () => {
+  const events = await generateIsraeliHolidayEvents('2027-04-01', '2027-05-31');
+  const titles = new Set(events.map(event => event.title));
+
+  assert.ok(titles.has('פסח'));
+  assert.ok(titles.has('יום העצמאות'));
+  assert.ok(titles.has('יום הזיכרון לשואה ולגבורה'));
+  assert.ok(titles.has('יום הזיכרון לחללי מערכות ישראל'));
+  assert.ok(!titles.has('חג המולד'));
+  assert.ok(!titles.has('עיד אל-פיטר'));
+});
+
 test('stores generated holidays only once', async () => {
   const db = new Database(':memory:');
   db.exec(`
@@ -27,6 +39,11 @@ test('stores generated holidays only once', async () => {
       UNIQUE (event_date, title, category, source_sheet)
     )
   `);
+  db.prepare(`
+    INSERT INTO calendar_events
+      (title, event_date, hebrew_year, category, source_sheet, created_at)
+    VALUES ('יום העצמאות', '2027-04-22', 5787, 'חג', 'חגים אוטומטיים', datetime('now'))
+  `).run();
 
   const firstInsertCount = await addIsraeliHolidays(db, '2027-04-21', '2027-04-29');
   const secondInsertCount = await addIsraeliHolidays(db, '2027-04-21', '2027-04-29');
@@ -34,7 +51,11 @@ test('stores generated holidays only once', async () => {
 
   assert.ok(firstInsertCount > 0);
   assert.equal(secondInsertCount, 0);
-  assert.equal(storedCount, firstInsertCount);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM calendar_events WHERE title = 'יום העצמאות'").get().count,
+    1
+  );
+  assert.equal(storedCount, firstInsertCount + 1);
   assert.equal(
     db.prepare("SELECT is_school_holiday FROM calendar_events WHERE title = 'פסח'").get().is_school_holiday,
     1

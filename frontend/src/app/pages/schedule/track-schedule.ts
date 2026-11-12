@@ -272,6 +272,7 @@ export class TrackScheduleComponent implements OnInit {
   tracks = signal<{ id: number; name: string; years: { year: string; student_count: number }[] }[]>([]);
   teachers = signal<{ id: number; name: string; subject: string | null; specialization: string | null }[]>([]);
   periods = signal<{ id: number; name: string; start_time: string; end_time: string; is_break?: number }[]>([]);
+  roomDefaults = signal<{ track_id: number; study_year: string; room_number: string }[]>([]);
   selectableTracks = computed(() => this.tracks().filter(track =>
     track.years.some(year => year.student_count > 0)
   ));
@@ -358,6 +359,7 @@ export class TrackScheduleComponent implements OnInit {
         this.teachers.set(meta.teachers);
         this.periods.set(meta.periods);
         this.rooms.set(meta.rooms);
+        this.roomDefaults.set(meta.room_defaults);
         const trackId = this.selectableTracks()[0]?.id ?? null;
         this.selectedTrackId.set(trackId);
         if (trackId !== null) this.loadSchedule(trackId, this.selectedYear());
@@ -478,9 +480,14 @@ export class TrackScheduleComponent implements OnInit {
       end_time: period?.end_time || '',
       teacher_id: null,
       subject: '',
-      room_number: null
+      room_number: this.defaultRoomNumber(this.selectedTrackId(), this.selectedYear())
     };
     this.formOpen.set(true);
+  }
+
+  private defaultRoomNumber(trackId: number | null, studyYear: string) {
+    if (trackId === null) return null;
+    return this.roomDefaults().find(item => item.track_id === trackId && item.study_year === studyYear)?.room_number || null;
   }
 
   edit(slot: TrackScheduleSlot) {

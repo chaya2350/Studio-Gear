@@ -107,7 +107,7 @@ template: `
 <div class="student-actions" *ngIf="!editing()">
 <button class="btn btn-secondary" (click)="startEditing()"> עריכת פרטים</button>
 <button class="btn btn-danger" [disabled]="deleting()" (click)="deleteStudent()">
-{{ deleting() ? 'מוחקת...' : ' מחיקת תלמידה' }}
+{{ deleting() ? 'מוחק...' : ' מחיקת תלמידה' }}
 </button>
 </div>
 </div>

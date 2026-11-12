@@ -185,7 +185,7 @@ interface TableStudent {
   </div>
 </div>
 
-<div *ngIf="loading()" class="loading-center">טוענת נתונים...</div>
+<div *ngIf="loading()" class="loading-center">טוען נתונים...</div>
 <div *ngIf="!loading() && !filtered().length && (filterMode()==='all' || selTrack() || selYear() || selClass() || searchQ())"
      class="empty-state card">אין תלמידות לבחירה הנוכחית</div>
 `,

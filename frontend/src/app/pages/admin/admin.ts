@@ -92,7 +92,7 @@ class="section-tab"
       <span class="password-count">{{ newPassword().length }}/128</span>
     </div>
     <div class="password-actions">
-      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומרת...' : 'שמירת סיסמה' }}</button>
+      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומר...' : 'שמירת סיסמה' }}</button>
       <button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
     </div>
   </div>
@@ -421,7 +421,7 @@ class="section-tab"
 <div class="section-title"> ייבוא תלמידות מאקסל</div>
 <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
 העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה, ת. לידה לועזי/עברית, כתובת, מספר בית, עיר</strong><br>
-ניתן להעלות מספר קבצים (שנה א + שנה ב). המערכת ממזגת לפי ת.ז בלי לדרוס מידע קיים, ומוסיפה פרמטרים חדשים (כמו קוד לטלפון).
+ניתן להעלות מספר קבצים (שנה א + שנה ב). הייבוא ממזג לפי ת.ז בלי לדרוס מידע קיים, ומוסיף פרמטרים חדשים (כמו קוד לטלפון).
 </p>
 
 <div class="upload-area"
@@ -593,6 +593,66 @@ class="section-tab"
     <div *ngIf="schoolYearEndError()" class="import-status error">{{ schoolYearEndError() }}</div>
   </div>
 
+  <div *ngIf="auth.user()?.role === 'admin'" class="card room-defaults-card">
+    <div class="section-title">חדרי ברירת מחדל למערכות שעות</div>
+    <p class="import-hint">השיעורים יקבלו את החדר שהוגדר לכיתה או למסלול ולשנה. אפשר לבחור חדר אחר בכל שיעור.</p>
+    <p *ngIf="roomDefaultsLoading()" class="import-hint">טוען כיתות, מסלולים וחדרים...</p>
+    <p *ngIf="roomDefaultsError()" class="import-status error" role="alert">{{ roomDefaultsError() }}</p>
+    <p *ngIf="roomDefaultsMessage()" class="import-status success" role="status">{{ roomDefaultsMessage() }}</p>
+    <button class="btn btn-secondary" type="button" [disabled]="applyingRoomDefaults() || roomDefaultsLoading()"
+            (click)="applyRoomDefaultsToExisting()">
+      {{ applyingRoomDefaults() ? 'מעדכן שיעורים...' : 'החלת ברירות המחדל על שיעורים קיימים' }}
+    </button>
+    <div *ngIf="!roomDefaultsLoading()" class="room-defaults-grid">
+      <section class="room-default-group">
+        <h3>מערכת קודש · לפי כיתה</h3>
+        <input class="room-default-search" [ngModel]="classRoomSearch()"
+               (ngModelChange)="classRoomSearch.set($event)" placeholder="חיפוש כיתה" aria-label="חיפוש כיתה">
+        <div class="room-default-list" role="listbox" aria-label="בחירת כיתה">
+          <button *ngFor="let row of filteredRoomDefaultClasses()" type="button" class="room-default-option"
+                  [class.selected]="selectedClassRoomKey() === classRoomDefaultKey(row.class_year, row.class_parallel)"
+                  [attr.aria-selected]="selectedClassRoomKey() === classRoomDefaultKey(row.class_year, row.class_parallel)"
+                  (click)="selectedClassRoomKey.set(classRoomDefaultKey(row.class_year, row.class_parallel))">
+            <strong>כיתה {{ row.class_year }}{{ row.class_parallel }}</strong>
+            <span>{{ roomDefaultLabel(classRoomDefaultValue(row.class_year, row.class_parallel)) }}</span>
+          </button>
+          <p *ngIf="!filteredRoomDefaultClasses().length" class="room-default-empty">לא נמצאו כיתות.</p>
+        </div>
+        <label *ngIf="selectedClassRoom() as row" class="room-default-field">חדר ברירת מחדל
+          <select [ngModel]="classRoomDefaultValue(row.class_year, row.class_parallel)"
+                  (ngModelChange)="saveSelectedClassRoomDefault($event)"
+                  [disabled]="savingRoomDefault() === classRoomDefaultKey(row.class_year, row.class_parallel)">
+            <option [ngValue]="null">ללא ברירת מחדל</option>
+            <option *ngFor="let room of roomDefaultRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+          </select>
+        </label>
+      </section>
+      <section class="room-default-group">
+        <h3>מערכת מסלולים · לפי מסלול ושנה</h3>
+        <input class="room-default-search" [ngModel]="trackRoomSearch()"
+               (ngModelChange)="trackRoomSearch.set($event)" placeholder="חיפוש מסלול" aria-label="חיפוש מסלול">
+        <div class="room-default-list" role="listbox" aria-label="בחירת מסלול ושנה">
+          <button *ngFor="let row of filteredTrackRoomDefaultRows()" type="button" class="room-default-option"
+                  [class.selected]="isSelectedTrackRoom(row)"
+                  [attr.aria-selected]="isSelectedTrackRoom(row)"
+                  (click)="selectTrackRoom(row)">
+            <strong>{{ row.track_name }} · שנה {{ row.study_year }}׳ · {{ row.student_count }} תלמידות</strong>
+            <span>{{ roomDefaultLabel(trackRoomDefaultValue(row.track_id, row.study_year)) }}</span>
+          </button>
+          <p *ngIf="!filteredTrackRoomDefaultRows().length" class="room-default-empty">לא נמצאו מסלולים ושנים עם יותר משתי תלמידות.</p>
+        </div>
+        <label *ngIf="selectedTrackRoom() as row" class="room-default-field">חדר ברירת מחדל
+          <select [ngModel]="trackRoomDefaultValue(row.track_id, row.study_year)"
+                  (ngModelChange)="saveSelectedTrackRoomDefault($event)"
+                  [disabled]="savingRoomDefault() === trackRoomDefaultKey(row.track_id, row.study_year)">
+            <option [ngValue]="null">ללא ברירת מחדל</option>
+            <option *ngFor="let room of roomDefaultRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+          </select>
+        </label>
+      </section>
+    </div>
+  </div>
+
   <!-- ניהול שעות שיעורים -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
     <div class="section-title">ניהול שעות שיעורים</div>
@@ -740,6 +800,18 @@ background: var(--surface-2);
 .period-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
 .period-row.is-break { background: #fef9c3; border-radius: 6px; padding: 6px 8px; }
 .period-form .admin-input { width: auto; }
+.room-defaults-card { max-width: 900px; margin-bottom: 16px; }
+.room-defaults-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.room-default-group h3 { margin: 0 0 10px; font-size: .95rem; }
+.room-default-search { width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.room-default-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.room-default-option { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: right; cursor: pointer; font: inherit; }
+.room-default-option:last-of-type { border-bottom: 0; }
+.room-default-option:hover, .room-default-option.selected { background: var(--primary-light); }
+.room-default-option.selected { box-shadow: inset -3px 0 var(--primary); }
+.room-default-option strong { font-size: .84rem; }
+.room-default-option span { overflow: hidden; color: var(--text-muted); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.room-default-empty { margin: 0; padding: 12px; color: var(--text-muted); font-size: .82rem; }
 .period-time { font-weight: 600; min-width: 110px; direction: ltr; text-align: right; }
 .period-name { flex: 1; }
 .period-break { display: flex; gap: 4px; align-items: center; }
@@ -1122,12 +1194,181 @@ if (auth.user()?.role === 'admin') {
 this.loadTeachers();
 this.loadPeriods();
 this.loadSchoolYearEnd();
+if (auth.user()?.role === 'admin') this.loadRoomDefaults();
 }
 
 loadSchoolYearEnd() {
   this.api.getScheduleYearEnd().subscribe({
     next: result => this.schoolYearEndDate = result.through_date,
     error: () => {}
+  });
+}
+
+loadRoomDefaults() {
+  this.roomDefaultsLoading.set(true);
+  this.roomDefaultsError.set('');
+  this.api.getScheduleRoomDefaults().subscribe({
+    next: result => {
+      this.roomDefaultRooms.set(result.rooms);
+      this.roomDefaultClasses.set(result.classes);
+      this.roomDefaultTracks.set(result.tracks);
+      if (!result.classes.some(item => this.classRoomDefaultKey(item.class_year, item.class_parallel) === this.selectedClassRoomKey())) {
+        const firstClass = result.classes[0];
+        this.selectedClassRoomKey.set(firstClass ? this.classRoomDefaultKey(firstClass.class_year, firstClass.class_parallel) : '');
+      }
+      const eligibleTrackRows = result.tracks.flatMap(track => track.years
+        .filter(year => year.student_count > 2)
+        .map(year => ({ track_id: track.id, study_year: year.year })));
+      if (!eligibleTrackRows.some(item => item.track_id === this.selectedRoomDefaultTrackId() &&
+          item.study_year === this.selectedRoomDefaultStudyYear())) {
+        this.selectedRoomDefaultTrackId.set(eligibleTrackRows[0]?.track_id ?? null);
+        this.selectedRoomDefaultStudyYear.set(eligibleTrackRows[0]?.study_year ?? 'ה');
+      }
+      this.classRoomDefaults.set(Object.fromEntries(result.class_defaults.map(item => [
+        this.classRoomDefaultKey(item.class_year, item.class_parallel), item.room_number
+      ])));
+      this.trackRoomDefaults.set(Object.fromEntries(result.track_defaults.map(item => [
+        this.trackRoomDefaultKey(item.track_id, item.study_year), item.room_number
+      ])));
+      this.roomDefaultsLoading.set(false);
+    },
+    error: error => {
+      this.roomDefaultsLoading.set(false);
+      this.roomDefaultsError.set(error.error?.error || 'טעינת ברירות המחדל לחדרים נכשלה');
+    }
+  });
+}
+
+classRoomDefaultKey(classYear: string, classParallel: string) {
+  return `${classYear}_${classParallel}`;
+}
+
+trackRoomDefaultKey(trackId: number, studyYear: string) {
+  return `${trackId}_${studyYear}`;
+}
+
+classRoomDefaultValue(classYear: string, classParallel: string) {
+  return this.classRoomDefaults()[this.classRoomDefaultKey(classYear, classParallel)] || null;
+}
+
+selectedClassRoom() {
+  return this.roomDefaultClasses().find(item =>
+    this.classRoomDefaultKey(item.class_year, item.class_parallel) === this.selectedClassRoomKey()
+  ) || null;
+}
+
+filteredRoomDefaultClasses() {
+  const query = this.classRoomSearch().trim().toLocaleLowerCase('he');
+  return this.roomDefaultClasses().filter(row =>
+    `כיתה ${row.class_year}${row.class_parallel}`.toLocaleLowerCase('he').includes(query)
+  );
+}
+
+roomDefaultLabel(roomNumber: string | null) {
+  if (!roomNumber) return 'ללא חדר';
+  const room = this.roomDefaultRooms().find(item => item.number === roomNumber);
+  return room ? `${room.number} · ${room.name}` : `חדר ${roomNumber}`;
+}
+
+trackRoomDefaultValue(trackId: number, studyYear: string) {
+  return this.trackRoomDefaults()[this.trackRoomDefaultKey(trackId, studyYear)] || null;
+}
+
+trackRoomDefaultRows() {
+  return this.roomDefaultTracks().flatMap(track => track.years
+    .filter(year => year.student_count > 2)
+    .map(year => ({
+      track_id: track.id, track_name: track.name, study_year: year.year,
+      student_count: year.student_count
+    })));
+}
+
+filteredTrackRoomDefaultRows() {
+  const query = this.trackRoomSearch().trim().toLocaleLowerCase('he');
+  return this.trackRoomDefaultRows().filter(row =>
+    `${row.track_name} שנה ${row.study_year}`.toLocaleLowerCase('he').includes(query)
+  );
+}
+
+isSelectedTrackRoom(row: { track_id: number; study_year: string }) {
+  return row.track_id === this.selectedRoomDefaultTrackId() && row.study_year === this.selectedRoomDefaultStudyYear();
+}
+
+selectTrackRoom(row: { track_id: number; study_year: string }) {
+  this.selectedRoomDefaultTrackId.set(row.track_id);
+  this.selectedRoomDefaultStudyYear.set(row.study_year);
+}
+
+selectedTrackRoom() {
+  const trackId = this.selectedRoomDefaultTrackId();
+  return trackId === null ? null : {
+    track_id: trackId, study_year: this.selectedRoomDefaultStudyYear()
+  };
+}
+
+saveSelectedClassRoomDefault(roomNumber: string | null) {
+  const row = this.selectedClassRoom();
+  if (row) this.saveClassRoomDefault(row.class_year, row.class_parallel, roomNumber);
+}
+
+saveSelectedTrackRoomDefault(roomNumber: string | null) {
+  const row = this.selectedTrackRoom();
+  if (row) this.saveTrackRoomDefault(row.track_id, row.study_year, roomNumber);
+}
+
+saveClassRoomDefault(classYear: string, classParallel: string, roomNumber: string | null) {
+  const key = this.classRoomDefaultKey(classYear, classParallel);
+  this.classRoomDefaults.update(defaults => ({ ...defaults, [key]: roomNumber || '' }));
+  this.saveRoomDefault(key, {
+    kind: 'class', class_year: classYear, class_parallel: classParallel, room_number: roomNumber
+  });
+}
+
+saveTrackRoomDefault(trackId: number, studyYear: string, roomNumber: string | null) {
+  const key = this.trackRoomDefaultKey(trackId, studyYear);
+  this.trackRoomDefaults.update(defaults => ({ ...defaults, [key]: roomNumber || '' }));
+  this.saveRoomDefault(key, {
+    kind: 'track', track_id: trackId, study_year: studyYear, room_number: roomNumber
+  });
+}
+
+private saveRoomDefault(key: string, data: {
+  kind: 'class' | 'track'; class_year?: string; class_parallel?: string;
+  track_id?: number; study_year?: string; room_number: string | null;
+}) {
+  this.savingRoomDefault.set(key);
+  this.roomDefaultsMessage.set('');
+  this.roomDefaultsError.set('');
+  this.api.updateScheduleRoomDefault(data).subscribe({
+    next: () => {
+      this.savingRoomDefault.set('');
+      this.roomDefaultsMessage.set('ברירת המחדל נשמרה');
+    },
+    error: error => {
+      this.savingRoomDefault.set('');
+      this.roomDefaultsError.set(error.error?.error || 'שמירת ברירת המחדל נכשלה');
+      this.loadRoomDefaults();
+    }
+  });
+}
+
+applyRoomDefaultsToExisting() {
+  if (this.applyingRoomDefaults()) return;
+  this.applyingRoomDefaults.set(true);
+  this.roomDefaultsError.set('');
+  this.roomDefaultsMessage.set('');
+  this.api.applyScheduleRoomDefaults().subscribe({
+    next: result => {
+      this.applyingRoomDefaults.set(false);
+      this.roomDefaultsMessage.set(
+        `עודכנו ${result.kodeshAssigned + result.trackAssigned} שיעורים. ` +
+        (result.skippedConflicts ? `${result.skippedConflicts} שיעורים דולגו בגלל תפוסת חדר.` : '')
+      );
+    },
+    error: error => {
+      this.applyingRoomDefaults.set(false);
+      this.roomDefaultsError.set(error.error?.error || 'החלת ברירות המחדל נכשלה');
+    }
   });
 }
 
@@ -1591,6 +1832,21 @@ schoolYearEndDate = '2027-08-31';
 savingSchoolYearEnd = signal(false);
 schoolYearEndMessage = signal('');
 schoolYearEndError = signal('');
+roomDefaultRooms = signal<{ number: string; name: string }[]>([]);
+roomDefaultClasses = signal<{ class_year: string; class_parallel: string }[]>([]);
+roomDefaultTracks = signal<{ id: number; name: string; years: { year: string; student_count: number }[] }[]>([]);
+classRoomSearch = signal('');
+trackRoomSearch = signal('');
+classRoomDefaults = signal<Record<string, string>>({});
+trackRoomDefaults = signal<Record<string, string>>({});
+selectedClassRoomKey = signal('');
+selectedRoomDefaultTrackId = signal<number | null>(null);
+selectedRoomDefaultStudyYear = signal('ה');
+roomDefaultsLoading = signal(true);
+applyingRoomDefaults = signal(false);
+savingRoomDefault = signal('');
+roomDefaultsMessage = signal('');
+roomDefaultsError = signal('');
 
 periods = signal<any[]>([]);
 editingPeriodId = signal(0);

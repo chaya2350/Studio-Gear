@@ -12,6 +12,10 @@ function setup() {
     CREATE TABLE teachers (id INTEGER PRIMARY KEY, name TEXT, subject TEXT, specialization TEXT, active INTEGER);
     CREATE TABLE lesson_periods (id INTEGER PRIMARY KEY, name TEXT, start_time TEXT, end_time TEXT, is_break INTEGER);
     CREATE TABLE rooms (number TEXT PRIMARY KEY, name TEXT, usable INTEGER, floor INTEGER);
+    CREATE TABLE schedule_room_defaults (
+      kind TEXT NOT NULL, class_year TEXT NOT NULL, class_parallel TEXT NOT NULL,
+      track_id INTEGER NOT NULL, study_year TEXT NOT NULL, room_number TEXT NOT NULL
+    );
     CREATE TABLE users (id INTEGER PRIMARY KEY);
     CREATE TABLE schedule_slots (
       id INTEGER PRIMARY KEY, week_start TEXT, day_of_week INTEGER, start_time TEXT, end_time TEXT,
@@ -46,7 +50,8 @@ function routesFor(db) {
     getSchoolYearEnd: () => '2027-06-30',
     todayInIsrael: () => '2026-09-01',
     holidayForDate: () => null,
-    ensureHolidays: async () => { holidaysLoaded = true; }
+    ensureHolidays: async () => { holidaysLoaded = true; },
+    getRoomDefault: () => '101'
   });
   return { handlers, holidaysLoaded: () => holidaysLoaded };
 }
@@ -106,6 +111,7 @@ test('track schedule creation rejects breaks and unavailable periods, and blocks
     }, valid);
     assert.equal(valid.code, 201);
     assert.equal(holidaysLoaded(), true);
+    assert.equal(db.prepare('SELECT room_number FROM track_schedule_slots WHERE id = ?').get(valid.body.id).room_number, '101');
 
     const duplicate = response();
     await handlers.get('post /api/track-schedules/:trackId/:studyYear')({

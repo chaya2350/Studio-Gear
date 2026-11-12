@@ -232,7 +232,9 @@ function findScheduleConflict(db, value, throughDate, today, excludeId, holidayF
   return '';
 }
 
-function registerTrackScheduleRoutes(app, db, { getSchoolYearEnd, todayInIsrael, holidayForDate, ensureHolidays }) {
+function registerTrackScheduleRoutes(app, db, {
+  getSchoolYearEnd, todayInIsrael, holidayForDate, ensureHolidays, getRoomDefault = () => null
+}) {
   app.get('/api/track-schedules', (req, res) => {
     const tracks = studentTrackCounts(db);
     const teachers = db.prepare(`
@@ -240,7 +242,8 @@ function registerTrackScheduleRoutes(app, db, { getSchoolYearEnd, todayInIsrael,
     `).all();
     const periods = db.prepare('SELECT id, name, start_time, end_time, is_break FROM lesson_periods ORDER BY start_time, id').all();
     const rooms = db.prepare('SELECT number, name FROM rooms WHERE usable = 1 ORDER BY floor DESC, number').all();
-    res.json({ tracks, teachers, periods, rooms });
+    const roomDefaults = db.prepare("SELECT track_id, study_year, room_number FROM schedule_room_defaults WHERE kind = 'track'").all();
+    res.json({ tracks, teachers, periods, rooms, room_defaults: roomDefaults });
   });
 
   app.get('/api/track-schedules/:trackId/:studyYear', (req, res) => {
@@ -273,6 +276,9 @@ function registerTrackScheduleRoutes(app, db, { getSchoolYearEnd, todayInIsrael,
     });
     if (input.error) return res.status(400).json({ error: input.error });
     const value = input.value;
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'room_number')) {
+      value.roomNumber = getRoomDefault({ kind: 'track', trackId: value.trackId, studyYear: value.year });
+    }
     await ensureHolidays();
     const conflict = findScheduleConflict(db, value, getSchoolYearEnd(), todayInIsrael(), 0, holidayForDate);
     if (conflict) return res.status(409).json({ error: conflict });
@@ -299,6 +305,9 @@ function registerTrackScheduleRoutes(app, db, { getSchoolYearEnd, todayInIsrael,
     });
     if (input.error) return res.status(400).json({ error: input.error });
     const value = input.value;
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'room_number')) {
+      value.roomNumber = current.room_number || null;
+    }
     await ensureHolidays();
     const conflict = findScheduleConflict(db, value, getSchoolYearEnd(), todayInIsrael(), id, holidayForDate);
     if (conflict) return res.status(409).json({ error: conflict });

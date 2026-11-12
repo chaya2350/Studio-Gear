@@ -19,7 +19,7 @@ interface OpenQuestion {
   selector: 'app-exam-editor',
   imports: [CommonModule, FormsModule],
   template: `
-<div *ngIf="loading()" class="loading-center">טוענת...</div>
+<div *ngIf="loading()" class="loading-center">טוען...</div>
 
 <div *ngIf="!loading() && exam()">
   <div class="page-header">
@@ -29,7 +29,7 @@ interface OpenQuestion {
       <p class="subtitle">{{ exam()?.name }}</p>
     </div>
     <button class="btn btn-primary" [disabled]="saving()" (click)="save()">
-      {{ saving() ? 'שומרת...' : ' שמור מבחן' }}
+      {{ saving() ? 'שומר...' : ' שמור מבחן' }}
     </button>
   </div>
 

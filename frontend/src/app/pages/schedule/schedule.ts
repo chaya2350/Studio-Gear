@@ -171,6 +171,7 @@ function formatHebrewDayHeading(dateStr: string): string {
                     <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                        [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                     <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                      <small *ngIf="slot.room_number" class="day-lesson-room">חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span></small>
                     <span *ngIf="slot.change_reason" class="changed-lesson-tag">
                       {{ slot.change_from_teacher_id && slot.change_from_teacher_id !== slot.teacher_id ? 'הוחלף מ־' + (slot.change_from_teacher_name || 'המורה הקודמת') : 'שונה' }}
                     </span>
@@ -245,6 +246,7 @@ function formatHebrewDayHeading(dateStr: string): string {
                           <a class="teacher-profile-link day-teacher-link" [routerLink]="['/teachers', slot.teacher_id]"
                              [style.--teacher-color]="teacherColor(slot.teacher_id)">{{ slot.teacher_name }}</a>
                           <span *ngIf="slot.subject || slot.teacher_subject" class="day-lesson-subject">{{ slot.subject || slot.teacher_subject }}</span>
+                            <small *ngIf="slot.room_number" class="day-lesson-room">חדר {{ slot.room_number }}<span *ngIf="slot.room_name"> · {{ slot.room_name }}</span></small>
                             <span *ngIf="slot.change_reason" class="changed-lesson-tag">
                               {{ slot.change_from_teacher_id && slot.change_from_teacher_id !== slot.teacher_id ? 'הוחלף מ־' + (slot.change_from_teacher_name || 'המורה הקודמת') : 'שונה' }}
                             </span>
@@ -318,7 +320,7 @@ function formatHebrewDayHeading(dateStr: string): string {
       </label>
       <label class="field">
         <span>כיתה</span>
-        <select [(ngModel)]="newSlot.class_key" (ngModelChange)="onNewSlotScheduleChanged()">
+        <select [(ngModel)]="newSlot.class_key" (ngModelChange)="onNewSlotClassChanged()">
           <option value="">בחר כיתה</option>
           <option *ngFor="let c of classOptions()" [value]="c.parallel">{{ c.label }} ({{ c.count }})</option>
         </select>
@@ -347,6 +349,13 @@ function formatHebrewDayHeading(dateStr: string): string {
       <label class="field">
         <span>מקצוע (אופציונלי)</span>
         <input [(ngModel)]="newSlot.subject" placeholder="אם שונה מהמורה">
+      </label>
+      <label class="field">
+        <span>חדר</span>
+        <select [(ngModel)]="newSlot.room_number">
+          <option [ngValue]="null">ללא חדר</option>
+          <option *ngFor="let room of scheduleRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+        </select>
       </label>
       <label class="field">
         <span>תוקף השיעור</span>
@@ -451,12 +460,20 @@ function formatHebrewDayHeading(dateStr: string): string {
     <h3>הוספת שיעור – יום {{ DAYS[quickAddSlot.day] }}</h3>
     <fieldset class="quick-class-picker">
       <legend>כיתות (אפשר לבחור כמה)</legend>
-      <label *ngFor="let row of quickAvailableClasses()">
-        <input type="checkbox"
-               [checked]="quickAddSlot.classKeys.includes(quickClassKey(row))"
-               (change)="toggleQuickClass(row, $any($event.target).checked)">
-        {{ row.className }}
-      </label>
+      <div *ngFor="let row of quickAvailableClasses()" class="quick-class-option">
+        <label>
+          <input type="checkbox"
+                 [checked]="quickAddSlot.classKeys.includes(quickClassKey(row))"
+                 (change)="toggleQuickClass(row, $any($event.target).checked)">
+          {{ row.className }}
+        </label>
+        <select *ngIf="quickAddSlot.classKeys.includes(quickClassKey(row))"
+                [ngModel]="quickAddSlot.roomNumbers[quickClassKey(row)]"
+                (ngModelChange)="setQuickRoom(row, $event)" [attr.aria-label]="'חדר לכיתה ' + row.className">
+          <option [ngValue]="null">ללא חדר</option>
+          <option *ngFor="let room of scheduleRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+        </select>
+      </div>
     </fieldset>
     <label>מורה:
       <select [(ngModel)]="quickAddSlot.teacher_id">
@@ -516,6 +533,12 @@ function formatHebrewDayHeading(dateStr: string): string {
     <label>שם השיעור / מקצוע:
       <input [(ngModel)]="editSlotDraft.subject" placeholder="שם השיעור">
     </label>
+    <label>חדר:
+      <select [(ngModel)]="editSlotDraft.room_number">
+        <option [ngValue]="null">ללא חדר</option>
+        <option *ngFor="let room of scheduleRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+      </select>
+    </label>
     <label>תוקף השינוי:
       <select [(ngModel)]="editSlotDraft.change_scope"><option value="">בחירת תוקף</option><option value="once">חד־פעמי</option><option value="permanent">קבוע עד סוף השנה</option></select>
     </label>
@@ -531,7 +554,7 @@ function formatHebrewDayHeading(dateStr: string): string {
     <p *ngIf="editSlotError()" class="error-msg" role="alert">{{ editSlotError() }}</p>
     <div class="form-actions">
       <button class="btn btn-primary" [disabled]="savingEditSlot()" (click)="saveEditedSlot()">
-        {{ savingEditSlot() ? 'שומרת...' : 'שמירה' }}
+        {{ savingEditSlot() ? 'שומר...' : 'שמירה' }}
       </button>
       <button class="btn btn-secondary" [disabled]="savingEditSlot()" (click)="cancelEditSlot()">ביטול</button>
     </div>
@@ -655,6 +678,7 @@ function formatHebrewDayHeading(dateStr: string): string {
   font-size: 0.6rem; color: var(--text-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.day-grid-cell .day-lesson-room { color: var(--text-muted); font-size: 0.58rem; line-height: 1.1; }
 .day-grid-cell .day-lesson-actions {
   display: flex; gap: 2px; margin-top: 2px;
 }
@@ -745,6 +769,8 @@ function formatHebrewDayHeading(dateStr: string): string {
 }
 .quick-class-picker legend { padding: 0 5px; font-size: 0.82rem; font-weight: 700; }
 .quick-class-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: 0.85rem; }
+.quick-class-option { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(140px, 1.2fr); align-items: center; gap: 10px; margin: 6px 0; }
+.quick-class-option select { min-width: 0; width: 100%; }
 .schedule-teacher { display: inline-flex; align-items: center; gap: 8px; }
 .schedule-teacher .teacher-color { width: 10px; height: 10px; }
 .teacher-profile-link { color: inherit; text-decoration: none; }
@@ -871,6 +897,8 @@ export class ScheduleComponent implements OnInit {
 
   // Slot CRUD
   newSlot: any = { teacher_id: '', class_key: '', day_of_week: '', start_time: '', end_time: '', subject: '', change_scope: '' };
+  scheduleRooms = signal<{ number: string; name: string }[]>([]);
+  classRoomDefaults = signal<{ class_year: string; class_parallel: string; room_number: string }[]>([]);
   savingSlot = signal(false);
   slotError = signal('');
   slotSuccess = signal('');
@@ -892,7 +920,10 @@ export class ScheduleComponent implements OnInit {
   quickSlotError = signal('');
   savingQuickSlot = signal(false);
   editingSlot = signal<any | null>(null);
-  editSlotDraft = { teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '', change_scope: '', change_category: '', change_reason: '' };
+  editSlotDraft = {
+    teacher_id: 0, period_id: '', start_time: '', end_time: '', subject: '', room_number: null as string | null,
+    change_scope: '', change_category: '', change_reason: ''
+  };
   savingEditSlot = signal(false);
   editSlotError = signal('');
   deletingSlot = signal<any | null>(null);
@@ -917,6 +948,13 @@ export class ScheduleComponent implements OnInit {
 
   ngOnInit() {
     this.loadTeachers();
+    this.api.getScheduleRoomDefaults().subscribe({
+      next: value => {
+        this.scheduleRooms.set(value.rooms);
+        this.classRoomDefaults.set(value.class_defaults);
+      },
+      error: () => {}
+    });
     this.api.getKodeshAvailability().subscribe({
       next: availability => {
         this.kodeshAvailability.set(availability);
@@ -964,6 +1002,18 @@ export class ScheduleComponent implements OnInit {
     this.newSlot.period_id = '';
     this.newSlot.start_time = '';
     this.newSlot.end_time = '';
+  }
+
+  onNewSlotClassChanged() {
+    this.onNewSlotScheduleChanged();
+    const [classYear, classParallel] = String(this.newSlot.class_key || '').split('_');
+    this.newSlot.room_number = this.classRoomDefault(classYear, classParallel);
+  }
+
+  private classRoomDefault(classYear: string, classParallel: string) {
+    return this.classRoomDefaults().find(item =>
+      item.class_year === classYear && item.class_parallel === classParallel
+    )?.room_number || null;
   }
 
   periodAvailability(classYear: string, day: number, period: any): 'kodesh' | 'instruction' | 'track' {
@@ -1194,8 +1244,10 @@ export class ScheduleComponent implements OnInit {
   }
 
   openAddSlot(day: number, year: string, parallel: string, period?: any) {
+    const roomKey = `${year}_${parallel}`;
     this.quickAddSlot = {
       day, classKeys: [`${year}_${parallel}`], teacher_id: '',
+      roomNumbers: { [roomKey]: this.classRoomDefault(year, parallel) },
       period_id: period ? String(period.id) : '',
       start_time: period?.start_time || '',
       end_time: period?.end_time || '',
@@ -1213,6 +1265,19 @@ export class ScheduleComponent implements OnInit {
     return this.gridRows().filter(row =>
       this.kodeshPeriodsForYear(row.classYear, this.quickAddSlot.day).length > 0
     );
+  }
+
+  selectedQuickClasses() {
+    const keys = new Set(this.quickAddSlot?.classKeys || []);
+    return this.quickAvailableClasses().filter(row => keys.has(this.quickClassKey(row)));
+  }
+
+  setQuickRoom(row: { classYear: string; classParallel: string }, roomNumber: string | null) {
+    const quick = this.quickAddSlot;
+    if (!quick) return;
+    const roomNumbers = { ...quick.roomNumbers };
+    roomNumbers[this.quickClassKey(row)] = roomNumber || null;
+    quick.roomNumbers = roomNumbers;
   }
 
   quickKodeshPeriods() {
@@ -1235,6 +1300,8 @@ export class ScheduleComponent implements OnInit {
     if (selected) classKeys.add(key);
     else classKeys.delete(key);
     q.classKeys = Array.from(classKeys);
+    if (selected) q.roomNumbers[key] = this.classRoomDefault(row.classYear, row.classParallel);
+    else delete q.roomNumbers[key];
     if (!this.quickKodeshPeriods().some(period => String(period.id) === q.period_id)) {
       q.period_id = '';
       q.start_time = '';
@@ -1251,7 +1318,8 @@ export class ScheduleComponent implements OnInit {
       period_id: matchingPeriod ? String(matchingPeriod.id) : '',
       start_time: slot.start_time,
       end_time: slot.end_time || '',
-      subject: slot.subject || '', change_scope: '', change_category: '', change_reason: ''
+      subject: slot.subject || '', room_number: slot.room_number || null,
+      change_scope: '', change_category: '', change_reason: ''
     };
     this.editSlotError.set('');
   }
@@ -1312,6 +1380,7 @@ export class ScheduleComponent implements OnInit {
       start_time: this.editSlotDraft.start_time,
       end_time: this.editSlotDraft.end_time || null,
       subject: this.editSlotDraft.subject.trim() || null,
+      room_number: this.editSlotDraft.room_number,
       change_scope: this.editSlotDraft.change_scope as 'once' | 'permanent',
       change_category: this.editSlotDraft.change_category,
       change_reason: this.editSlotDraft.change_reason.trim()
@@ -1348,7 +1417,10 @@ export class ScheduleComponent implements OnInit {
     }
     const data = {
       teacher_id: Number(q.teacher_id),
-      classes: selectedRows.map(row => ({ class_year: row.classYear, class_parallel: row.classParallel })),
+      classes: selectedRows.map(row => ({
+        class_year: row.classYear, class_parallel: row.classParallel,
+        room_number: q.roomNumbers[this.quickClassKey(row)] || null
+      })),
       day_of_week: q.day,
       start_time: q.start_time,
       end_time: q.end_time || null,

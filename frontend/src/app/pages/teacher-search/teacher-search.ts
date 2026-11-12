@@ -40,7 +40,7 @@ import { ApiService } from '../../services/api.service';
   </div>
 
   <!-- Loading -->
-  <div *ngIf="loading()" class="empty-state">טוענת...</div>
+  <div *ngIf="loading()" class="empty-state">טוען...</div>
 
   <!-- Empty -->
   <div *ngIf="!loading() && !filtered().length" class="empty-state">
