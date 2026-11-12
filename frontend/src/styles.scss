@@ -840,3 +840,35 @@ app-schedule .schedule-table-wrap { flex: 1; min-height: 0; overflow: auto; }
 .slot-icon-edit:hover { border-color: #a9d2b6; background: #e7f4eb; }
 .slot-icon-delete { color: #a34646; }
 .slot-icon-delete:hover { border-color: #e7bcbc; background: #fff0f0; }
+
+.admin-promotion-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.admin-promotion-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-promotion-card .alert { grid-column: 1 / -1; margin: 0; }
+.graduate-profile-card { display: grid; gap: 14px; padding: 18px 0; border-top: 1px solid var(--border); }
+.graduate-profile-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+.graduate-profile-heading h2 { margin: 0; font-size: 1.1rem; }
+.graduate-profile-heading span, .graduate-profile-details span { color: var(--text-muted); }
+.graduate-profile-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.graduate-profile-details > div { display: grid; gap: 4px; }
+.graduate-current-address { display: grid; gap: 6px; max-width: 520px; font-weight: 700; }
+.graduate-current-address input {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.graduate-profile-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.graduate-profile-saved { color: #21643b; font-size: .85rem; }
+
+@media (max-width: 760px) {
+  .admin-promotion-card { grid-template-columns: 1fr; }
+  .graduate-profile-details { grid-template-columns: 1fr 1fr; }
+}

@@ -52,6 +52,7 @@ test('buildClassReport normalizes year A/B into H/V for class matching and displ
 test('buildClassName normalizes imported year and parallel into the displayed class name', () => {
   const { buildClassName } = require('../database-report');
   assert.equal(buildClassName('ב', '1'), 'ו1');
+  assert.equal(buildClassName('עולה לשנה א׳', '2'), 'ה2');
   assert.equal(buildClassName('ו', 'מקבילה 1'), 'ו1');
   assert.equal(buildClassName('ו', '1׳'), 'ו1');
 });

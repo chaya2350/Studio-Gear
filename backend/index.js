@@ -30,6 +30,12 @@ const { initializeRoomMap, registerRoomMapRoutes, getRoomDefault } = require('./
 const { initializeRoomBookings, registerRoomBookingRoutes, assignLesson, copyLessonRoom } = require('./room-bookings');
 const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
+const {
+  initializeStudentPromotionSchema,
+  canUndoStudentYearPromotion,
+  promoteStudentYears,
+  undoStudentYearPromotion
+} = require('./student-promotion');
 const { saveStudentPhoto, clearStudentPhoto } = require('./student-photo');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
@@ -1646,8 +1652,10 @@ if (!studentCols.includes('extra_data')) db.exec("ALTER TABLE students ADD COLUM
 if (!studentCols.includes('marital_status')) db.exec('ALTER TABLE students ADD COLUMN marital_status TEXT');
 if (!studentCols.includes('married_name'))   db.exec('ALTER TABLE students ADD COLUMN married_name TEXT');
 if (!studentCols.includes('personal_phone')) db.exec('ALTER TABLE students ADD COLUMN personal_phone TEXT');
+if (!studentCols.includes('graduate_address')) db.exec('ALTER TABLE students ADD COLUMN graduate_address TEXT');
 if (!studentCols.includes('wedding_date'))   db.exec('ALTER TABLE students ADD COLUMN wedding_date TEXT');
 if (!studentCols.includes('wedding_venue'))  db.exec('ALTER TABLE students ADD COLUMN wedding_venue TEXT');
+initializeStudentPromotionSchema(db);
 
 initializeWeddings(db);
 function refreshWeddingStatuses() {
@@ -1670,12 +1678,21 @@ function parseExtraData(rawValue) {
   }
 }
 
+function buildStudentClassName(year, parallel) {
+  const normalizedYear = String(year || '').trim();
+  if (normalizedYear === 'ג') return null;
+  if (normalizedYear === 'ד') return buildClassName('עולה לשנה א׳', parallel) || null;
+  return buildClassName(year, parallel) || null;
+}
+
 function mapStudentRow(row) {
   if (!row) return row;
   const extraData = parseExtraData(row.extra_data);
   return {
     ...row,
-    class_name: buildClassName(row.year, row.parallel) || String(row.class_name || '').trim(),
+    class_name: String(row.year || '').trim() === 'ג'
+      ? null
+      : (buildStudentClassName(row.year, row.parallel) || String(row.class_name || '').trim()),
     track: row.track ? splitTrackValues(row.track).join(' / ') : row.track,
     birth_date: normalizeBirthDate(row.birth_date),
     birth_date_hebrew: normalizeHebrewBirthDate(row.birth_date_hebrew ||
@@ -1797,6 +1814,24 @@ app.get('/api/students/requirements-summary', (req, res) => {
 });
 
 // רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
+app.post('/api/students/promote-year', (req, res) => {
+  if (req.body?.confirmation !== 'אני מאשרת לעלות שנה') {
+    return res.status(400).json({ error: 'יש להקליד בדיוק: אני מאשרת לעלות שנה' });
+  }
+  const result = promoteStudentYears(db);
+  res.json({ success: true, ...result, can_undo: canUndoStudentYearPromotion(db) });
+});
+
+app.get('/api/students/promotion-status', (_req, res) => {
+  res.json({ can_undo: canUndoStudentYearPromotion(db) });
+});
+
+app.post('/api/students/undo-promotion', (_req, res) => {
+  const result = undoStudentYearPromotion(db);
+  if (!result.undone) return res.status(409).json({ error: 'אין העלאת שנה אחרונה שניתן לבטל' });
+  res.json({ success: true, ...result });
+});
+
 // יצירת תלמידה חדשה ידנית
 app.post('/api/students', (req, res) => {
   const id_number = String(req.body?.id_number || '').trim();
@@ -1804,7 +1839,7 @@ app.post('/api/students', (req, res) => {
   const phone     = String(req.body?.phone     || '').trim() || null;
   const track     = String(req.body?.track     || '').trim() || null;
   const year      = String(req.body?.year      || '').trim() || null;
-  const parallel  = String(req.body?.parallel  || '').trim() || null;
+  const parallel  = year === 'ג' ? null : (String(req.body?.parallel || '').trim() || null);
   const address   = String(req.body?.address   || '').trim() || null;
   const birth_date= String(req.body?.birth_date|| '').trim() || null;
   const birth_date_hebrew = normalizeHebrewBirthDate(req.body?.birth_date_hebrew);
@@ -1816,7 +1851,7 @@ app.post('/api/students', (req, res) => {
   if (!/^\d{7,9}$/.test(id_number)) return res.status(400).json({ error: 'מספר תעודת זהות צריך להכיל 7–9 ספרות' });
   const existing = db.prepare('SELECT id_number FROM students WHERE id_number = ?').get(id_number);
   if (existing) return res.status(409).json({ error: 'תלמידה עם מספר תעודת זהות זה כבר קיימת במערכת' });
-  const className = buildClassName(year, parallel);
+  const className = buildStudentClassName(year, parallel);
   db.prepare(`
     INSERT INTO students (id_number, name, phone, track, year, parallel, class_name, address, birth_date, birth_date_hebrew, extra_data)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
@@ -1828,13 +1863,14 @@ app.get('/api/students/classes', (req, res) => {  const rows = db.prepare(`
     SELECT year, parallel, COUNT(*) as count
     FROM students
     WHERE year IS NOT NULL AND year != ''
+      AND year != 'בוגרות'
       AND parallel IS NOT NULL AND parallel != '' AND parallel != '0'
     GROUP BY year, parallel
     ORDER BY year, parallel
   `).all();
   const list = rows.map(r => ({
     parallel: `${r.year}_${r.parallel}`,
-    label: `כיתה ${buildClassName(r.year, r.parallel)}`,
+    label: `כיתה ${buildStudentClassName(r.year, r.parallel)}`,
     class_name: r.year,
     parallel_num: r.parallel,
     count: r.count
@@ -1918,12 +1954,13 @@ app.put('/api/students/:id_number', (req, res) => {
   if (birthDateHebrewInput !== undefined && String(birthDateHebrewInput || '').trim() && !birthDateHebrew) {
     return res.status(400).json({ error: 'יש להזין תאריך לידה עברי תקין, למשל כ״ג שבט' });
   }
-  const parallel = optionalText(req.body?.parallel, existing.parallel);
+  const parallel = year === 'ג' ? null : optionalText(req.body?.parallel, existing.parallel);
   const extraData = sanitizeExtraData(req.body?.extra_data, existing.extra_data);
-  const className = buildClassName(year, parallel);
+  const className = buildStudentClassName(year, parallel);
   const maritalStatus = optionalText(req.body?.marital_status, existing.marital_status);
   const marriedName   = optionalText(req.body?.married_name,   existing.married_name);
   const personalPhone = optionalText(req.body?.personal_phone, existing.personal_phone);
+  const graduateAddress = optionalText(req.body?.graduate_address, existing.graduate_address);
   const weddingDate   = req.body?.wedding_date !== undefined
     ? (String(req.body.wedding_date || '').trim() || null)
     : (existing.wedding_date ?? null);
@@ -1937,10 +1974,10 @@ app.put('/api/students/:id_number', (req, res) => {
   db.transaction(() => {
     db.prepare(`
     UPDATE students SET name = ?, phone = ?, phone_code = ?, track = ?, year = ?, parallel = ?, class_name = ?, extra_data = ?,
-      address = ?, birth_date = ?, birth_date_hebrew = ?, marital_status = ?, married_name = ?, personal_phone = ?, wedding_date = ?, wedding_venue = ?
+      address = ?, birth_date = ?, birth_date_hebrew = ?, marital_status = ?, married_name = ?, personal_phone = ?, graduate_address = ?, wedding_date = ?, wedding_venue = ?
     WHERE id_number = ?
     `).run(name, phone, phoneCode, track, year, parallel, className, JSON.stringify(extraData), address,
-      birthDate, birthDateHebrew, maritalStatus, marriedName, personalPhone, weddingDate, weddingVenue, req.params.id_number);
+      birthDate, birthDateHebrew, maritalStatus, marriedName, personalPhone, graduateAddress, weddingDate, weddingVenue, req.params.id_number);
     if (maritalStatus !== existing.marital_status || weddingDate !== existing.wedding_date) {
       db.prepare('DELETE FROM scheduled_wedding_status WHERE id_number = ?').run(req.params.id_number);
     }
@@ -2597,14 +2634,16 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
         const mergedPhoneCode = pickValue(existing?.phone_code, phone_code);
         const mergedTrack = mergeTrackValues(existing?.track, track);
         const mergedYear = pickValue(existing?.year, year);
-        const mergedParallel = pickValue(existing?.parallel, String(extraFields.parallel || extraFields['מקבילה'] || '').trim());
+        const mergedParallel = mergedYear === 'ג'
+          ? null
+          : pickValue(existing?.parallel, String(extraFields.parallel || extraFields['מקבילה'] || '').trim());
         const mergedBirthDate = birth_date || normalizeBirthDate(existing?.birth_date);
         const mergedBirthDateHebrew = birth_date_hebrew ||
           normalizeHebrewBirthDate(existing?.birth_date_hebrew) ||
           normalizeHebrewBirthDate(existingExtra['ת. לידה עברי'] || existingExtra['תאריך לידה עברי']) ||
           null;
         const mergedAddress = pickValue(existing?.address, address);
-        const mergedClassName = buildClassName(mergedYear, mergedParallel);
+        const mergedClassName = buildStudentClassName(mergedYear, mergedParallel);
 
         upsert.run(
           id_number,
@@ -4691,9 +4730,12 @@ app.get('/api/attendance/student-barcode/:id_number', async (req, res) => {
 
 // Update student's parallel (class number)
 app.put('/api/students/:id_number/parallel', (req, res) => {
-  const parallel = String(req.body?.parallel || '').trim();
-  const result = db.prepare('UPDATE students SET parallel=? WHERE id_number=?').run(parallel || null, req.params.id_number);
-  if (!result.changes) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  const student = db.prepare('SELECT year FROM students WHERE id_number = ?').get(req.params.id_number);
+  if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
+  const parallel = student.year === 'ג' ? null : (String(req.body?.parallel || '').trim() || null);
+  const className = buildStudentClassName(student.year, parallel);
+  db.prepare('UPDATE students SET parallel=?, class_name=? WHERE id_number=?')
+    .run(parallel, className, req.params.id_number);
   res.json({ success: true });
 });
 

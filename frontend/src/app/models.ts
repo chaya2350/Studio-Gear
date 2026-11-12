@@ -74,6 +74,7 @@ export interface Student {
   marital_status?: string;
   married_name?: string;
   personal_phone?: string;
+  graduate_address?: string;
   wedding_date?: string;
   wedding_venue?: string;
 }

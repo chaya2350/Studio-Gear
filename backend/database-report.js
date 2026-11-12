@@ -13,6 +13,7 @@ function normalizeYear(value) {
   const raw = String(value || '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
   const clean = raw.replace(/[\u2018\u2019\u05F3\u05F4"'`]/g, '').replace(/\s*[-–—]\s*/g, '');
+  if (clean.replace(/\s+/g, '') === 'עולהלשנהא') return 'ה';
   if (clean === 'א' || clean === 'כיתהא' || clean === 'שנהא') return 'ה';
   if (clean === 'ב' || clean === 'כיתהב' || clean === 'שנהב') return 'ו';
   return clean;

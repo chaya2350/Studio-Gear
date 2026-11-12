@@ -128,6 +128,10 @@ export const routes: Routes = [
           import('./pages/student-search/student-search').then((m) => m.StudentSearchComponent),
       },
       {
+        path: 'graduates',
+        loadComponent: () => import('./pages/graduates/graduates').then((m) => m.GraduatesComponent),
+      },
+      {
         path: 'teachers/search',
         loadComponent: () => import('./pages/teacher-search/teacher-search').then((m) => m.TeacherSearchComponent),
       },

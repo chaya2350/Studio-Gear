@@ -267,7 +267,7 @@ template: `
 <span class="info-value">{{ safeAddress() }}</span>
 </div>
 <div class="info-row" *ngIf="classDisplayValue()">
-<span class="info-label">כיתה</span>
+<span class="info-label">{{ student()!.year === 'ג' ? 'שנה' : 'כיתה' }}</span>
 <span class="info-value">{{ classDisplayValue() }}</span>
 </div>
 <div class="info-row" *ngIf="student()!.track">
@@ -1734,6 +1734,7 @@ return normalized === 'שם' || normalized === 'שםמלא' || normalized === '�
 }
 
 classDisplayValue() {
+  if (this.student()?.year === 'ג') return 'ג׳';
   // Use class_name from server (year + parallel combined), fallback to manual calculation
   const cn = String((this.student() as any)?.class_name || '').trim();
   if (cn) return cn;

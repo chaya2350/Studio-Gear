@@ -68,6 +68,9 @@ function getApiPermission(pathname, method) {
   if (method === 'POST' && importFeatures[pathname]) {
     return { feature: importFeatures[pathname], actions: ['create', 'edit'] };
   }
+  if (['/students/promote-year', '/students/undo-promotion'].includes(pathname) && method === 'POST') {
+    return { feature: 'students', actions: ['create', 'edit'] };
+  }
   if (pathname === '/upload' && method === 'POST') {
     return { feature: 'equipment', actions: ['create', 'edit'] };
   }
