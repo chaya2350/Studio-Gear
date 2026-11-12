@@ -1,6 +1,7 @@
 import { Component, OnDestroy, signal, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
@@ -32,10 +33,10 @@ template: `
 </div>
 
 <div *ngIf="mode()==='manual'" class="manual-section">
-<p class="manual-scan-hint">סורק USB פועל כמו מקלדת: סרקו כשהשדה בפוקוס; Enter יחפש את המבחן.</p>
+<p class="manual-scan-hint">{{ barcodeReceived() ? 'ברקוד נקלט; מחפש מבחן...' : 'לא זוהתה סריקה עדיין. חברו סורק או הזינו קוד מבחן ידנית.' }}</p>
 <div class="barcode-input-wrap">
 <span class="barcode-icon"></span>
-<input #manualInput type="text" inputmode="none" [(ngModel)]="manualCode"
+<input #manualInput type="text" [(ngModel)]="manualCode"
 	placeholder="הקלד/סרוק קוד מבחן (EX...)" (keyup.enter)="lookupManual()">
 </div>
 <button class="btn btn-primary" style="width:100%; margin-top:12px; padding:12px;" (click)="lookupManual()"> חפש מבחן</button>
@@ -99,8 +100,9 @@ export class ExamScanComponent implements AfterViewInit, OnDestroy {
 @ViewChild('videoEl') videoEl?: ElementRef<HTMLVideoElement>;
 @ViewChild('manualInput') manualInput?: ElementRef<HTMLInputElement>;
 
-mode = signal<'camera' | 'manual'>('camera');
+mode = signal<'camera' | 'manual'>('manual');
 cameraError = signal('');
+barcodeReceived = signal(false);
 lookupError = signal('');
 successMsg = signal('');
 saving = signal(false);
@@ -111,10 +113,15 @@ manualCode = '';
 private reader = new BrowserMultiFormatReader();
 private isScanning = false;
 
-constructor(private api: ApiService) { }
+constructor(private api: ApiService, private route: ActivatedRoute) { }
 
 ngAfterViewInit() {
-if (this.mode() === 'camera') this.startCamera();
+const code = this.route.snapshot.queryParamMap.get('code');
+if (code) {
+	this.barcodeReceived.set(true);
+	this.manualCode = code;
+	this.lookup(code);
+} else setTimeout(() => this.focusManualInput(), 0);
 }
 
 ngOnDestroy() { this.stopCamera(); }
@@ -156,6 +163,7 @@ BrowserMultiFormatReader.releaseAllStreams();
 lookupManual() {
 const code = this.manualCode.trim();
 if (!code) return;
+this.barcodeReceived.set(true);
 this.lookup(code);
 }
 

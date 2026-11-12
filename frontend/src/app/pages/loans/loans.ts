@@ -44,7 +44,7 @@ template: `
 <div class="return-title"> החזרת פריטים מהזמנה</div>
 <p class="return-scanner-hint">אפשר לסרוק עם סורק USB כשהשדה בפוקוס; הסריקה תישלח ב־Enter.</p>
 <div class="scan-row">
-<input #returnBarcodeInput [(ngModel)]="returnBarcode" (keydown.enter)="submitReturnScan()" inputmode="none" autocomplete="off" placeholder="סרוק/הקלד ברקוד מוצר מההזמנה" />
+<input #returnBarcodeInput [(ngModel)]="returnBarcode" (keydown.enter)="submitReturnScan()" autocomplete="off" placeholder="סרוק/הקלד ברקוד מוצר מההזמנה" />
 <button type="button" class="btn btn-ghost" (click)="toggleReturnScan()" [class.active]="returnScanOpen()"></button>
 <button class="btn btn-primary" (click)="submitReturnScan()">סמן כמוחזר</button>
 </div>

@@ -54,7 +54,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
     <div class="scan-card card" *ngIf="mode()==='manual'">
       <div class="manual-section">
          <input [(ngModel)]="manualCode" placeholder="הקלד/סרוק קוד שיעור (ATT-...)"
-           (keyup.enter)="processSessionBarcode(manualCode)" class="code-input" #manualInput autofocus inputmode="none" autocomplete="off">
+               (keyup.enter)="processSessionBarcode(manualCode)" class="code-input" #manualInput autofocus autocomplete="off">
         <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                 (click)="processSessionBarcode(manualCode)">חפש שיעור</button>
       </div>
@@ -92,7 +92,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
       <div class="scan-card card" *ngIf="mode()==='manual'">
         <div class="manual-section">
              <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
-               (keyup.enter)="processStudentBarcode(manualCode, 'absent')" class="code-input" #manualInput inputmode="none" autocomplete="off">
+                 (keyup.enter)="processStudentBarcode(manualCode, 'absent')" class="code-input" #manualInput autocomplete="off">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                   (click)="processStudentBarcode(manualCode, 'absent')">רשמי כנעדרת</button>
         </div>
@@ -131,7 +131,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
       <div class="scan-card card" *ngIf="mode()==='manual'">
         <div class="manual-section">
              <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
-               (keyup.enter)="processStudentBarcode(manualCode, 'late')" class="code-input" #manualInput inputmode="none" autocomplete="off">
+                 (keyup.enter)="processStudentBarcode(manualCode, 'late')" class="code-input" #manualInput autocomplete="off">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                   (click)="processStudentBarcode(manualCode, 'late')">רשמי כמאחרת</button>
         </div>
@@ -292,15 +292,17 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     if (this.mode() === 'camera') this.startCamera();
     else setTimeout(() => this.focusManualInput(), 0);
 
-    const barcode = this.route.snapshot.queryParamMap.get('barcode');
-    if (barcode) {
-      this.processSessionBarcode(barcode);
-    }
-
     this.route.queryParamMap.subscribe((params) => {
-      const nextBarcode = params.get('barcode');
-      if (nextBarcode && this.phase() === 'session') {
-        this.processSessionBarcode(nextBarcode);
+      const barcode = params.get('barcode');
+      if (!barcode) return;
+      if (barcode.startsWith('ATT-') && this.phase() === 'session') {
+        this.processSessionBarcode(barcode);
+        return;
+      }
+      const studentCode = /^STU-(.+)$/i.exec(barcode);
+      if (studentCode && this.currentSession()) {
+        const type = this.phase() === 'late' ? 'late' : 'absent';
+        this.processStudentBarcode(studentCode[1], type);
       }
     });
   }

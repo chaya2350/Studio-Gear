@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Equipment, Loan, Category, Student } from '../models';
+import { Equipment, EquipmentMaintenanceRecord, Loan, Category, Student } from '../models';
 
 export interface CalendarEvent {
   id: number;
@@ -107,7 +107,29 @@ export class ApiService {
   constructor(private http: HttpClient) {}
 
   getEquipment() { return this.http.get<Equipment[]>(`${this.base}/equipment`); }
+  getScheduleRoomMap() {
+    return this.http.get<{ number: string; name: string; floor: number; usable: number }[]>(`${this.base}/schedule/room-map`);
+  }
+  getScheduleRoomBookings(date: string, start: string, end: string) {
+    return this.http.get<{ bookings: { room_number: string; cancelled?: boolean }[] }>(
+      `${this.base}/schedule/room-bookings`, { params: { date, start, end } }
+    );
+  }
+  getStudentsMissingRequirements() {
+    return this.http.get<{ id_number: string; name: string; track: string; year: string; missing_required: number }[]>(
+      `${this.base}/students/missing-requirements`
+    );
+  }
   getEquipmentById(id: number) { return this.http.get<Equipment>(`${this.base}/equipment/${id}`); }
+  getEquipmentMaintenance(id: number) { return this.http.get<EquipmentMaintenanceRecord[]>(`${this.base}/equipment/${id}/maintenance`); }
+  reportEquipmentMaintenance(id: number, description: string) {
+    return this.http.post<{ id: number }>(`${this.base}/equipment/${id}/maintenance`, { description });
+  }
+  updateEquipmentMaintenance(id: number, recordId: number, data: {
+    status: EquipmentMaintenanceRecord['status']; resolution_notes?: string;
+  }) {
+    return this.http.patch<{ success: boolean }>(`${this.base}/equipment/${id}/maintenance/${recordId}`, data);
+  }
   getEquipmentByBarcode(barcode: string) { return this.http.get<Equipment>(`${this.base}/equipment/barcode/${barcode}`); }
   createEquipment(data: Partial<Equipment>) { return this.http.post<{id: number}>(`${this.base}/equipment`, data); }
   updateEquipment(id: number, data: Partial<Equipment>) { return this.http.put(`${this.base}/equipment/${id}`, data); }

@@ -1,5 +1,5 @@
 import { Component, OnDestroy, signal, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -35,13 +35,12 @@ template: `
 </div>
 
 <div *ngIf="mode()==='manual'" class="manual-section">
-<p class="manual-scan-hint">סורק USB פועל כמו מקלדת: חברו אותו, השאירו את השדה בפוקוס וסרקו.</p>
+<p class="manual-scan-hint">{{ barcodeReceived() ? 'ברקוד נקלט; מחפש ציוד...' : 'לא זוהתה סריקה עדיין. חברו סורק או הזינו ברקוד ידנית.' }}</p>
 <div class="barcode-input-wrap">
 <span class="barcode-icon"></span>
 <input
 	#manualInput
 	type="text"
-	inputmode="none"
 [(ngModel)]="manualBarcode"
 placeholder="הקלד מספר ברקוד..."
 (keyup.enter)="searchManual()"
@@ -163,22 +162,31 @@ color: var(--text);
 &::placeholder { color: var(--text-light); }
 }
 }
+.manual-scan-hint { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; }
 `]
 })
 export class ScanComponent implements AfterViewInit, OnDestroy {
 @ViewChild('videoEl') videoEl!: ElementRef<HTMLVideoElement>;
 @ViewChild('manualInput') manualInput?: ElementRef<HTMLInputElement>;
 
-mode = signal<'camera' | 'manual'>('camera');
+mode = signal<'camera' | 'manual'>('manual');
 error = signal('');
 cameraError = signal('');
+barcodeReceived = signal(false);
 manualBarcode = '';
 private reader = new BrowserMultiFormatReader();
 private scanning = false;
 
-constructor(private router: Router, private api: ApiService) {}
+constructor(private router: Router, private route: ActivatedRoute, private api: ApiService) {}
 
-ngAfterViewInit() { this.startCamera(); }
+ngAfterViewInit() {
+const barcode = this.route.snapshot.queryParamMap.get('barcode');
+if (barcode) {
+	this.barcodeReceived.set(true);
+	this.manualBarcode = barcode;
+	this.searchManual();
+} else setTimeout(() => this.focusManualInput(), 0);
+}
 
 setMode(m: 'camera' | 'manual') {
 this.mode.set(m);
@@ -216,6 +224,7 @@ BrowserMultiFormatReader.releaseAllStreams();
 
 searchManual() {
 if (!this.manualBarcode.trim()) return;
+this.barcodeReceived.set(true);
 this.navigate(this.manualBarcode.trim());
 }
 

@@ -3,6 +3,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
+import { ActivatedRoute } from '@angular/router';
 
 interface Room {
   number: string;
@@ -311,7 +312,7 @@ export class RoomMapComponent implements OnInit {
   bookingError = '';
   savingBooking = false;
 
-  constructor(private http: HttpClient, public auth: AuthService) {}
+  constructor(private http: HttpClient, private route: ActivatedRoute, public auth: AuthService) {}
 
   get floors(): number[] {
     return [...new Set(this.rooms.map(room => room.floor))];
@@ -319,6 +320,16 @@ export class RoomMapComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.route.queryParamMap.subscribe(params => {
+      const date = params.get('date') || '';
+      const start = params.get('start') || '';
+      const end = params.get('end') || '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || start >= end) return;
+      this.date = date;
+      this.start = start;
+      this.end = end;
+      setTimeout(() => this.search(), 0);
+    });
   }
 
   load(): void {

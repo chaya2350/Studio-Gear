@@ -4,7 +4,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { CartService } from '../../services/cart.service';
-import { Equipment, Loan } from '../../models';
+import { Equipment, EquipmentMaintenanceRecord, Loan } from '../../models';
+import { AuthService } from '../../services/auth.service';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { EquipmentTimelineComponent } from '../../components/equipment-timeline/equipment-timeline';
 import { printA4LabelSheet } from '../../utils/label-print';
@@ -61,6 +62,47 @@ template: `
 <span class="info-value">{{ item()!.overdue_price_per_day }} ₪ / יום</span>
 </div>
 
+<section class="maintenance-section">
+	<div class="maintenance-heading">
+		<div>
+			<h3>תחזוקה ותקלות</h3>
+			<p *ngIf="item()!.is_under_maintenance" class="maintenance-active">הפריט בתחזוקה — לא ניתן להשאיל אותו</p>
+		</div>
+		<span *ngIf="maintenanceLoading()" class="maintenance-muted">טוען...</span>
+	</div>
+	<p *ngIf="maintenanceError()" class="maintenance-error" role="alert">{{ maintenanceError() }}</p>
+	<div *ngIf="maintenanceRecords().length" class="maintenance-history">
+		<article *ngFor="let report of maintenanceRecords()" class="maintenance-record">
+			<div class="maintenance-record-top">
+				<span class="maintenance-status" [class]="'maintenance-status status-' + report.status">{{ maintenanceStatusLabel(report.status) }}</span>
+				<time>{{ report.reported_at | date:'dd/MM/yyyy HH:mm' }}</time>
+			</div>
+			<p class="maintenance-description">{{ report.description }}</p>
+			<small *ngIf="report.reporter_name" class="maintenance-muted">דווח על ידי {{ report.reporter_name }}</small>
+			<p *ngIf="report.resolution_notes" class="maintenance-resolution">תיקון: {{ report.resolution_notes }}</p>
+			<div *ngIf="auth.hasPermission('equipment', 'change') && report.status !== 'resolved'" class="maintenance-actions no-print">
+				<input [(ngModel)]="resolutionNotes[report.id]" [ngModelOptions]="{standalone: true}"
+							 placeholder="הערת תיקון (אופציונלי)" aria-label="הערת תיקון">
+				<select [ngModel]="report.status" [ngModelOptions]="{standalone: true}"
+								(ngModelChange)="updateMaintenanceStatus(report, $event)"
+								[disabled]="savingMaintenanceId() === report.id" aria-label="עדכון סטטוס תקלה">
+					<option value="open">פתוחה</option>
+					<option value="in_progress">בטיפול</option>
+					<option value="resolved">תוקנה</option>
+				</select>
+			</div>
+		</article>
+	</div>
+	<p *ngIf="!maintenanceLoading() && !maintenanceRecords().length" class="maintenance-muted">אין דיווחי תקלות.</p>
+	<form *ngIf="auth.hasPermission('equipment', 'change')" class="maintenance-report-form no-print" (ngSubmit)="reportMaintenance()">
+		<textarea [(ngModel)]="maintenanceDescription" name="maintenanceDescription" rows="2"
+							maxlength="2000" placeholder="תיאור תקלה חדשה" required></textarea>
+		<button class="btn btn-secondary" type="submit" [disabled]="reportingMaintenance() || !maintenanceDescription.trim()">
+			{{ reportingMaintenance() ? 'שומר...' : 'דיווח תקלה' }}
+		</button>
+	</form>
+</section>
+
 <div *ngIf="item()!.is_reserved" class="reservation-notice">
 <div class="res-header"> הזמנות עתידיות ({{ futureLoans().length }})</div>
 <div *ngFor="let fl of futureLoans(); let i = index" class="res-item">
@@ -75,7 +117,11 @@ template: `
 </div>
 
 <!-- Cart CTA card -->
-<div class="cart-card" *ngIf="showAddToCart() && !item()!.is_loaned">
+<div *ngIf="item()!.is_under_maintenance" class="alert alert-warning maintenance-block-notice">
+הפריט בתחזוקה ולא ניתן להשאיל או להזמין אותו כרגע.
+</div>
+
+<div class="cart-card" *ngIf="showAddToCart() && !item()!.is_loaned && !item()!.is_under_maintenance">
 <div class="cart-card-glow" [class.cart-card-glow--added]="cart.has(item()!.id)"></div>
 <div class="cart-card-inner">
 <div class="cart-card-icon" [class.cart-card-icon--added]="cart.has(item()!.id)">
@@ -96,7 +142,7 @@ template: `
 </div>
 
 <!-- Return / Loan card -->
-<div class="card" *ngIf="item()!.is_loaned || !showAddToCart() || isLaptop()">
+<div class="card" *ngIf="item()!.is_loaned || (!item()!.is_under_maintenance && (!showAddToCart() || isLaptop()))">
 <div *ngIf="item()!.is_loaned; else loanForm">
 <div class="section-title">
 {{ isLaptop() ? ' בשימוש' : (activeLoan()?.loan_type === 'rental' ? ' השכרה פעילה' : ' השאלה פעילה') }}
@@ -154,7 +200,7 @@ template: `
 <div *ngIf="pendingCharge() === 0" class="return-confirm">
 <div class="return-confirm-label"> לאישור החזרה — סרקו עם סורק USB או הקלידו ברקוד ולחצו Enter</div>
 <div class="return-confirm-row">
-<input #returnInput class="return-barcode-input" [(ngModel)]="returnBarcode" placeholder="הזן ברקוד" (keyup.enter)="returnItem()" inputmode="none" autocomplete="off" autofocus [class.input-error]="returnBarcodeError()">
+<input #returnInput class="return-barcode-input" [(ngModel)]="returnBarcode" placeholder="הזן ברקוד" (keyup.enter)="returnItem()" autocomplete="off" autofocus [class.input-error]="returnBarcodeError()">
 <button class="btn btn-ghost return-scan-btn" (click)="toggleReturnScan()" [class.active]="returnScanning()"></button>
 <button class="btn btn-success return-btn" (click)="returnItem()"> אשר</button>
 </div>
@@ -539,6 +585,27 @@ font-size: 1.2rem; font-weight: 900; line-height: 1;
 .item-image { width: 100%; max-height: 200px; object-fit: contain; border-radius: var(--radius-sm); margin-bottom: 18px; background: var(--surface-2); border: 1px solid var(--border); }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .barcode-val { font-family: monospace; background: var(--surface-2); padding: 3px 9px; border-radius: var(--radius-xs); font-size: 0.85rem; border: 1px solid var(--border); }
+.maintenance-section { display: grid; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.maintenance-heading, .maintenance-record-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.maintenance-heading h3 { margin: 0; font-size: .95rem; }
+.maintenance-active { margin: 4px 0 0; color: var(--danger); font-size: .8rem; font-weight: 700; }
+.maintenance-muted { color: var(--text-muted); font-size: .78rem; }
+.maintenance-error { margin: 0; color: var(--danger); font-size: .82rem; }
+.maintenance-history { display: grid; gap: 8px; }
+.maintenance-record { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.maintenance-record time { color: var(--text-muted); font-size: .72rem; }
+.maintenance-status { width: fit-content; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+.maintenance-status.status-open { background: #fee2e2; color: #991b1b; }
+.maintenance-status.status-in_progress { background: #fef3c7; color: #92400e; }
+.maintenance-status.status-resolved { background: #dcfce7; color: #166534; }
+.maintenance-description, .maintenance-resolution { margin: 0; font-size: .84rem; white-space: pre-wrap; }
+.maintenance-actions { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; margin-top: 4px; }
+.maintenance-actions input, .maintenance-actions select, .maintenance-report-form textarea { min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; font-size: .8rem; }
+.maintenance-report-form { display: grid; gap: 8px; }
+.maintenance-report-form textarea { resize: vertical; }
+.maintenance-report-form button { justify-self: start; }
+.maintenance-block-notice { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 520px) { .maintenance-actions { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
 
 .type-tabs {
@@ -683,6 +750,13 @@ export class EquipmentDetailComponent implements OnInit, OnDestroy {
 @ViewChild('paySection') paySection?: ElementRef;
 item = signal<Equipment | null>(null);
 history = signal<Loan[]>([]);
+maintenanceRecords = signal<EquipmentMaintenanceRecord[]>([]);
+maintenanceLoading = signal(false);
+maintenanceError = signal('');
+reportingMaintenance = signal(false);
+savingMaintenanceId = signal<number | null>(null);
+maintenanceDescription = '';
+resolutionNotes: Record<number, string> = {};
 loanError = signal('');
 chargeResult = signal('');
 paymentState = signal<'idle' | 'processing' | 'success'>('idle');
@@ -701,11 +775,12 @@ private returnReader = new BrowserMultiFormatReader();
 cardNumber = '';
 cvv = '';
 
-constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public cart: CartService) {}
+constructor(private route: ActivatedRoute, private router: Router, private api: ApiService, public cart: CartService,
+			public auth: AuthService) {}
 
 addToCart() {
 const item = this.item();
-if (!item || this.isLaptop()) return;
+if (!item || this.isLaptop() || item.is_under_maintenance) return;
 if (this.cart.has(item.id)) {
 this.cart.remove(item.id);
 return;
@@ -728,6 +803,7 @@ item.category === 'מצלמות אישיות' ||
 ngOnInit() {
 const id = +this.route.snapshot.params['id'];
 this.load(id);
+this.loadMaintenance(id);
 this.api.getLoansByEquipment(id).subscribe(data => {
 this.history.set(data);
 if (this.route.snapshot.queryParams['pay']) {
@@ -737,6 +813,65 @@ setTimeout(() => this.paySection?.nativeElement?.scrollIntoView({ behavior: 'smo
 }
 
 load(id: number) { this.api.getEquipmentById(id).subscribe(data => this.item.set(data)); }
+
+loadMaintenance(id: number) {
+this.maintenanceLoading.set(true);
+this.maintenanceError.set('');
+this.api.getEquipmentMaintenance(id).subscribe({
+	next: records => {
+		this.maintenanceRecords.set(records);
+		this.maintenanceLoading.set(false);
+	},
+	error: error => {
+		this.maintenanceLoading.set(false);
+		this.maintenanceError.set(error.error?.error || 'טעינת היסטוריית התחזוקה נכשלה');
+	}
+});
+}
+
+maintenanceStatusLabel(status: EquipmentMaintenanceRecord['status']) {
+return status === 'open' ? 'פתוחה' : status === 'in_progress' ? 'בטיפול' : 'תוקנה';
+}
+
+reportMaintenance() {
+const item = this.item();
+const description = this.maintenanceDescription.trim();
+if (!item || !description || this.reportingMaintenance()) return;
+this.reportingMaintenance.set(true);
+this.maintenanceError.set('');
+this.api.reportEquipmentMaintenance(item.id, description).subscribe({
+	next: () => {
+		this.reportingMaintenance.set(false);
+		this.maintenanceDescription = '';
+		this.loadMaintenance(item.id);
+		this.load(item.id);
+	},
+	error: error => {
+		this.reportingMaintenance.set(false);
+		this.maintenanceError.set(error.error?.error || 'דיווח התקלה נכשל');
+	}
+});
+}
+
+updateMaintenanceStatus(record: EquipmentMaintenanceRecord, status: EquipmentMaintenanceRecord['status']) {
+const item = this.item();
+if (!item || this.savingMaintenanceId() === record.id || record.status === status) return;
+this.savingMaintenanceId.set(record.id);
+this.maintenanceError.set('');
+this.api.updateEquipmentMaintenance(item.id, record.id, {
+	status, resolution_notes: this.resolutionNotes[record.id] || ''
+}).subscribe({
+	next: () => {
+		this.savingMaintenanceId.set(null);
+		this.loadMaintenance(item.id);
+		this.load(item.id);
+	},
+	error: error => {
+		this.savingMaintenanceId.set(null);
+		this.maintenanceError.set(error.error?.error || 'עדכון סטטוס התקלה נכשל');
+	}
+});
+}
 
 pastLoans() { return this.history().filter(l => !l.is_future); }
 futureLoans() { return this.history().filter(l => l.is_future).sort((a,b) => a.loan_date.localeCompare(b.loan_date)); }
@@ -929,6 +1064,7 @@ return item?.is_loaned && item.expected_return && item.expected_return < this.to
 
 statusClass() {
 const item = this.item()!;
+if (item.is_under_maintenance) return 'badge-maintenance';
 if (item.is_loaned) return this.isOverdue() ? 'badge-overdue' : 'badge-loaned';
 if (item.is_reserved) return 'badge-reserved';
 return 'badge-available';
@@ -936,6 +1072,7 @@ return 'badge-available';
 
 statusLabel() {
 const item = this.item()!;
+if (item.is_under_maintenance) return 'בתחזוקה';
 if (item.is_loaned) return this.isOverdue() ? ' איחור' : (this.isLaptop() ? ' תפוס' : (this.activeLoan()?.loan_type === 'rental' ? ' מושכר' : 'מושאל'));
 if (item.is_reserved) return ' שמור';
 return ' פנוי';
@@ -969,6 +1106,10 @@ return map[year] || map['תשפ"ז'];
 
 createLoan() {
 const item = this.item()!;
+if (item.is_under_maintenance) {
+this.loanError.set('הפריט בתחזוקה ולא ניתן להשאיל אותו כרגע');
+return;
+}
 if (this.isLaptop()) {
 if (!this.loan.borrower_name) {
 this.loanError.set('נא לבחור מז תקין'); return;
