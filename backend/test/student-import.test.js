@@ -46,6 +46,22 @@ test('parses imported Gregorian and Hebrew birth dates separately', () => {
   assert.equal(rows[0].birth_date_hebrew, '23-11');
 });
 
+test('parses Gregorian birth dates from abbreviated headers', () => {
+  const workbook = XLSX.utils.book_new();
+  const sheet = {};
+  setCell(sheet, 'A1', 'ת.ז');
+  setCell(sheet, 'B1', 'שם מלא');
+  setCell(sheet, 'C1', 'ת.לידה');
+  setCell(sheet, 'A2', '123456789');
+  setCell(sheet, 'B2', 'תלמידה לדוגמה');
+  setCell(sheet, 'C2', '14/9/2003');
+  sheet['!ref'] = 'A1:C2';
+
+  XLSX.utils.book_append_sheet(workbook, sheet, 'תלמידות');
+  const rows = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  assert.equal(rows[0].birth_date, '2003-09-14');
+});
+
 test('imports government password for a student on the first-year Ruach sheet', () => {
   const workbook = XLSX.utils.book_new();
   const sheet = {};

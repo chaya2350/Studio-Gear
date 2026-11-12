@@ -87,6 +87,8 @@ interface TrackOption {
             <thead>
               <tr>
                 <th>תלמידה</th>
+                <th *ngIf="canViewStudentProfiles()">ת.ז.</th>
+                <th *ngIf="canViewStudentProfiles()">תאריך לידה</th>
                 <th *ngIf="current.scope !== 'class'">כיתה</th>
                 <th *ngIf="current.scope !== 'track'">מסלול</th>
                 <th *ngFor="let exam of current.exams">{{ exam.name }}</th>
@@ -109,6 +111,8 @@ interface TrackOption {
                     </div>
                   </ng-template>
                 </td>
+                <td *ngIf="canViewStudentProfiles()">{{ row['id_number'] || '—' }}</td>
+                <td *ngIf="canViewStudentProfiles()">{{ formatBirthDate(row['birth_date']) }}</td>
                 <td *ngIf="current.scope !== 'class'">{{ row['class_name'] || '—' }}</td>
                 <td *ngIf="current.scope !== 'track'">{{ row['track'] || '—' }}</td>
                 <td *ngFor="let exam of current.exams">
@@ -116,7 +120,7 @@ interface TrackOption {
                 </td>
               </tr>
               <tr *ngIf="!current.rows.length">
-                <td [attr.colspan]="1 + (current.scope !== 'class' ? 1 : 0) + (current.scope !== 'track' ? 1 : 0) + current.exams.length"
+                <td [attr.colspan]="1 + (canViewStudentProfiles() ? 2 : 0) + (current.scope !== 'class' ? 1 : 0) + (current.scope !== 'track' ? 1 : 0) + current.exams.length"
                     class="report-empty">לא נמצאו תלמידות להצגה.</td>
               </tr>
             </tbody>
@@ -260,6 +264,12 @@ export class ReportsComponent implements OnInit {
   studentInitials(name: string | number | undefined): string {
     const words = String(name || '').trim().split(/\s+/).filter(Boolean);
     return words.slice(0, 2).map(word => word[0]).join('') || 'ת';
+  }
+
+  formatBirthDate(value: string | number | undefined): string {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : raw || 'לא הוזן';
   }
 
   private loadReport(params: { scope: 'class' | 'school' | 'track'; class_name?: string; track?: string }): void {
