@@ -79,7 +79,7 @@ interface BookingResults {
           <label>תאריך <input name="date" type="date" [(ngModel)]="date" required></label>
           <label>משעה <input name="start" type="time" [(ngModel)]="start" required></label>
           <label>עד שעה <input name="end" type="time" [(ngModel)]="end" required></label>
-          <button class="primary search-button" type="submit" [disabled]="filterForm.invalid || bookingLoading">{{ bookingLoading ? 'בודקת...' : 'בדיקת תפוסה' }}</button>
+          <button class="primary search-button" type="submit" [disabled]="filterForm.invalid || bookingLoading">{{ bookingLoading ? 'בודק...' : 'בדיקת תפוסה' }}</button>
         </div>
       </form>
       <div *ngIf="checkedDate" class="result-notice" role="status">
@@ -89,7 +89,7 @@ interface BookingResults {
       </div>
       <p *ngIf="holiday" class="notice">בתאריך זה יש חופשה: {{ holiday }}.</p>
       <p *ngIf="error" class="error" role="alert">{{ error }}</p>
-      <p *ngIf="loading">טוענת את מפת החדרים...</p>
+      <p *ngIf="loading">טוען את מפת החדרים...</p>
       <div class="map-heading">
         <div><h2>החדרים שלנו</h2><p>בחרי חדר כדי לעדכן פרטים או להוסיף שיבוץ</p></div>
         <div class="legend" aria-label="מקרא"><span><i class="legend-dot computer-dot"></i>חדר מחשבים</span><span><i class="legend-dot unusable-dot"></i>אין להשתמש</span></div>

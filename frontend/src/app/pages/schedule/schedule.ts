@@ -554,7 +554,7 @@ function formatHebrewDayHeading(dateStr: string): string {
     <p *ngIf="editSlotError()" class="error-msg" role="alert">{{ editSlotError() }}</p>
     <div class="form-actions">
       <button class="btn btn-primary" [disabled]="savingEditSlot()" (click)="saveEditedSlot()">
-        {{ savingEditSlot() ? 'שומרת...' : 'שמירה' }}
+        {{ savingEditSlot() ? 'שומר...' : 'שמירה' }}
       </button>
       <button class="btn btn-secondary" [disabled]="savingEditSlot()" (click)="cancelEditSlot()">ביטול</button>
     </div>

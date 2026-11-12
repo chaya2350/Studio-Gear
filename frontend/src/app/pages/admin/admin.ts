@@ -92,7 +92,7 @@ class="section-tab"
       <span class="password-count">{{ newPassword().length }}/128</span>
     </div>
     <div class="password-actions">
-      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומרת...' : 'שמירת סיסמה' }}</button>
+      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומר...' : 'שמירת סיסמה' }}</button>
       <button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
     </div>
   </div>
@@ -369,7 +369,7 @@ class="section-tab"
 <div class="section-title"> ייבוא תלמידות מאקסל</div>
 <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
 העלה קובץ Excel עם עמודות: <strong>ת.ז, שם, טלפון, מסלול, שנה, ת. לידה לועזי/עברית, כתובת, מספר בית, עיר</strong><br>
-ניתן להעלות מספר קבצים (שנה א + שנה ב). המערכת ממזגת לפי ת.ז בלי לדרוס מידע קיים, ומוסיפה פרמטרים חדשים (כמו קוד לטלפון).
+ניתן להעלות מספר קבצים (שנה א + שנה ב). הייבוא ממזג לפי ת.ז בלי לדרוס מידע קיים, ומוסיף פרמטרים חדשים (כמו קוד לטלפון).
 </p>
 
 <div class="upload-area"
@@ -549,7 +549,7 @@ class="section-tab"
     <p *ngIf="roomDefaultsMessage()" class="import-status success" role="status">{{ roomDefaultsMessage() }}</p>
     <button class="btn btn-secondary" type="button" [disabled]="applyingRoomDefaults() || roomDefaultsLoading()"
             (click)="applyRoomDefaultsToExisting()">
-      {{ applyingRoomDefaults() ? 'מעדכנת שיעורים...' : 'החלת ברירות המחדל על שיעורים קיימים' }}
+      {{ applyingRoomDefaults() ? 'מעדכן שיעורים...' : 'החלת ברירות המחדל על שיעורים קיימים' }}
     </button>
     <div *ngIf="!roomDefaultsLoading()" class="room-defaults-grid">
       <section class="room-default-group">

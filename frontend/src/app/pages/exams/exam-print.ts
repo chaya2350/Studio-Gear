@@ -11,7 +11,7 @@ import { printA4LabelSheet } from '../../utils/label-print';
   selector: 'app-exam-print',
   imports: [CommonModule],
   template: `
-<div *ngIf="loading()" class="loading-center">טוענת...</div>
+<div *ngIf="loading()" class="loading-center">טוען...</div>
 
 <div *ngIf="!loading() && exam()">
   <div class="page-header">

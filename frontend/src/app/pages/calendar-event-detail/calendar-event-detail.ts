@@ -56,7 +56,7 @@ function formatGregorianDate(dateStr: string): string {
   <!-- Loading -->
   <div *ngIf="loading()" class="loading-state">
     <div class="spinner"></div>
-    <span>טוענת...</span>
+    <span>טוען...</span>
   </div>
 
   <!-- Error -->
