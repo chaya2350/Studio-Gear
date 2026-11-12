@@ -152,9 +152,9 @@ template: `
 </div>
 <!-- Barcode confirm before return -->
 <div *ngIf="pendingCharge() === 0" class="return-confirm">
-<div class="return-confirm-label"> לאישור החזרה — סרוק או הקלד ברקוד</div>
+<div class="return-confirm-label"> לאישור החזרה — סרקו עם סורק USB או הקלידו ברקוד ולחצו Enter</div>
 <div class="return-confirm-row">
-<input #returnInput class="return-barcode-input" [(ngModel)]="returnBarcode" placeholder="הזן ברקוד" (keyup.enter)="returnItem()" [class.input-error]="returnBarcodeError()">
+<input #returnInput class="return-barcode-input" [(ngModel)]="returnBarcode" placeholder="הזן ברקוד" (keyup.enter)="returnItem()" inputmode="none" autocomplete="off" autofocus [class.input-error]="returnBarcodeError()">
 <button class="btn btn-ghost return-scan-btn" (click)="toggleReturnScan()" [class.active]="returnScanning()"></button>
 <button class="btn btn-success return-btn" (click)="returnItem()"> אשר</button>
 </div>

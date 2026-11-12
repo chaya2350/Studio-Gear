@@ -23,8 +23,9 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
   <!-- Mode toggle -->
   <div class="mode-toggle">
     <button [class.active]="mode()==='camera'" (click)="setMode('camera')">📷 מצלמה</button>
-    <button [class.active]="mode()==='manual'" (click)="setMode('manual')">⌨ הקלדה</button>
+    <button [class.active]="mode()==='manual'" (click)="setMode('manual')">⌨ סורק / הקלדה</button>
   </div>
+  <p *ngIf="mode()==='manual'" class="manual-scanner-hint">סורק USB פועל כמו מקלדת: סרקו כשהשדה בפוקוס, והברקוד יישלח ב־Enter.</p>
 
   <!-- SHARED CAMERA BLOCK — always in DOM when camera mode, shown only on active scan phases -->
   <div class="scan-card card" *ngIf="mode()==='camera' && phase() !== 'done'">
@@ -52,8 +53,8 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
 
     <div class="scan-card card" *ngIf="mode()==='manual'">
       <div class="manual-section">
-        <input [(ngModel)]="manualCode" placeholder="הקלד/סרוק קוד שיעור (ATT-...)"
-               (keyup.enter)="processSessionBarcode(manualCode)" class="code-input" #manualInput autofocus>
+         <input [(ngModel)]="manualCode" placeholder="הקלד/סרוק קוד שיעור (ATT-...)"
+           (keyup.enter)="processSessionBarcode(manualCode)" class="code-input" #manualInput autofocus inputmode="none" autocomplete="off">
         <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                 (click)="processSessionBarcode(manualCode)">חפש שיעור</button>
       </div>
@@ -90,8 +91,8 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
 
       <div class="scan-card card" *ngIf="mode()==='manual'">
         <div class="manual-section">
-          <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
-                 (keyup.enter)="processStudentBarcode(manualCode, 'absent')" class="code-input">
+             <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
+               (keyup.enter)="processStudentBarcode(manualCode, 'absent')" class="code-input" #manualInput inputmode="none" autocomplete="off">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                   (click)="processStudentBarcode(manualCode, 'absent')">רשמי כנעדרת</button>
         </div>
@@ -129,8 +130,8 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
 
       <div class="scan-card card" *ngIf="mode()==='manual'">
         <div class="manual-section">
-          <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
-                 (keyup.enter)="processStudentBarcode(manualCode, 'late')" class="code-input">
+             <input [(ngModel)]="manualCode" placeholder="סרקי/הקלידי ברקוד תלמידה (STU-...)"
+               (keyup.enter)="processStudentBarcode(manualCode, 'late')" class="code-input" #manualInput inputmode="none" autocomplete="off">
           <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px"
                   (click)="processStudentBarcode(manualCode, 'late')">רשמי כמאחרת</button>
         </div>
@@ -266,6 +267,7 @@ type ScanPhase = 'session' | 'absent' | 'late' | 'done';
 })
 export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
   @ViewChild('videoEl') videoEl?: ElementRef<HTMLVideoElement>;
+  @ViewChild('manualInput') manualInput?: ElementRef<HTMLInputElement>;
 
   mode = signal<'camera' | 'manual'>('manual');
   phase = signal<ScanPhase>('session');
@@ -288,6 +290,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     if (this.mode() === 'camera') this.startCamera();
+    else setTimeout(() => this.focusManualInput(), 0);
 
     const barcode = this.route.snapshot.queryParamMap.get('barcode');
     if (barcode) {
@@ -311,7 +314,13 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
       setTimeout(() => this.startCamera(), 150);
     } else {
       this.stopCamera();
+      setTimeout(() => this.focusManualInput(), 0);
     }
+  }
+
+  private focusManualInput() {
+    this.manualInput?.nativeElement.focus();
+    this.manualInput?.nativeElement.select();
   }
 
   // Called when moving from absent → late phase (camera needs to keep running)
@@ -319,6 +328,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     this.scanError.set('');
     this.lastScanned.set('');
     this.phase.set('late');
+  setTimeout(() => this.focusManualInput(), 0);
     // Camera element stays in DOM — no restart needed
   }
 
@@ -386,6 +396,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
         }
         this.phase.set('absent');
         this.manualCode = '';
+        if (this.mode() === 'manual') setTimeout(() => this.focusManualInput(), 0);
         // Camera is already running (same video element) — no restart needed
       },
       error: e => this.sessionError.set(e.error?.error || 'ברקוד לא מוכר')
@@ -414,6 +425,7 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
         const existing = list().find(s => s.id_number === r.id_number);
         if (!existing) list.update(l => [...l, { id_number: r.id_number, name: r.name }]);
         this.manualCode = '';
+        if (this.mode() === 'manual') setTimeout(() => this.focusManualInput(), 0);
         setTimeout(() => this.lastScanned.set(''), 3000);
       },
       error: e => this.scanError.set(e.error?.error || 'תלמידה לא נמצאה')
@@ -466,6 +478,6 @@ export class AttendanceScanComponent implements AfterViewInit, OnDestroy {
     this.phase.set('session');
     if (this.mode() === 'camera') {
       setTimeout(() => this.startCamera(), 150);
-    }
+    } else setTimeout(() => this.focusManualInput(), 0);
   }
 }

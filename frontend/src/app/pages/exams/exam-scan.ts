@@ -32,9 +32,11 @@ template: `
 </div>
 
 <div *ngIf="mode()==='manual'" class="manual-section">
+<p class="manual-scan-hint">סורק USB פועל כמו מקלדת: סרקו כשהשדה בפוקוס; Enter יחפש את המבחן.</p>
 <div class="barcode-input-wrap">
 <span class="barcode-icon"></span>
-<input [(ngModel)]="manualCode" placeholder="הקלד/סרוק קוד מבחן (EX...)" (keyup.enter)="lookupManual()">
+<input #manualInput type="text" inputmode="none" [(ngModel)]="manualCode"
+	placeholder="הקלד/סרוק קוד מבחן (EX...)" (keyup.enter)="lookupManual()">
 </div>
 <button class="btn btn-primary" style="width:100%; margin-top:12px; padding:12px;" (click)="lookupManual()"> חפש מבחן</button>
 </div>
@@ -75,6 +77,7 @@ video { width: 100%; height: 100%; object-fit: cover; } }
 .scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); }
 .scan-frame { width: 240px; height: 100px; border: 2.5px solid white; border-radius: var(--radius-sm); box-shadow: 0 0 0 2000px rgba(0,0,0,0.35); }
 .scan-hint { text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 10px; }
+.manual-scan-hint { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; }
 
 .barcode-input-wrap { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px;
 &:focus-within { border-color: var(--primary); background: white; }
@@ -94,6 +97,7 @@ button { flex: 1; } }
 })
 export class ExamScanComponent implements AfterViewInit, OnDestroy {
 @ViewChild('videoEl') videoEl?: ElementRef<HTMLVideoElement>;
+@ViewChild('manualInput') manualInput?: ElementRef<HTMLInputElement>;
 
 mode = signal<'camera' | 'manual'>('camera');
 cameraError = signal('');
@@ -119,7 +123,15 @@ setMode(m: 'camera' | 'manual') {
 this.mode.set(m);
 this.lookupError.set('');
 if (m === 'camera') setTimeout(() => this.startCamera());
-else this.stopCamera();
+else {
+this.stopCamera();
+setTimeout(() => this.focusManualInput(), 0);
+}
+}
+
+private focusManualInput() {
+this.manualInput?.nativeElement.focus();
+this.manualInput?.nativeElement.select();
 }
 
 private startCamera() {
