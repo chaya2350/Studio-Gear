@@ -48,7 +48,7 @@ interface KioskEquipment {
           <div class="step-card">
             <span class="step-icon"></span>
             <h2 class="step-title">הכניסי את תעודת הזהות שלך</h2>
-            <p class="step-sub">הקלידי את מספר תז שלך ולחצי על "המשך"</p>
+            <p class="step-sub">הקלידי תעודת זהות או סרקי ברקוד תלמידה, ואז לחצי על "המשך"</p>
             <input
               class="kiosk-input"
               type="text"
@@ -56,7 +56,7 @@ interface KioskEquipment {
               [(ngModel)]="idInput"
               (keyup.enter)="lookupStudent()"
               placeholder="000000000"
-              maxlength="9"
+              maxlength="32"
               autofocus
             />
             @if (lookupError()) {
@@ -827,7 +827,9 @@ export class KioskComponent implements OnInit, OnDestroy {
   }
 
   lookupStudent() {
-    const id = this.idInput.trim();
+    const rawValue = this.idInput.trim();
+    const barcodeMatch = /^STU-(.+)$/i.exec(rawValue);
+    const id = barcodeMatch ? barcodeMatch[1] : rawValue;
     if (!id) return;
     this.lookupError.set('');
     this.http.get<any>(`/api/students/${id}`).subscribe({

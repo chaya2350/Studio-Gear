@@ -43,6 +43,10 @@ const { saveStudentPhoto, clearStudentPhoto } = require('./student-photo');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
 const { createBackup } = require('./backup');
+const {
+  initializeEquipmentMaintenance, getEquipmentMaintenanceSummary,
+  registerEquipmentMaintenanceRoutes
+} = require('./equipment-maintenance');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
   PERMISSION_ACTIONS,
@@ -1605,6 +1609,8 @@ const eqColNames = cols.map(c => c.name);
 if (!eqColNames.includes('subcategory')) db.exec('ALTER TABLE equipment ADD COLUMN subcategory TEXT');
 if (!eqColNames.includes('rental_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN rental_price_per_day REAL DEFAULT 0');
 if (!eqColNames.includes('overdue_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN overdue_price_per_day REAL DEFAULT 0');
+initializeEquipmentMaintenance(db);
+registerEquipmentMaintenanceRoutes(app, db);
 
 const defaultCategories = [
   ['ציוד צילום','📷', null],
@@ -1832,6 +1838,26 @@ app.get('/api/students/requirements-summary', (req, res) => {
     map[r.id_number] = { total: r.total_reqs, completed: r.completed_reqs, missing: r.missing_required };
   }
   res.json(map);
+});
+
+app.get('/api/students/missing-requirements', (req, res) => {
+  const permissions = getUserPermissions(req.user.role);
+  if (!permissions.tracks?.view) return res.status(403).json({ error: 'אין לך הרשאת צפייה בדרישות המסלולים' });
+  const rows = db.prepare(`
+    SELECT s.id_number, s.name, s.track, s.year, COUNT(DISTINCT tr.id) AS missing_required
+    FROM students s
+    JOIN tracks t ON s.track LIKE '%' || t.name || '%'
+    JOIN track_requirements tr ON tr.track_id = t.id AND tr.required = 1
+      AND (tr.years IS NULL OR tr.years LIKE '%' || s.year || '%')
+    LEFT JOIN student_requirements sr
+      ON sr.id_number = s.id_number AND sr.requirement_id = tr.id
+    WHERE sr.requirement_id IS NULL
+    GROUP BY s.id_number
+    HAVING missing_required > 0
+    ORDER BY missing_required DESC, s.name COLLATE NOCASE
+    LIMIT 30
+  `).all();
+  res.json(rows);
 });
 
 // רשימת כיתות (מקבילות) ייחודיות — חייב להיות לפני /:id_number
@@ -2801,7 +2827,11 @@ function equipmentQuery(whereClause = '', date = null) {
       CASE WHEN e.category = 'מצלמות אישיות' THEN 'מצלמות אישיות' ELSE e.subcategory END as subcategory,
       CASE WHEN active.id IS NOT NULL THEN 1 ELSE 0 END as is_loaned,
       active.borrower_name, active.expected_return, active.loan_date, active.id as loan_id, active.borrower_phone, active.notes, active.track, active.location,
-      CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved
+      CASE WHEN future.cnt > 0 THEN 1 ELSE 0 END as is_reserved,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM equipment_maintenance m
+        WHERE m.equipment_id = e.id AND m.status != 'resolved'
+      ) THEN 1 ELSE 0 END AS is_under_maintenance
     FROM equipment e
     LEFT JOIN loans active ON active.equipment_id = e.id AND active.actual_return IS NULL
       AND active.loan_date <= ${d}
@@ -2981,6 +3011,10 @@ app.post('/api/loans', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
 
   const eq = db.prepare('SELECT category, subcategory, overdue_price_per_day FROM equipment WHERE id=?').get(equipment_id);
+  if (!eq) return res.status(404).json({ error: 'הציוד לא נמצא' });
+  if (getEquipmentMaintenanceSummary(db, equipment_id) > 0) {
+    return res.status(409).json({ error: 'הציוד נמצא בתחזוקה ולא ניתן להשאיל אותו כרגע' });
+  }
   const isLaptop = eq && eq.category === 'מחשב נייד';
   const isPersonalCamera = eq && (
     eq.category === 'מצלמות אישיות' ||
@@ -4000,7 +4034,7 @@ function findTeacherClassDayConflict({ teacher_id, class_year, class_parallel, d
 function scheduleConflictConfirmation(conflicts) {
   const messages = [];
   if (conflicts.has('sameClassDay')) messages.push('למורה כבר מופיע שיעור בכיתה זו היום');
-  if (conflicts.has('teacher')) messages.push('השיעור כבר מופיע בכיתה אחרת באותה שעה');
+  if (conflicts.has('teacher')) messages.push('השיעור כבר מופיע בכיתה אחרת באותה ש  עה');
   return {
     confirmationRequired: true,
     conflicts: Array.from(conflicts),

@@ -18,6 +18,20 @@ export interface Equipment {
   loan_id?: number;
   notes?: string;
   is_reserved: number;
+  is_under_maintenance?: number;
+}
+
+export interface EquipmentMaintenanceRecord {
+  id: number;
+  equipment_id: number;
+  description: string;
+  status: 'open' | 'in_progress' | 'resolved';
+  reported_by: number | null;
+  reporter_name: string | null;
+  reported_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  resolution_notes: string | null;
 }
 
 export interface Loan {

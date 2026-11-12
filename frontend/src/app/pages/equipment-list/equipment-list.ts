@@ -63,6 +63,13 @@ template: `
 <div class="stat-label">באיחור</div>
 </div>
 </div>
+<div class="stat-card clickable" (click)="goItems('__maintenance__')">
+<div class="stat-icon" style="background:#fff7ed;"></div>
+<div class="stat-info">
+<div class="stat-value" style="color:#c2410c">{{ maintenanceCount() }}</div>
+<div class="stat-label">בתחזוקה</div>
+</div>
+</div>
 </div>
 
 <hr class="section-divider">
@@ -158,7 +165,7 @@ template: `
 <a *ngFor="let item of filtered()" [routerLink]="['/equipment', item.id]" class="equipment-card">
 <div class="eq-top">
 <span class="badge" [class]="getStatusClass(item)">
-{{ item.is_reserved ? ' שמור' : (item.is_loaned ? (isOverdue(item) ? ' איחור' : (item.category === 'מחשב נייד' ? ' תפוס' : 'מושאל')) : ' פנוי') }}
+{{ item.is_under_maintenance ? 'בתחזוקה' : (item.is_reserved ? ' שמור' : (item.is_loaned ? (isOverdue(item) ? ' איחור' : (item.category === 'מחשב נייד' ? ' תפוס' : 'מושאל')) : ' פנוי')) }}
 </span>
 </div>
 <h3 class="eq-name">{{ item.name }}</h3>
@@ -337,9 +344,10 @@ error: () => {}
 });
 }
 
-available() { return this.all().filter(e => !e.is_loaned).length; }
+available() { return this.all().filter(e => !e.is_loaned && !e.is_under_maintenance).length; }
 loaned() { return this.all().filter(e => e.is_loaned).length; }
 overdueCount() { return this.all().filter(e => e.is_loaned && this.isOverdue(e)).length; }
+maintenanceCount() { return this.all().filter(e => e.is_under_maintenance).length; }
 
 topLevelCategories(): Category[] {
 const parentCategories = this.categories().filter(cat => !cat.parent_id);
@@ -532,8 +540,9 @@ this.view.set('items');
 goItems(mode: string) {
 this.itemsSource = mode === '__cat__' || this.view() === 'subcategories' ? 'subcategories' : 'categories';
 if (mode === '__all__') { this.filtered.set(this.all()); }
-else if (mode === '__available__') { this.filtered.set(this.all().filter(e => !e.is_loaned)); }
+else if (mode === '__available__') { this.filtered.set(this.all().filter(e => !e.is_loaned && !e.is_under_maintenance)); }
 else if (mode === '__loaned__') { this.filtered.set(this.all().filter(e => e.is_loaned)); }
+else if (mode === '__maintenance__') { this.filtered.set(this.all().filter(e => e.is_under_maintenance)); }
 else if (mode === '__cat__') {
 const group = this.selectedCategory();
 const items = group && this.topLevelCategoryNames().includes(group) ? this.itemsForTopLevelGroup(group) : this.all().filter(e => e.category === group);
@@ -690,6 +699,7 @@ return 'ציוד';
 isOverdue(item: Equipment) { return item.expected_return && item.expected_return < this.today; }
 
 getStatusClass(item: Equipment) {
+if (item.is_under_maintenance) return 'badge-maintenance';
 if (item.is_reserved) return 'badge-reserved';
 if (!item.is_loaned) return 'badge-available';
 return this.isOverdue(item) ? 'badge-overdue' : 'badge-loaned';

@@ -152,8 +152,12 @@ maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length >
 </div>
 
 <p *ngIf="error()" class="alert alert-error">{{ error() }}</p>
+<p *ngIf="cart.items().some(item => item.is_under_maintenance)" class="alert alert-warning">
+הסירו מהסל פריטים שנמצאים בתחזוקה לפני אישור ההזמנה.
+</p>
 
-<button class="btn btn-primary btn-submit" (click)="submit()" [disabled]="submitting()">
+<button class="btn btn-primary btn-submit" (click)="submit()"
+  [disabled]="submitting() || cart.items().some(item => item.is_under_maintenance)">
 <span *ngIf="!submitting()"> אשר הזמנה ({{ cart.count() }} פריטים)</span>
 <span *ngIf="submitting()" class="loading-dots" role="status" aria-label="שליחת ההזמנה"><i></i><i></i><i></i></span>
 </button>
@@ -167,8 +171,9 @@ maxlength="19" (input)="formatCard($event)" [class.invalid]="cardNumber.length >
 <div class="cart-item-info">
 <div class="cart-item-name">{{ item.name }}</div>
 <div class="cart-item-cat">{{ item.category }}<span *ngIf="item.subcategory"> › {{ item.subcategory }}</span></div>
-<div class="cart-item-status" [class.taken]="item.is_loaned || item.is_reserved">
-{{ item.is_reserved ? ' שמור, אך זמין אם התאריכים אינם נוגעים' : (item.is_loaned ? ' תפוס כעת' : ' פנוי') }}
+<div class="cart-item-status" [class.taken]="item.is_loaned || item.is_reserved || item.is_under_maintenance"
+  [class.maintenance]="item.is_under_maintenance">
+{{ item.is_under_maintenance ? 'בתחזוקה — לא ניתן להזמין' : (item.is_reserved ? ' שמור, אך זמין אם התאריכים אינם נוגעים' : (item.is_loaned ? ' תפוס כעת' : ' פנוי')) }}
 </div>
 </div>
 <button class="remove-btn" (click)="cart.remove(item.id)"></button>
@@ -247,6 +252,7 @@ padding: 12px 0; border-bottom: 1px solid var(--border);
 .cart-item-cat { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
 .cart-item-status { font-size: 0.72rem; font-weight: 600; color: var(--success); }
 .cart-item-status.taken { color: var(--warning); }
+.cart-item-status.maintenance { color: var(--danger); }
 .remove-btn {
 border: none; background: transparent; color: var(--text-light); cursor: pointer;
 font-size: 0.85rem; padding: 4px 8px; border-radius: var(--radius-xs);
@@ -406,6 +412,11 @@ return expDate >= now;
 }
 
 submit() {
+const maintenanceItems = this.cart.items().filter(item => item.is_under_maintenance);
+if (maintenanceItems.length) {
+this.error.set(`לא ניתן להזמין פריטים בתחזוקה: ${maintenanceItems.map(item => item.name).join(', ')}`);
+return;
+}
 const s = this.student();
 const name = s ? s.name : this.form.borrower_name;
 if (!name) { this.error.set('נא למלא שם שואלת'); return; }

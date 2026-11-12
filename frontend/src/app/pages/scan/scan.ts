@@ -1,5 +1,5 @@
 import { Component, OnDestroy, signal, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -35,13 +35,15 @@ template: `
 </div>
 
 <div *ngIf="mode()==='manual'" class="manual-section">
+<p class="manual-scan-hint">{{ barcodeReceived() ? 'ברקוד נקלט; מחפש ציוד...' : 'לא זוהתה סריקה עדיין. חברו סורק או הזינו ברקוד ידנית.' }}</p>
 <div class="barcode-input-wrap">
 <span class="barcode-icon"></span>
 <input
+	#manualInput
+	type="text"
 [(ngModel)]="manualBarcode"
 placeholder="הקלד מספר ברקוד..."
 (keyup.enter)="searchManual()"
-autofocus
 >
 </div>
 <button class="btn btn-primary" style="width:100%; margin-top:12px; padding:12px;" (click)="searchManual()">
@@ -85,6 +87,7 @@ transition: all var(--transition);
 }
 
 .scan-card { padding: 24px; }
+.manual-scan-hint { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; }
 
 .video-wrap {
 position: relative;
@@ -159,27 +162,45 @@ color: var(--text);
 &::placeholder { color: var(--text-light); }
 }
 }
+.manual-scan-hint { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; }
 `]
 })
 export class ScanComponent implements AfterViewInit, OnDestroy {
 @ViewChild('videoEl') videoEl!: ElementRef<HTMLVideoElement>;
+@ViewChild('manualInput') manualInput?: ElementRef<HTMLInputElement>;
 
-mode = signal<'camera' | 'manual'>('camera');
+mode = signal<'camera' | 'manual'>('manual');
 error = signal('');
 cameraError = signal('');
+barcodeReceived = signal(false);
 manualBarcode = '';
 private reader = new BrowserMultiFormatReader();
 private scanning = false;
 
-constructor(private router: Router, private api: ApiService) {}
+constructor(private router: Router, private route: ActivatedRoute, private api: ApiService) {}
 
-ngAfterViewInit() { this.startCamera(); }
+ngAfterViewInit() {
+const barcode = this.route.snapshot.queryParamMap.get('barcode');
+if (barcode) {
+	this.barcodeReceived.set(true);
+	this.manualBarcode = barcode;
+	this.searchManual();
+} else setTimeout(() => this.focusManualInput(), 0);
+}
 
 setMode(m: 'camera' | 'manual') {
 this.mode.set(m);
 this.error.set('');
 if (m === 'camera') setTimeout(() => this.startCamera(), 100);
-else this.stopCamera();
+else {
+this.stopCamera();
+setTimeout(() => this.focusManualInput(), 0);
+}
+}
+
+private focusManualInput() {
+this.manualInput?.nativeElement.focus();
+this.manualInput?.nativeElement.select();
 }
 
 startCamera() {
@@ -203,6 +224,7 @@ BrowserMultiFormatReader.releaseAllStreams();
 
 searchManual() {
 if (!this.manualBarcode.trim()) return;
+this.barcodeReceived.set(true);
 this.navigate(this.manualBarcode.trim());
 }
 

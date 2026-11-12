@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, signal } from '@angular/core';
+import { Component, HostListener, OnInit, effect, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -9,7 +9,7 @@ import { MessagesService } from './services/messages.service';
 import { NotificationsService } from './services/notifications.service';
 import { LoadingService } from './services/loading.service';
 import { NotificationDrawerComponent } from './components/notifications/notification-drawer';
-import { Subject, interval } from 'rxjs';
+import { Subject, forkJoin, interval } from 'rxjs';
 import { filter, takeUntil } from 'rxjs/operators';
 
 @Component({
@@ -42,7 +42,7 @@ import { filter, takeUntil } from 'rxjs/operators';
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש חופשי…" aria-label="חיפוש גלובלי">
+        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש או שאלה בעברית…" aria-label="חיפוש גלובלי">
         <button *ngIf="searchQuery" class="search-clear" (click)="clearSearch()" aria-label="נקה חיפוש">✕</button>
         <div class="search-results" *ngIf="searchResults" (click)="$event.stopPropagation()">
           <div *ngIf="searchResults.students.length" class="search-group">
@@ -94,7 +94,25 @@ import { filter, takeUntil } from 'rxjs/operators';
               {{ ex.name }} <span>{{ ex.exam_date }}{{ ex.track ? ' · ' + ex.track : '' }}</span>
             </a>
           </div>
-          <p *ngIf="!searchResults.students.length && !searchResults.teachers?.length && !searchResults.equipment.length && !searchResults.examCodes.length && !searchResults.pages?.length && !searchResults.calendarEvents?.length && !searchResults.exams?.length" class="search-empty">לא נמצאו תוצאות</p>
+          <div *ngIf="searchResults.naturalType === 'rooms'" class="search-group natural-results">
+            <div class="search-group-title">חדרים פנויים · {{ searchResults.naturalDate }} · {{ searchResults.naturalStart }}–{{ searchResults.naturalEnd }}</div>
+            <a *ngFor="let room of searchResults.rooms || []" routerLink="/schedule/rooms"
+               [queryParams]="{ date: searchResults.naturalDate, start: searchResults.naturalStart, end: searchResults.naturalEnd }"
+               (click)="clearSearch()">
+              <span class="natural-result-icon">{{ room.number }}</span>
+              <span>חדר {{ room.number }} · {{ room.name }} · קומה {{ room.floor }}</span>
+            </a>
+            <p *ngIf="!searchResults.rooms?.length" class="search-empty">{{ searchResults.naturalMessage || 'לא נמצאו חדרים פנויים בטווח הזה' }}</p>
+          </div>
+          <div *ngIf="searchResults.naturalType === 'requirements'" class="search-group natural-results">
+            <div class="search-group-title">תלמידות עם דרישות חובה חסרות</div>
+            <a *ngFor="let student of searchResults.missingRequirements || []" [routerLink]="['/students', student.id_number]" (click)="clearSearch()">
+              <span class="natural-result-icon">{{ student.missing_required }}</span>
+              <span>{{ student.name }} · {{ student.track }}{{ student.year ? ' ' + student.year : '' }} · דרישות חסרות</span>
+            </a>
+            <p *ngIf="!searchResults.missingRequirements?.length" class="search-empty">{{ searchResults.naturalMessage || 'לא נמצאו דרישות חסרות' }}</p>
+          </div>
+          <p *ngIf="!searchResults.naturalType && !searchResults.students.length && !searchResults.teachers?.length && !searchResults.equipment.length && !searchResults.examCodes.length && !searchResults.pages?.length && !searchResults.calendarEvents?.length && !searchResults.exams?.length" class="search-empty">לא נמצאו תוצאות</p>
         </div>
       </div>
 
@@ -976,8 +994,18 @@ export class App implements OnInit {
   grantedCount = 0;
   private destroy$ = new Subject<void>();
   searchQuery = '';
-  searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] } | null = null;
+  searchResults: {
+    students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[];
+    calendarEvents: any[]; exams: any[]; naturalType?: 'rooms' | 'requirements';
+    naturalDate?: string; naturalStart?: string; naturalEnd?: string; naturalMessage?: string;
+    rooms?: { number: string; name: string; floor: number }[];
+    missingRequirements?: { id_number: string; name: string; track: string; year: string; missing_required: number }[];
+  } | null = null;
   private searchTimer: any;
+  private barcodeBuffer = '';
+  private barcodeStartedAt = 0;
+  private barcodeLastKeyAt = 0;
+
   accentPickerOpen = false;
   readonly accentPresets = [
     { id: 'turquoise', label: 'טורקיז', color: '#0d9488', light: 'rgba(13,148,136,.1)', glow: 'rgba(13,148,136,.18)', gradient: 'linear-gradient(135deg,#0d9488,#0891b2)' },
@@ -1001,6 +1029,83 @@ export class App implements OnInit {
     if (this.notifOpen) this.notifs.markAllRead();
   }
 
+  @HostListener('document:keydown', ['$event'])
+  onGlobalBarcodeKeydown(event: KeyboardEvent) {
+    if (!this.auth.user() || this.currentPath === '/login' || this.currentPath === '/kiosk' ||
+        event.ctrlKey || event.altKey || event.metaKey) {
+      this.resetBarcodeBuffer();
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) {
+      this.resetBarcodeBuffer();
+      return;
+    }
+
+    const now = performance.now();
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      const barcode = this.barcodeBuffer;
+      const isFastScan = barcode.length >= 5 && now - this.barcodeStartedAt <= 1500;
+      this.resetBarcodeBuffer();
+      if (!isFastScan) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.routeGlobalBarcode(barcode);
+      return;
+    }
+
+    if (!/^[a-z0-9-]$/i.test(event.key)) {
+      this.resetBarcodeBuffer();
+      return;
+    }
+    if (!this.barcodeBuffer || now - this.barcodeLastKeyAt > 120) {
+      this.barcodeBuffer = '';
+      this.barcodeStartedAt = now;
+    }
+    this.barcodeBuffer += event.key;
+    this.barcodeLastKeyAt = now;
+  }
+
+  private resetBarcodeBuffer() {
+    this.barcodeBuffer = '';
+    this.barcodeStartedAt = 0;
+    this.barcodeLastKeyAt = 0;
+  }
+
+  private routeGlobalBarcode(rawBarcode: string) {
+    const barcode = rawBarcode.trim();
+    const orderMatch = /^ORDER-(\d+)$/i.exec(barcode);
+    if (orderMatch) {
+      this.router.navigate(['/loans'], { queryParams: { order: Number(orderMatch[1]) } });
+      return;
+    }
+    if (/^ATT-T\d+-[^-]+-\d{4}-\d{2}-\d{2}$/i.test(barcode)) {
+      this.router.navigate(['/attendance/scan'], { queryParams: { barcode } });
+      return;
+    }
+    const studentMatch = /^STU-(.+)$/i.exec(barcode);
+    if (studentMatch) {
+      if (this.currentPath === '/attendance/scan') {
+        this.router.navigate(['/attendance/scan'], { queryParams: { barcode } });
+      } else {
+        this.router.navigate(['/students', studentMatch[1]]);
+      }
+      return;
+    }
+    if (/^EX\d+-/i.test(barcode)) {
+      this.router.navigate(['/exams/scan'], { queryParams: { code: barcode } });
+      return;
+    }
+
+    this.api.getEquipmentByBarcode(barcode).subscribe({
+      next: item => this.router.navigate(['/equipment', item.id], {
+        queryParams: { fromScan: '1', ...(item.is_loaned && item.loan_id ? { pay: '1' } : {}) }
+      }),
+      error: () => this.router.navigate(['/scan'], { queryParams: { barcode } })
+    });
+  }
+
   private isAttendanceSessionBarcode(q: string) {
     return /^ATT-T\d+-[^-]+-\d{4}-\d{2}-\d{2}$/.test(q.trim());
   }
@@ -1012,6 +1117,12 @@ export class App implements OnInit {
     if (this.isAttendanceSessionBarcode(q)) {
       this.searchResults = null;
       this.router.navigate(['/attendance/scan'], { queryParams: { barcode: q } });
+      return;
+    }
+
+    const naturalQuestion = this.parseNaturalQuestion(q);
+    if (naturalQuestion) {
+      this.runNaturalSearch(naturalQuestion, q);
       return;
     }
 
@@ -1029,6 +1140,113 @@ export class App implements OnInit {
         };
       });
     }, 250);
+  }
+
+  private parseNaturalQuestion(query: string):
+    | { type: 'rooms'; date: string; start: string; end: string }
+    | { type: 'requirements' }
+    | null {
+    const text = query.toLocaleLowerCase('he').replace(/[,،؟?!]/g, ' ');
+    if (/(?:מי|למי|תלמידות).*(?:חסרות|חסר).*(?:דרישות|דרישה)|(?:דרישות|דרישה).*(?:חסרות|חסר)/u.test(text)) {
+      return { type: 'requirements' };
+    }
+    if (!(/(?:חדר|חדרים).*(?:פנוי|זמין)|(?:פנוי|זמין).*(?:חדר|חדרים)/u.test(text))) return null;
+
+    const dayMatch = /(היום|מחר|ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)/u.exec(text);
+    if (!dayMatch) return null;
+    const timeRange = /(?:בין\s*)?(\d{1,2})(?::([0-5]\d))?\s*(?:עד|ל|[-–])\s*(\d{1,2})(?::([0-5]\d))?/u.exec(text);
+    const startTime = timeRange
+      ? `${timeRange[1].padStart(2, '0')}:${(timeRange[2] || '00').padStart(2, '0')}`
+      : null;
+    const endTime = timeRange
+      ? `${timeRange[3].padStart(2, '0')}:${(timeRange[4] || '00').padStart(2, '0')}`
+      : null;
+    const afterTime = !timeRange ? /(?:אחרי|משעה|בשעה)\s*(\d{1,2})(?::([0-5]\d))?/u.exec(text) : null;
+    if (!startTime && !afterTime) return null;
+
+    let start = startTime || `${afterTime![1].padStart(2, '0')}:${(afterTime![2] || '00').padStart(2, '0')}`;
+    let end = endTime;
+    if (!end) {
+      const startHour = Number(start.slice(0, 2));
+      end = startHour >= 23 ? '23:59' : `${String(startHour + 1).padStart(2, '0')}:${start.slice(3)}`;
+    }
+    if (start >= end) return null;
+
+    const date = this.dateForNaturalDay(dayMatch[1]);
+    return date ? { type: 'rooms', date, start, end } : null;
+  }
+
+  private dateForNaturalDay(day: string): string {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date());
+    const date = new Date(`${today}T12:00:00Z`);
+    if (day === 'מחר') date.setUTCDate(date.getUTCDate() + 1);
+    else if (day !== 'היום') {
+      const weekday: Record<string, number> = {
+        ראשון: 0, שני: 1, שלישי: 2, רביעי: 3, חמישי: 4, שישי: 5, שבת: 6
+      };
+      const target = weekday[day];
+      date.setUTCDate(date.getUTCDate() + ((target - date.getUTCDay() + 7) % 7));
+    }
+    return date.toISOString().slice(0, 10);
+  }
+
+  private runNaturalSearch(question: NonNullable<ReturnType<App['parseNaturalQuestion']>>, query: string) {
+    clearTimeout(this.searchTimer);
+    if (question.type === 'rooms' && !this.auth.hasPermission('schedule')) {
+      this.searchResults = { ...this.emptySearchResults(), naturalType: 'rooms', naturalMessage: 'אין הרשאה לצפייה במפת החדרים' };
+      return;
+    }
+    if (question.type === 'requirements' &&
+        (!this.auth.hasPermission('students') || !this.auth.hasPermission('tracks'))) {
+      this.searchResults = { ...this.emptySearchResults(), naturalType: 'requirements', naturalMessage: 'אין הרשאה לצפייה בדרישות תלמידות' };
+      return;
+    }
+
+    const empty = this.emptySearchResults();
+    if (question.type === 'rooms') {
+      this.searchResults = { ...empty, naturalType: 'rooms', naturalDate: question.date,
+        naturalStart: question.start, naturalEnd: question.end, rooms: [] };
+      forkJoin({
+        rooms: this.api.getScheduleRoomMap(),
+        availability: this.api.getScheduleRoomBookings(question.date, question.start, question.end)
+      }).subscribe({
+        next: result => {
+          if (this.searchQuery.trim() !== query) return;
+          const occupied = new Set(result.availability.bookings
+            .filter(booking => !booking.cancelled).map(booking => booking.room_number));
+          const rooms = result.rooms.filter(room => room.usable && !occupied.has(room.number))
+            .map(({ number, name, floor }) => ({ number, name, floor }));
+          this.searchResults = { ...empty, naturalType: 'rooms', naturalDate: question.date,
+            naturalStart: question.start, naturalEnd: question.end, rooms };
+        },
+        error: error => {
+          if (this.searchQuery.trim() === query) this.searchResults = {
+            ...empty, naturalType: 'rooms', naturalMessage: error.error?.error || 'בדיקת זמינות החדרים נכשלה'
+          };
+        }
+      });
+      return;
+    }
+
+    this.searchResults = { ...empty, naturalType: 'requirements', missingRequirements: [] };
+    this.api.getStudentsMissingRequirements().subscribe({
+      next: students => {
+        if (this.searchQuery.trim() === query) this.searchResults = {
+          ...empty, naturalType: 'requirements', missingRequirements: students
+        };
+      },
+      error: error => {
+        if (this.searchQuery.trim() === query) this.searchResults = {
+          ...empty, naturalType: 'requirements', naturalMessage: error.error?.error || 'טעינת דרישות חסרות נכשלה'
+        };
+      }
+    });
+  }
+
+  private emptySearchResults() {
+    return { students: [], equipment: [], examCodes: [], teachers: [], pages: [], calendarEvents: [], exams: [] };
   }
 
   clearSearch() { this.searchQuery = ''; this.searchResults = null; }

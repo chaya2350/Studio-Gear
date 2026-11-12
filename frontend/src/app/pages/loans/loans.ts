@@ -42,8 +42,9 @@ template: `
 <div class="card" *ngIf="orderFilter()">
 <div class="return-scan-box">
 <div class="return-title"> החזרת פריטים מהזמנה</div>
+<p class="return-scanner-hint">אפשר לסרוק עם סורק USB כשהשדה בפוקוס; הסריקה תישלח ב־Enter.</p>
 <div class="scan-row">
-<input [(ngModel)]="returnBarcode" (keydown.enter)="submitReturnScan()" placeholder="סרוק/הקלד ברקוד מוצר מההזמנה" />
+<input #returnBarcodeInput [(ngModel)]="returnBarcode" (keydown.enter)="submitReturnScan()" autocomplete="off" placeholder="סרוק/הקלד ברקוד מוצר מההזמנה" />
 <button type="button" class="btn btn-ghost" (click)="toggleReturnScan()" [class.active]="returnScanOpen()"></button>
 <button class="btn btn-primary" (click)="submitReturnScan()">סמן כמוחזר</button>
 </div>
@@ -152,6 +153,7 @@ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 500;
 .return-scan-box {
 padding: 18px 20px; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
+.return-scanner-hint { margin: 0 0 8px; color: var(--text-muted); font-size: .8rem; }
 .return-title {
 font-size: 0.9rem; font-weight: 800; color: var(--text); margin-bottom: 10px;
 }
@@ -199,6 +201,7 @@ returnMessageType = signal<'success' | 'error'>('success');
 returnScanOpen = signal(false);
 private returnReader = new BrowserMultiFormatReader();
 @ViewChild('returnScanVideo') returnVideoEl?: ElementRef<HTMLVideoElement>;
+@ViewChild('returnBarcodeInput') returnBarcodeInput?: ElementRef<HTMLInputElement>;
 
 constructor(private api: ApiService, private route: ActivatedRoute, private router: Router) {}
 
@@ -211,12 +214,18 @@ const order = p['order'];
 this.orderFilter.set(order ? Number(order) : null);
 if (p['filter'] === 'overdue') this.setFilter('overdue');
 this.applyFilter();
+if (order) setTimeout(() => this.focusReturnBarcode(), 0);
 });
 this.refreshTimer = setInterval(() => this.refreshInBackground(), 30000);
 }
 
 ngOnDestroy() {
 clearInterval(this.refreshTimer);
+}
+
+private focusReturnBarcode() {
+this.returnBarcodeInput?.nativeElement.focus();
+this.returnBarcodeInput?.nativeElement.select();
 }
 
 private refreshInBackground() {
@@ -314,6 +323,7 @@ this.returnBarcode = '';
 this.returnMessageType.set('success');
 this.returnMessage.set(`הפריט "${match.equipment_name}" סומן כמוחזר`);
 this.load();
+setTimeout(() => this.focusReturnBarcode(), 0);
 },
 error: (e) => {
 if (e.status === 402) {
