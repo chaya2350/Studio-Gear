@@ -77,7 +77,7 @@ interface BookingResults {
           <div><h2>בדיקת תפוסה</h2><p>בחרי תאריך וטווח שעות כדי לראות אילו חדרים פנויים</p></div>
         </div>
         <div class="filter-fields">
-          <label>תאריך <input name="date" type="date" [(ngModel)]="date" required></label>
+          <label>תאריך <span class="date-input-row"><input name="date" type="date" [(ngModel)]="date" required><button class="today-button" type="button" (click)="searchToday()" [disabled]="bookingLoading">היום</button></span></label>
           <label>משעה <input name="start" type="time" [(ngModel)]="start" required></label>
           <label>עד שעה <input name="end" type="time" [(ngModel)]="end" required></label>
           <button class="primary search-button" type="submit" [disabled]="filterForm.invalid || bookingLoading"
@@ -216,6 +216,9 @@ interface BookingResults {
     .filter-heading p, .map-heading p { color: var(--text-muted); font-size: 13px; }
     .filter-fields { display: grid; grid-template-columns: minmax(165px, 1.3fr) repeat(2, minmax(130px, 1fr)) auto; gap: 14px; align-items: end; }
     .filter-fields label { margin: 0; }
+    .date-input-row { display: flex; align-items: end; gap: 7px; }
+    .date-input-row input { flex: 1; }
+    .today-button { min-height: 43px; margin-top: 6px; padding-inline: 12px; color: var(--primary); white-space: nowrap; }
     label { display: block; margin: 14px 0; font-size: 13px; font-weight: 600; }
     input:not([type=checkbox]), select { display: block; width: 100%; min-width: 0; min-height: 43px; padding: 9px 12px; margin-top: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); font: inherit; }
     input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid var(--border-focus); outline-offset: 2px; }
@@ -336,6 +339,13 @@ export class RoomMapComponent implements OnInit {
       this.end = end;
       setTimeout(() => this.search(), 0);
     });
+  }
+
+  searchToday(): void {
+    this.date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    this.search();
   }
 
   load(): void {
