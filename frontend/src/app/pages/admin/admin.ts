@@ -1,11 +1,11 @@
-import { Component, computed, signal } from '@angular/core';
+﻿import { Component, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../services/api.service';
 import { AuthService, PermissionAction, PermissionsConfiguration, RolePermissionSet, SystemRole, UserRole } from '../../services/auth.service';
 import { TracksComponent } from '../tracks/tracks';
-type AdminSection = 'tracks' | 'students' | 'approvals' | 'users' | 'teachers';
+type AdminSection = 'tracks' | 'students' | 'approvals' | 'users' | 'teachers' | 'schedule_admin' | 'permissions';
 
 interface UserAccount {
 id: number;
@@ -44,68 +44,159 @@ class="section-tab"
 </button>
 </div>
 
-<div *ngIf="activeSection() === 'users'" class="card user-management">
-<div class="section-title"> ניהול משתמשות והרשאות</div>
-<p class="user-help">מנהלת מערכת יכולה לנהל חשבונות. סיסמה חדשה צריכה להכיל לפחות 12 תווים.</p>
+<div *ngIf="activeSection() === 'users'" class="users-tab">
 
-<section class="role-permissions" *ngIf="auth.user()?.role === 'admin'">
-  <div class="section-title">ניהול תפקידים והרשאות</div>
-  <p class="user-help">מנהלת המערכת מקבלת את כל ההרשאות. כל הרשאה חדשה מתחילה כמאושרת וניתן לשנות אותה כאן.</p>
-  <div class="permission-key">
-    <p><strong>צפייה</strong> — פתיחת האזור וצפייה במידע שבו.</p>
-    <p><strong>שינוי</strong> — כל פעולה שמשנה מידע: הוספה, עריכה או מחיקה, לפי מה שקיים באותו אזור.</p>
-    <p>במקום שבו מופיע מקף, אין פעולות שינוי באזור הזה. שינוי הרשאה נכנס לתוקף גם בבדיקת השרת.</p>
-  </div>
-  <div class="role-create-row">
-    <input class="admin-input" [value]="newRoleName()" (input)="newRoleName.set($any($event.target).value)"
-           placeholder="שם תפקיד חדש" aria-label="שם תפקיד חדש" maxlength="60"
-           (keyup.enter)="createRole()">
-    <button class="btn btn-primary" type="button" [disabled]="!newRoleName().trim() || savingRole()"
-            (click)="createRole()">הוספת תפקיד</button>
-  </div>
-  <div *ngIf="permissionsError()" class="alert alert-error" role="alert">{{ permissionsError() }}</div>
-  <div *ngIf="permissionsMessage()" class="alert alert-success" role="status">{{ permissionsMessage() }}</div>
-  <ng-container *ngIf="permissionConfig() as config">
-    <label class="role-select-label">
-      תפקיד לעריכת הרשאות
-      <select [ngModel]="selectedPermissionRole()" (ngModelChange)="selectPermissionRole($event)">
-        <option *ngFor="let role of config.roles" [value]="role.role_key">{{ role.name }}</option>
+  <!-- יצירת חשבון חדש -->
+  <div class="card admin-card">
+    <div class="section-title">יצירת חשבון חדש</div>
+    <p class="user-help">סיסמה ראשונית חייבת להכיל לפחות 12 תווים.</p>
+    <div class="user-form">
+      <input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
+      <input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
+      <div class="password-input-wrap">
+        <input [(ngModel)]="newUser.password" [type]="showNewUserPassword() ? 'text' : 'password'" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
+        <button class="password-visibility" type="button" (click)="showNewUserPassword.update(v => !v)">
+          <svg *ngIf="!showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+          <svg *ngIf="showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+        </button>
+      </div>
+      <select [(ngModel)]="newUser.role" aria-label="תפקיד">
+        <option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
       </select>
-    </label>
-    <div *ngIf="selectedRolePermissions() as selectedRole" class="permissions-table-wrap">
-      <table class="permissions-table">
-        <thead>
-          <tr>
-            <th>אזור במערכת</th>
-            <th>מה נמצא באזור?</th>
-            <th *ngFor="let action of config.actions">{{ permissionActionLabel(action) }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let feature of config.catalog">
-            <th scope="row">{{ feature.label }}</th>
-            <td class="permission-description">{{ feature.description }}</td>
-            <td *ngFor="let action of config.actions">
-              <input *ngIf="action === 'view' || feature.supportsChange !== false"
-                     type="checkbox" [checked]="selectedRole.permissions[feature.key][action]"
-                     [disabled]="selectedRole.role_key === 'admin' || savingRole()"
-                     [attr.aria-label]="feature.label + ' — ' + permissionActionLabel(action)"
-                     (change)="setRolePermission(feature.key, action, $any($event.target).checked)">
-              <span *ngIf="action === 'change' && feature.supportsChange === false" aria-label="אין פעולות שינוי באזור זה">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <button class="btn btn-primary" type="button"
-              *ngIf="selectedRole.role_key !== 'admin'"
-              [disabled]="savingRole() || !permissionsDirty()"
-              (click)="saveRolePermissions()">
-        {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
-      </button>
-      <p *ngIf="selectedRole.role_key === 'admin'" class="user-help">למנהלת המערכת תמיד יש את כל ההרשאות.</p>
+      <button class="btn btn-primary" (click)="createUser()">יצירת חשבון</button>
     </div>
-  </ng-container>
-</section>
+    <div *ngIf="userError()" class="alert alert-error" style="margin-top:10px" role="alert">{{ userError() }}</div>
+    <div *ngIf="passwordMessage()" class="alert alert-success" style="margin-top:10px" role="status">{{ passwordMessage() }}</div>
+  </div>
+
+  <!-- קביעת סיסמה -->
+  <div *ngIf="passwordTarget() as target" class="card admin-card set-password">
+    <div class="set-password-heading">
+      <div class="password-lock-icon" aria-hidden="true">✦</div>
+      <div>
+        <h3>קביעת סיסמה חדשה</h3>
+        <p>עבור {{ target.name }} · לפחות 12 תווים</p>
+      </div>
+    </div>
+    <label class="password-label" for="new-user-password">סיסמה חדשה</label>
+    <div class="password-input-wrap">
+      <input id="new-user-password" [type]="showNewPassword() ? 'text' : 'password'" autocomplete="new-password" minlength="12" maxlength="128" required [value]="newPassword()" placeholder="הקלידי סיסמה חדשה" (input)="newPassword.set($any($event.target).value)" (keyup.enter)="savePassword()">
+      <button class="password-visibility" type="button" (click)="showNewPassword.update(value => !value)" [attr.aria-label]="showNewPassword() ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'">
+        <svg *ngIf="!showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+        <svg *ngIf="showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+      </button>
+    </div>
+    <div class="password-hint" [class.password-ready]="newPassword().length >= 12">
+      <span class="password-hint-mark">{{ newPassword().length >= 12 ? '✓' : 'i' }}</span>
+      {{ newPassword().length >= 12 ? 'אורך הסיסמה תקין' : 'הסיסמה צריכה להכיל לפחות 12 תווים' }}
+      <span class="password-count">{{ newPassword().length }}/128</span>
+    </div>
+    <div class="password-actions">
+      <button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומרת...' : 'שמירת סיסמה' }}</button>
+      <button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
+    </div>
+  </div>
+
+  <!-- סיסמה זמנית -->
+  <div *ngIf="resetResult() as r" class="card admin-card alert alert-success" role="status">
+    סיסמה זמנית עבור <strong>{{ r.name }}</strong>:
+    <code class="temp-password">{{ r.password }}</code>
+    <br>הסיסמה מוצגת פעם אחת בלבד. העבירי אותה למשתמשת.
+    <button class="btn btn-secondary" style="margin-top:8px" type="button" (click)="resetResult.set(null)">הסתרה</button>
+  </div>
+
+  <!-- רשימת משתמשות -->
+  <div class="card admin-card">
+    <div class="section-title">רשימת משתמשות</div>
+    <p class="user-help">שינוי תפקיד, קביעת סיסמה, הפעלה/השבתה ומחיקה.</p>
+    <div class="user-list">
+      <div *ngFor="let user of users()" class="user-row">
+        <div class="user-info">
+          <strong>{{ user.name }}</strong>
+          <span>{{ user.email }} · {{ user.active ? 'פעילה' : 'מושבתת' }}</span>
+          <span *ngIf="isCoordinatorRole(user.role) && user.coordinator_track" class="coordinator-track-badge">מסלול: {{ user.coordinator_track }}</span>
+        </div>
+        <select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
+          [disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
+          <option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
+        </select>
+        <div class="user-row-actions">
+          <button class="btn btn-secondary btn-sm" [disabled]="user.id === auth.user()?.id" (click)="startEditUser(user)" title="עריכת פרטים">✏️ עריכה</button>
+          <button class="btn btn-secondary btn-sm" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">סיסמה</button>
+          <button class="btn btn-secondary btn-sm" [disabled]="user.id === auth.user()?.id" (click)="resetPassword(user)">איפוס</button>
+          <button class="btn btn-sm" [class.btn-danger]="user.active" [class.btn-secondary]="!user.active"
+            [disabled]="user.id === auth.user()?.id" (click)="updateUser(user, user.role, !user.active)">
+            {{ user.active ? 'השבתה' : 'הפעלה' }}
+          </button>
+          <button class="btn btn-danger btn-sm" [disabled]="user.id === auth.user()?.id" (click)="deleteUser(user)" title="מחיקה לצמיתות">🗑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div *ngIf="activeSection() === 'permissions'" class="users-tab">
+
+  <!-- ניהול תפקידים והרשאות -->
+  <div class="card admin-card">
+    <div class="section-title">ניהול תפקידים והרשאות</div>
+    <p class="user-help">מנהלת המערכת מקבלת את כל ההרשאות. כל הרשאה חדשה מתחילה כמאושרת וניתן לשנות אותה כאן.</p>
+    <div class="permission-key">
+      <p><strong>צפייה</strong> — פתיחת האזור וצפייה במידע שבו.</p>
+      <p><strong>שינוי</strong> — כל פעולה שמשנה מידע: הוספה, עריכה או מחיקה.</p>
+      <p>במקום שבו מופיע מקף, אין פעולות שינוי באזור הזה.</p>
+    </div>
+    <div class="role-create-row">
+      <input class="admin-input" [value]="newRoleName()" (input)="newRoleName.set($any($event.target).value)"
+             placeholder="שם תפקיד חדש" aria-label="שם תפקיד חדש" maxlength="60" (keyup.enter)="createRole()">
+      <button class="btn btn-primary" type="button" [disabled]="!newRoleName().trim() || savingRole()" (click)="createRole()">הוספת תפקיד</button>
+    </div>
+    <div *ngIf="permissionsError()" class="alert alert-error" role="alert">{{ permissionsError() }}</div>
+    <div *ngIf="permissionsMessage()" class="alert alert-success" role="status">{{ permissionsMessage() }}</div>
+    <ng-container *ngIf="permissionConfig() as config">
+      <label class="role-select-label">
+        תפקיד לעריכת הרשאות
+        <select [ngModel]="selectedPermissionRole()" (ngModelChange)="selectPermissionRole($event)">
+          <option *ngFor="let role of config.roles" [value]="role.role_key">{{ role.name }}</option>
+        </select>
+      </label>
+      <div *ngIf="selectedRolePermissions() as selectedRole" class="permissions-table-wrap">
+        <table class="permissions-table">
+          <thead>
+            <tr>
+              <th>אזור במערכת</th>
+              <th>מה נמצא באזור?</th>
+              <th *ngFor="let action of config.actions">{{ permissionActionLabel(action) }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let feature of config.catalog">
+              <th scope="row">{{ feature.label }}</th>
+              <td class="permission-description">{{ feature.description }}</td>
+              <td *ngFor="let action of config.actions">
+                <input *ngIf="action === 'view' || feature.supportsChange !== false"
+                       type="checkbox" [checked]="selectedRole.permissions[feature.key][action]"
+                       [disabled]="selectedRole.role_key === 'admin' || savingRole()"
+                       [attr.aria-label]="feature.label + ' — ' + permissionActionLabel(action)"
+                       (change)="setRolePermission(feature.key, action, $any($event.target).checked)">
+                <span *ngIf="action === 'change' && feature.supportsChange === false" aria-label="אין פעולות שינוי באזור זה">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="btn btn-primary" type="button"
+                *ngIf="selectedRole.role_key !== 'admin'"
+                [disabled]="savingRole() || !permissionsDirty()"
+                (click)="saveRolePermissions()">
+          {{ savingRole() ? 'שומר...' : 'שמירת הרשאות' }}
+        </button>
+        <p *ngIf="selectedRole.role_key === 'admin'" class="user-help">למנהלת המערכת תמיד יש את כל ההרשאות.</p>
+      </div>
+    </ng-container>
+  </div>
+
+</div>
 
 <!-- modal עריכת פרטים -->
 <div *ngIf="editingUser()" class="modal-backdrop" (click)="editingUser.set(null)">
@@ -125,7 +216,6 @@ class="section-tab"
         <option value="">{{ loadingTracks() ? 'טוען מסלולים...' : '— ללא מסלול —' }}</option>
         <option *ngFor="let t of trackNames()" [value]="t">{{ t }}</option>
       </select>
-      <small *ngIf="loadingTracks()" style="color:var(--text-muted);font-size:0.75rem;">⏳ טוען רשימת מסלולים...</small>
     </div>
     <p *ngIf="userError()" class="alert alert-error" style="margin:0 0 8px;">{{ userError() }}</p>
     <div class="modal-actions">
@@ -159,101 +249,6 @@ class="section-tab"
     </div>
   </section>
 </div>
-
-<div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
-<div class="danger-title"> איפוס מסד נתונים (תלמידות)</div>
-<p>
-הפעולה תמחק את כל נתוני התלמידות, המסלולים, הדרישות והמבחנים כדי להתחיל הזנה מהתחלה.
-משתמשות מערכת, הודעות, ציוד והשאלות לא נמחקים.
-</p>
-<button class="btn btn-danger" [disabled]="resettingDb()" (click)="resetDatabase()">
-{{ resettingDb() ? 'מאפסת...' : ' איפוס נתוני תלמידות' }}
-</button>
-<p *ngIf="resetDbMessage()" class="danger-result">{{ resetDbMessage() }}</p>
-</div>
-
-<div class="danger-zone" *ngIf="auth.user()?.role === 'admin'">
-<div class="danger-title"> מחיקת כל המורות</div>
-<p>
-הפעולה תמחק את כל המורות מהמערכת, כולל השיעורים והנוכחות שלהן.
-השימוש נועד רק כאשר רוצים להתחיל מחדש את ניהול המורות.
-</p>
-<button class="btn btn-danger" (click)="deleteAllTeachers()">מחיקת כל המורות</button>
-</div>
-
-<div class="user-form">
-<input [(ngModel)]="newUser.name" placeholder="שם מלא" aria-label="שם מלא">
-<input [(ngModel)]="newUser.email" type="email" placeholder="אימייל" aria-label="אימייל">
-<div class="password-input-wrap" style="flex:1; min-width:120px;">
-  <input [(ngModel)]="newUser.password" [type]="showNewUserPassword() ? 'text' : 'password'" placeholder="סיסמה ראשונית" aria-label="סיסמה ראשונית">
-  <button class="password-visibility" type="button" (click)="showNewUserPassword.update(v => !v)">
-    <svg *ngIf="!showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
-    <svg *ngIf="showNewUserPassword()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
-  </button>
-</div>
-<select [(ngModel)]="newUser.role" aria-label="תפקיד">
-<option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
-</select>
-<button class="btn btn-primary" (click)="createUser()"> יצירת חשבון</button>
-</div>
-<div *ngIf="userError()" class="alert alert-error user-error" role="alert"> {{ userError() }}</div>
-<div *ngIf="passwordMessage()" class="alert alert-success user-error" role="status">{{ passwordMessage() }}</div>
-<div *ngIf="passwordTarget() as target" class="set-password">
-<div class="set-password-heading">
-<div class="password-lock-icon" aria-hidden="true">✦</div>
-<div>
-<h3>קביעת סיסמה חדשה</h3>
-<p>עבור {{ target.name }} · לפחות 12 תווים</p>
-</div>
-</div>
-<label class="password-label" for="new-user-password">סיסמה חדשה</label>
-<div class="password-input-wrap">
-<input id="new-user-password" [type]="showNewPassword() ? 'text' : 'password'" autocomplete="new-password" minlength="12" maxlength="128" required [value]="newPassword()" placeholder="הקלידי סיסמה חדשה" (input)="newPassword.set($any($event.target).value)" (keyup.enter)="savePassword()">
-<button class="password-visibility" type="button" (click)="showNewPassword.update(value => !value)" [attr.aria-label]="showNewPassword() ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'" [attr.aria-pressed]="showNewPassword()" title="{{ showNewPassword() ? 'הסתרת הסיסמה' : 'הצגת הסיסמה' }}">
-<svg *ngIf="!showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
-<svg *ngIf="showNewPassword()" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a15.4 15.4 0 0 1-3.1 3.7M6.2 6.7C3.8 8.2 2.5 12 2.5 12s3.4 6 9.5 6c1.2 0 2.3-.3 3.3-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
-</button>
-</div>
-<div class="password-hint" [class.password-ready]="newPassword().length >= 12">
-<span class="password-hint-mark">{{ newPassword().length >= 12 ? '✓' : 'i' }}</span>
-{{ newPassword().length >= 12 ? 'אורך הסיסמה תקין' : 'הסיסמה צריכה להכיל לפחות 12 תווים' }}
-<span class="password-count">{{ newPassword().length }}/128</span>
-</div>
-<div class="password-actions">
-<button class="btn btn-primary" type="button" [disabled]="newPassword().length < 12 || newPassword().length > 128 || savingPassword()" (click)="savePassword()">{{ savingPassword() ? 'שומרת...' : 'שמירת סיסמה' }}</button>
-<button class="btn btn-secondary" type="button" [disabled]="savingPassword()" (click)="passwordTarget.set(null)">ביטול</button>
-</div>
-</div>
-<div *ngIf="resetResult() as r" class="alert alert-success user-error" role="status">
-סיסמה זמנית עבור <strong>{{ r.name }}</strong>:
-<code class="temp-password">{{ r.password }}</code>
-<br>הסיסמה מוצגת פעם אחת בלבד. העבירי אותה למשתמשת, והיא תתחבר איתה (יש לבקש ממנה להחליף).
-<button class="btn btn-secondary" type="button" (click)="resetResult.set(null)">הסתרה</button>
-</div>
-<div class="user-list">
-<div *ngFor="let user of users()" class="user-row">
-<div class="user-info">
-<strong>{{ user.name }}</strong>
-<span>{{ user.email }} · {{ user.active ? 'פעילה' : 'מושבתת' }}</span>
-<span *ngIf="isCoordinatorRole(user.role) && user.coordinator_track" class="coordinator-track-badge">מסלול: {{ user.coordinator_track }}</span>
-</div>
-<select [ngModel]="user.role" (ngModelChange)="updateUser(user, $event, !!user.active)"
-[disabled]="user.id === auth.user()?.id" aria-label="תפקיד משתמשת">
-<option *ngFor="let role of systemRoles()" [value]="role.role_key">{{ role.name }}</option>
-</select>
-<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startEditUser(user)" title="עריכת פרטים">✏️</button>
-<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="startSetPassword(user)">קביעת סיסמה</button>
-<button class="btn btn-secondary" [disabled]="user.id === auth.user()?.id" (click)="resetPassword(user)">איפוס סיסמה</button>
-<button class="btn" [class.btn-danger]="user.active" [class.btn-secondary]="!user.active"
-[disabled]="user.id === auth.user()?.id"
-(click)="updateUser(user, user.role, !user.active)">
-{{ user.active ? 'השבתה' : 'הפעלה' }}
-</button>
-<button class="btn btn-danger" [disabled]="user.id === auth.user()?.id" (click)="deleteUser(user)" title="מחיקה לצמיתות">🗑</button>
-</div>
-</div>
-</div>
-
 <app-tracks *ngIf="activeSection() === 'tracks'"></app-tracks>
 
 <!-- הוספת תלמידה ידנית — admin ומזכירות בלבד -->
@@ -526,6 +521,11 @@ class="section-tab"
     </div>
   </div>
 
+</div><!-- /teachers -->
+
+<!-- ── טאב מערכת שעות ── -->
+<div *ngIf="activeSection() === 'schedule_admin'" class="teachers-admin">
+
   <div class="card" style="max-width:640px; margin-bottom:16px;">
     <div class="section-title">שנת לימודים ומערכת שעות</div>
     <p class="import-hint">קבעי את היום האחרון ללימודים. שכפול המערכת והשינויים הקבועים יסתיימו בתאריך זה.</p>
@@ -668,7 +668,10 @@ class="section-tab"
     </ul>
   </div>
 
-  <!-- רשימת מורות -->
+</div><!-- /schedule_admin -->
+
+<!-- רשימת מורות — בטאב מורות -->
+<div *ngIf="activeSection() === 'teachers'" class="teachers-admin" style="margin-top:0">
   <div class="card" style="max-width:640px;">
     <div class="section-title-row">
       <div class="section-title" style="margin-bottom:0">
@@ -794,6 +797,10 @@ background: var(--primary-light); color: var(--primary); font-weight: 600;
 .approval-save-error { color: #991b1b; margin-bottom: 10px; }
 code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
 .user-management { max-width: 1000px; margin-bottom: 24px; }
+.users-tab { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; }
+.admin-card { margin-bottom: 0; }
+.btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+.user-row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .danger-zone {
 margin: 0 0 16px;
 padding: 14px;
@@ -1404,14 +1411,16 @@ saveRolePermissions() {
 }
 
 sections(): { id: AdminSection; icon: string; label: string }[] {
-const all: { id: AdminSection; icon: string; label: string; permission: string }[] = [
+const all: { id: AdminSection; icon: string; label: string; permission: string; adminOnly?: boolean }[] = [
 { id: 'tracks', icon: '', label: 'מסלולים', permission: 'tracks' },
 { id: 'students', icon: '', label: 'תלמידות', permission: 'students' },
 { id: 'approvals', icon: '', label: 'סוגי אישורים', permission: 'approvals' },
-{ id: 'teachers', icon: '', label: 'מורות ומערכת', permission: 'teachers' },
-{ id: 'users', icon: '', label: 'משתמשות והרשאות', permission: 'roles' },
+{ id: 'teachers', icon: '', label: 'מורות', permission: 'teachers' },
+{ id: 'schedule_admin', icon: '', label: 'מערכת שעות', permission: 'schedule' },
+{ id: 'users', icon: '', label: 'משתמשות', permission: 'roles', adminOnly: true },
+{ id: 'permissions', icon: '', label: 'הרשאות', permission: 'roles', adminOnly: true },
 ];
-return all.filter(s => s.id === 'users'
+return all.filter(s => s.adminOnly
   ? this.auth.user()?.role === 'admin'
   : this.auth.hasPermission(s.permission));
 }
