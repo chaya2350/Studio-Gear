@@ -6,6 +6,7 @@
 .env.*
 !.env.example
 /backend/requirement-files/
+/backend/backups/
 /backend/certs/
 backend/studio.db
 *.db

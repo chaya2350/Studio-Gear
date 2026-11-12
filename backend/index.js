@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const Database = require('better-sqlite3');
+const cron = require('node-cron');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
 const XLSX = require('xlsx');
@@ -25,13 +26,14 @@ let generatedHolidayRange = '';
 const { collectFutureScheduleOccurrences, scheduleOccurrenceWeeks } = require('./schedule-series');
 const { validateScheduleChange, occurrenceChangeMetadata } = require('./schedule-change');
 const { validateCalendarEventSettings, validateOptionalTimeRange, calendarEventAffectsLesson } = require('./calendar-event-schedule');
-const { initializeRoomMap, registerRoomMapRoutes } = require('./room-map');
-const { initializeRoomBookings, registerRoomBookingRoutes, copyLessonRoom } = require('./room-bookings');
+const { initializeRoomMap, registerRoomMapRoutes, getRoomDefault } = require('./room-map');
+const { initializeRoomBookings, registerRoomBookingRoutes, assignLesson, copyLessonRoom } = require('./room-bookings');
 const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('./track-schedule');
 const { initializeWeddings, updateDueWeddings, registerWedding } = require('./student-weddings');
 const { saveStudentPhoto, clearStudentPhoto } = require('./student-photo');
 const { initializeMessageAttachments, attachmentUpload, insertAttachment, findAttachment } = require('./message-attachments');
 const { initializeMessageReplies, findReplyTarget, editOwnMessage } = require('./message-replies');
+const { createBackup } = require('./backup');
 const { INSTRUCTION_WINDOWS, KODESH_CUTOFFS, validateKodeshSlot } = require('./schedule-availability');
 const {
   PERMISSION_ACTIONS,
@@ -3725,7 +3727,8 @@ registerTrackScheduleRoutes(app, db, {
   getSchoolYearEnd,
   todayInIsrael,
   holidayForDate: schoolHolidayForDate,
-  ensureHolidays: ensureSchoolYearHolidays
+  ensureHolidays: ensureSchoolYearHolidays,
+  getRoomDefault
 });
 
 // Seed default lesson periods if the table is empty
@@ -3814,9 +3817,12 @@ app.get('/api/schedule', async (req, res) => {
   const { week } = req.query;
   const weekStart = week || getWeekStart(new Date().toISOString().split('T')[0]);
   const slots = db.prepare(`
-    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject
+    SELECT s.*, t.name AS teacher_name, t.subject AS teacher_subject,
+      b.room_number, r.name AS room_name
     FROM schedule_slots s
     JOIN teachers t ON t.id = s.teacher_id
+    LEFT JOIN room_lesson_bookings b ON b.slot_id = s.id
+    LEFT JOIN rooms r ON r.number = b.room_number
     WHERE s.week_start = ?
     ORDER BY s.class_year, s.class_parallel, s.day_of_week, s.start_time
   `).all(weekStart).filter(slot =>
@@ -3939,10 +3945,11 @@ function recordScheduleChange({ slot, action, change, fromTeacherId, toTeacherId
 
 app.post('/api/schedule', async (req, res) => {
   await ensureSchoolYearHolidays();
-  const { teacher_id, day_of_week, start_time, end_time, subject, week_start, allow_conflicts } = req.body || {};
+  const { teacher_id, day_of_week, start_time, end_time, subject, week_start, room_number, allow_conflicts } = req.body || {};
   const classes = Array.isArray(req.body?.classes) ? req.body.classes : [{
     class_year: req.body?.class_year,
-    class_parallel: req.body?.class_parallel
+    class_parallel: req.body?.class_parallel,
+    ...(Object.prototype.hasOwnProperty.call(req.body || {}, 'room_number') ? { room_number } : {})
   }];
   if (!teacher_id || day_of_week == null || !start_time || !week_start ||
       !classes.length || classes.some(c => !c?.class_year || !c?.class_parallel)) {
@@ -3963,8 +3970,19 @@ app.post('/api/schedule', async (req, res) => {
   if (new Set(classKeys).size !== classKeys.length) {
     return res.status(400).json({ error: 'כיתה נבחרה יותר מפעם אחת' });
   }
-  const conflicts = new Set();
+  const scheduledClasses = [];
   for (const classInfo of classes) {
+    const rawRoomNumber = Object.prototype.hasOwnProperty.call(classInfo, 'room_number')
+      ? classInfo.room_number
+      : getRoomDefault({ kind: 'class', classYear: String(classInfo.class_year), classParallel: String(classInfo.class_parallel) });
+    const selectedRoom = rawRoomNumber == null || rawRoomNumber === '' ? null : String(rawRoomNumber).trim();
+    if (selectedRoom && !db.prepare('SELECT 1 FROM rooms WHERE number = ? AND usable = 1').get(selectedRoom)) {
+      return res.status(400).json({ error: `החדר שנבחר לכיתה ${classInfo.class_year}${classInfo.class_parallel} אינו זמין לשיבוץ` });
+    }
+    scheduledClasses.push({ ...classInfo, room_number: selectedRoom });
+  }
+  const conflicts = new Set();
+  for (const classInfo of scheduledClasses) {
     for (const targetWeek of weeks) {
       const lessonDate = addDays(targetWeek, Number(day_of_week));
       const schoolHoliday = schoolHolidayForDate(lessonDate);
@@ -4014,7 +4032,7 @@ app.post('/api/schedule', async (req, res) => {
     `);
     const insertAll = db.transaction(() => {
       const ids = [];
-      for (const classInfo of classes) {
+      for (const classInfo of scheduledClasses) {
         const seriesId = randomBytes(12).toString('hex');
         for (const targetWeek of weeks) {
           const result = insertSlot.run(
@@ -4022,6 +4040,12 @@ app.post('/api/schedule', async (req, res) => {
             start_time, end_time || null, subject || null, targetWeek, seriesId,
             null, null, null, null, null
           );
+          if (classInfo.room_number) {
+            assignLesson(db, {
+              id: Number(result.lastInsertRowid), week_start: targetWeek,
+              day_of_week: Number(day_of_week), start_time, end_time
+            }, classInfo.room_number);
+          }
           ids.push(result.lastInsertRowid);
         }
       }
@@ -4030,7 +4054,7 @@ app.post('/api/schedule', async (req, res) => {
     const ids = insertAll();
     res.json({ ids, count: ids.length, weeks: weeks.length });
   } catch {
-    res.status(400).json({ error: 'שמירת השיעור נכשלה' });
+    res.status(409).json({ error: 'שמירת השיעור נכשלה: החדר תפוס או שעות השיעור אינן תקינות' });
   }
 });
 
@@ -4125,6 +4149,13 @@ app.put('/api/schedule/:id', async (req, res) => {
   const current = db.prepare('SELECT * FROM schedule_slots WHERE id=?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'שיעור לא נמצא' });
   if (change.error) return res.status(400).json({ error: change.error });
+  const hasRequestedRoom = Object.prototype.hasOwnProperty.call(req.body || {}, 'room_number');
+  const currentRoom = db.prepare('SELECT room_number FROM room_lesson_bookings WHERE slot_id = ?').get(current.id)?.room_number || null;
+  const requestedRoomNumber = hasRequestedRoom ? req.body.room_number : currentRoom;
+  const selectedRoom = requestedRoomNumber == null || requestedRoomNumber === '' ? null : String(requestedRoomNumber).trim();
+  if (selectedRoom && !db.prepare('SELECT 1 FROM rooms WHERE number = ? AND usable = 1').get(selectedRoom)) {
+    return res.status(400).json({ error: 'החדר שנבחר אינו זמין לשיבוץ' });
+  }
   const { class_year, class_parallel, day_of_week } = current;
   const currentHoliday = schoolHolidayForDate(addDays(current.week_start, Number(day_of_week)));
   if (currentHoliday) return res.status(409).json({ error: `אין לימודים בחג ${currentHoliday.title}` });
@@ -4205,11 +4236,19 @@ app.put('/api/schedule/:id', async (req, res) => {
         occurrenceChange.change_category, occurrenceChange.change_reason,
         occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name
       ).lastInsertRowid;
-      copyLessonRoom(db, current.id, slotId);
+      if (!hasRequestedRoom) copyLessonRoom(db, current.id, slotId);
     } else {
       update.run(teacher_id, start_time, end_time, subject || null, seriesId, occurrenceChange.change_scope,
         occurrenceChange.change_category, occurrenceChange.change_reason,
         occurrenceChange.change_from_teacher_id, occurrenceChange.change_from_teacher_name, target.id);
+    }
+    if (selectedRoom) {
+      assignLesson(db, {
+        id: Number(slotId), week_start: target.week_start, day_of_week: target.day_of_week,
+        start_time, end_time
+      }, selectedRoom);
+    } else {
+      db.prepare('DELETE FROM room_lesson_bookings WHERE slot_id = ?').run(slotId);
     }
     recordScheduleChange({
       slot: { ...target, id: slotId, series_id: seriesId, start_time, end_time, subject },
@@ -5019,6 +5058,22 @@ app.get('/api/notifications', (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
+let backupInProgress = false;
+async function runBackup() {
+  if (backupInProgress) return;
+  backupInProgress = true;
+  try {
+    const result = await createBackup({ db, dataDir });
+    if (result.created) console.log(`Daily backup created: ${result.path}`);
+  } catch (error) {
+    console.error('Daily backup failed:', error);
+  } finally {
+    backupInProgress = false;
+  }
+}
+runBackup();
+cron.schedule('0 2 * * *', runBackup, { timezone: 'Asia/Jerusalem' });
+
 const keyFile = path.join(certDirForCheck, 'key.pem');
 const certFile = path.join(certDirForCheck, 'cert.pem');
 if (useHttps) {

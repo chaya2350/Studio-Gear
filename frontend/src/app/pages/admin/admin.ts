@@ -541,6 +541,44 @@ class="section-tab"
     <div *ngIf="schoolYearEndError()" class="import-status error">{{ schoolYearEndError() }}</div>
   </div>
 
+  <div *ngIf="auth.user()?.role === 'admin'" class="card room-defaults-card">
+    <div class="section-title">חדרי ברירת מחדל למערכות שעות</div>
+    <p class="import-hint">השיעורים יקבלו את החדר שהוגדר לכיתה או למסלול ולשנה. אפשר לבחור חדר אחר בכל שיעור.</p>
+    <p *ngIf="roomDefaultsLoading()" class="import-hint">טוען כיתות, מסלולים וחדרים...</p>
+    <p *ngIf="roomDefaultsError()" class="import-status error" role="alert">{{ roomDefaultsError() }}</p>
+    <p *ngIf="roomDefaultsMessage()" class="import-status success" role="status">{{ roomDefaultsMessage() }}</p>
+    <div *ngIf="!roomDefaultsLoading()" class="room-defaults-grid">
+      <section class="room-default-group">
+        <h3>מערכת קודש · לפי כיתה</h3>
+        <div *ngFor="let row of roomDefaultClasses()" class="room-default-row">
+          <strong>כיתה {{ row.class_year }}{{ row.class_parallel }}</strong>
+          <select [ngModel]="classRoomDefaultValue(row.class_year, row.class_parallel)"
+                  (ngModelChange)="saveClassRoomDefault(row.class_year, row.class_parallel, $event)"
+                  [disabled]="savingRoomDefault() === classRoomDefaultKey(row.class_year, row.class_parallel)"
+                  [attr.aria-label]="'חדר ברירת מחדל לכיתה ' + row.class_year + row.class_parallel">
+            <option [ngValue]="null">ללא ברירת מחדל</option>
+            <option *ngFor="let room of roomDefaultRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+          </select>
+        </div>
+        <p *ngIf="!roomDefaultClasses().length" class="import-hint">לא נמצאו כיתות.</p>
+      </section>
+      <section class="room-default-group">
+        <h3>מערכת מסלולים · לפי מסלול ושנה</h3>
+        <div *ngFor="let row of trackRoomDefaultRows()" class="room-default-row">
+          <strong>{{ row.track_name }} · שנה {{ row.study_year }}׳</strong>
+          <select [ngModel]="trackRoomDefaultValue(row.track_id, row.study_year)"
+                  (ngModelChange)="saveTrackRoomDefault(row.track_id, row.study_year, $event)"
+                  [disabled]="savingRoomDefault() === trackRoomDefaultKey(row.track_id, row.study_year)"
+                  [attr.aria-label]="'חדר ברירת מחדל ל' + row.track_name + ' שנה ' + row.study_year">
+            <option [ngValue]="null">ללא ברירת מחדל</option>
+            <option *ngFor="let room of roomDefaultRooms()" [ngValue]="room.number">{{ room.number }} · {{ room.name }}</option>
+          </select>
+        </div>
+        <p *ngIf="!trackRoomDefaultRows().length" class="import-hint">לא נמצאו מסלולים.</p>
+      </section>
+    </div>
+  </div>
+
   <!-- ניהול שעות שיעורים -->
   <div class="card" style="max-width:640px; margin-bottom:16px;">
     <div class="section-title">ניהול שעות שיעורים</div>
@@ -685,6 +723,12 @@ background: var(--surface-2);
 .period-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
 .period-row.is-break { background: #fef9c3; border-radius: 6px; padding: 6px 8px; }
 .period-form .admin-input { width: auto; }
+.room-defaults-card { max-width: 900px; margin-bottom: 16px; }
+.room-defaults-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.room-default-group h3 { margin: 0 0 10px; font-size: .95rem; }
+.room-default-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.2fr); align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); }
+.room-default-row strong { font-size: .85rem; }
+.room-default-row select { min-width: 0; width: 100%; }
 .period-time { font-weight: 600; min-width: 110px; direction: ltr; text-align: right; }
 .period-name { flex: 1; }
 .period-break { display: flex; gap: 4px; align-items: center; }
@@ -1029,12 +1073,94 @@ if (auth.user()?.role === 'admin') {
 this.loadTeachers();
 this.loadPeriods();
 this.loadSchoolYearEnd();
+if (auth.user()?.role === 'admin') this.loadRoomDefaults();
 }
 
 loadSchoolYearEnd() {
   this.api.getScheduleYearEnd().subscribe({
     next: result => this.schoolYearEndDate = result.through_date,
     error: () => {}
+  });
+}
+
+loadRoomDefaults() {
+  this.roomDefaultsLoading.set(true);
+  this.roomDefaultsError.set('');
+  this.api.getScheduleRoomDefaults().subscribe({
+    next: result => {
+      this.roomDefaultRooms.set(result.rooms);
+      this.roomDefaultClasses.set(result.classes);
+      this.roomDefaultTracks.set(result.tracks);
+      this.classRoomDefaults.set(Object.fromEntries(result.class_defaults.map(item => [
+        this.classRoomDefaultKey(item.class_year, item.class_parallel), item.room_number
+      ])));
+      this.trackRoomDefaults.set(Object.fromEntries(result.track_defaults.map(item => [
+        this.trackRoomDefaultKey(item.track_id, item.study_year), item.room_number
+      ])));
+      this.roomDefaultsLoading.set(false);
+    },
+    error: error => {
+      this.roomDefaultsLoading.set(false);
+      this.roomDefaultsError.set(error.error?.error || 'טעינת ברירות המחדל לחדרים נכשלה');
+    }
+  });
+}
+
+classRoomDefaultKey(classYear: string, classParallel: string) {
+  return `${classYear}_${classParallel}`;
+}
+
+trackRoomDefaultKey(trackId: number, studyYear: string) {
+  return `${trackId}_${studyYear}`;
+}
+
+classRoomDefaultValue(classYear: string, classParallel: string) {
+  return this.classRoomDefaults()[this.classRoomDefaultKey(classYear, classParallel)] || null;
+}
+
+trackRoomDefaultValue(trackId: number, studyYear: string) {
+  return this.trackRoomDefaults()[this.trackRoomDefaultKey(trackId, studyYear)] || null;
+}
+
+trackRoomDefaultRows() {
+  return this.roomDefaultTracks().flatMap(track => ['ה', 'ו'].map(studyYear => ({
+    track_id: track.id, track_name: track.name, study_year: studyYear
+  })));
+}
+
+saveClassRoomDefault(classYear: string, classParallel: string, roomNumber: string | null) {
+  const key = this.classRoomDefaultKey(classYear, classParallel);
+  this.classRoomDefaults.update(defaults => ({ ...defaults, [key]: roomNumber || '' }));
+  this.saveRoomDefault(key, {
+    kind: 'class', class_year: classYear, class_parallel: classParallel, room_number: roomNumber
+  });
+}
+
+saveTrackRoomDefault(trackId: number, studyYear: string, roomNumber: string | null) {
+  const key = this.trackRoomDefaultKey(trackId, studyYear);
+  this.trackRoomDefaults.update(defaults => ({ ...defaults, [key]: roomNumber || '' }));
+  this.saveRoomDefault(key, {
+    kind: 'track', track_id: trackId, study_year: studyYear, room_number: roomNumber
+  });
+}
+
+private saveRoomDefault(key: string, data: {
+  kind: 'class' | 'track'; class_year?: string; class_parallel?: string;
+  track_id?: number; study_year?: string; room_number: string | null;
+}) {
+  this.savingRoomDefault.set(key);
+  this.roomDefaultsMessage.set('');
+  this.roomDefaultsError.set('');
+  this.api.updateScheduleRoomDefault(data).subscribe({
+    next: () => {
+      this.savingRoomDefault.set('');
+      this.roomDefaultsMessage.set('ברירת המחדל נשמרה');
+    },
+    error: error => {
+      this.savingRoomDefault.set('');
+      this.roomDefaultsError.set(error.error?.error || 'שמירת ברירת המחדל נכשלה');
+      this.loadRoomDefaults();
+    }
   });
 }
 
@@ -1441,6 +1567,15 @@ schoolYearEndDate = '2027-08-31';
 savingSchoolYearEnd = signal(false);
 schoolYearEndMessage = signal('');
 schoolYearEndError = signal('');
+roomDefaultRooms = signal<{ number: string; name: string }[]>([]);
+roomDefaultClasses = signal<{ class_year: string; class_parallel: string }[]>([]);
+roomDefaultTracks = signal<{ id: number; name: string }[]>([]);
+classRoomDefaults = signal<Record<string, string>>({});
+trackRoomDefaults = signal<Record<string, string>>({});
+roomDefaultsLoading = signal(true);
+savingRoomDefault = signal('');
+roomDefaultsMessage = signal('');
+roomDefaultsError = signal('');
 
 periods = signal<any[]>([]);
 editingPeriodId = signal(0);
