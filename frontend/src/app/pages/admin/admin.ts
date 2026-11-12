@@ -323,12 +323,13 @@ class="section-tab"
       <span *ngIf="promoting()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
       <ng-container *ngIf="!promoting()">העלאת שנה</ng-container>
     </button>
-    <button *ngIf="canUndoPromotion()" class="btn btn-secondary" type="button"
-            [disabled]="undoingPromotion() || promoting()"
-            [attr.aria-label]="undoingPromotion() ? 'מבטלת העלאת שנה' : 'ביטול העלאת שנה'" (click)="undoYearPromotion()">
+    <button class="btn btn-secondary" type="button"
+            [disabled]="!canUndoPromotion() || undoingPromotion() || promoting()"
+            [attr.aria-label]="undoingPromotion() ? 'מחזירה את השנה לאחור' : 'החזרת שנה לאחור'" (click)="undoYearPromotion()">
       <span *ngIf="undoingPromotion()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-      <ng-container *ngIf="!undoingPromotion()">ביטול העלאת שנה</ng-container>
+      <ng-container *ngIf="!undoingPromotion()">החזרת שנה לאחור</ng-container>
     </button>
+    <small *ngIf="!canUndoPromotion()">הכפתור יופעל לאחר העלאת שנה.</small>
   </div>
   <div *ngIf="promotionMessage()" class="alert alert-success" role="status">{{ promotionMessage() }}</div>
   <div *ngIf="promotionError()" class="alert alert-error" role="alert">{{ promotionError() }}</div>
@@ -489,6 +490,20 @@ class="section-tab"
 </div>
 </div>
 
+<div *ngIf="activeSection() === 'students' && canDeleteAllStudents()" class="card admin-card admin-danger-card">
+  <div>
+    <div class="section-title">פעולות בלתי הפיכות</div>
+    <p class="user-help">מחיקת כל התלמידות תמחק גם מסלולים, דרישות ומבחנים. תידרש הקלדת אישור מפורש.</p>
+  </div>
+  <div *ngIf="resetDbMessage()" class="alert" [class.alert-success]="!resetDbError()" [class.alert-error]="resetDbError()" role="status">
+    {{ resetDbMessage() }}
+  </div>
+  <button class="btn btn-danger" type="button" [disabled]="resettingDb()" (click)="resetDatabase()">
+    <span *ngIf="resettingDb()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <ng-container *ngIf="!resettingDb()">מחיקת כל התלמידות והנתונים</ng-container>
+  </button>
+</div>
+
 <!-- ניהול סוגי אישורים -->
 <div *ngIf="activeSection() === 'approvals'" class="card" style="max-width:760px;">
 <div class="section-title"> ניהול סוגי אישורים</div>
@@ -608,6 +623,21 @@ class="section-tab"
       <span *ngIf="teacherImportResult()!.skipped">({{ teacherImportResult()!.skipped }} קיימות / דולגו)</span>
     </div>
   </div>
+
+    <div *ngIf="canDeleteAllTeachers()" class="card admin-card admin-danger-card">
+      <div>
+        <div class="section-title">מחיקת כל המורות</div>
+        <p class="user-help">הפעולה תמחק את כל המורות, השיעורים ורישומי הנוכחות שלהן. תידרש הקלדת אישור מפורש.</p>
+      </div>
+      <div *ngIf="deleteAllTeachersMessage()" class="alert"
+           [class.alert-success]="!deleteAllTeachersError()" [class.alert-error]="deleteAllTeachersError()" role="status">
+        {{ deleteAllTeachersMessage() }}
+      </div>
+      <button class="btn btn-danger" type="button" [disabled]="deletingAllTeachers()" (click)="deleteAllTeachers()">
+        <span *ngIf="deletingAllTeachers()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <ng-container *ngIf="!deletingAllTeachers()">מחיקת כל המורות</ng-container>
+      </button>
+    </div>
 
 </div><!-- /teachers -->
 
@@ -1125,6 +1155,10 @@ savingApproval = signal(false);
 section = signal<AdminSection | null>(null);
 resettingDb = signal(false);
 resetDbMessage = signal('');
+resetDbError = signal(false);
+deletingAllTeachers = signal(false);
+deleteAllTeachersMessage = signal('');
+deleteAllTeachersError = signal(false);
 typedConfirmation = signal<{ expected: string; description: string; action: () => void; confirmLabel: string } | null>(null);
 typedConfirmationInput = signal('');
 
@@ -1151,6 +1185,14 @@ canAddStudent() {
 
 canPromoteStudents() {
   return this.auth.hasPermission('students', 'create') && this.auth.hasPermission('students', 'edit');
+}
+
+canDeleteAllStudents() {
+  return this.auth.hasPermission('students', 'delete');
+}
+
+canDeleteAllTeachers() {
+  return this.auth.hasPermission('teachers', 'delete');
 }
 
 openSection(section: AdminSection) {
@@ -1842,6 +1884,7 @@ error: error => this.userError.set(error.error?.error || 'לא ניתן לאפס
 
 resetDatabase() {
 this.resetDbMessage.set('');
+this.resetDbError.set(false);
 this.requestTypedConfirmation('מחיקת כל התלמידות', 'מחיקת נתוני התלמידות, המסלולים, הדרישות והמבחנים', () => {
   this.resetDatabaseConfirmed();
 });
@@ -1853,10 +1896,12 @@ this.api.resetDatabase().subscribe({
 next: (result) => {
 this.resettingDb.set(false);
 this.loadTotal();
+this.resetDbError.set(false);
 this.resetDbMessage.set(`${result.message} (נמחקו תלמידות: ${result.cleared['students']}, מסלולים: ${result.cleared['tracks']}, מבחנים: ${result.cleared['exams']})`);
 },
 error: (error) => {
 this.resettingDb.set(false);
+this.resetDbError.set(true);
 this.resetDbMessage.set(error.error?.error || 'איפוס מסד הנתונים נכשל');
 }
 });
@@ -2037,15 +2082,26 @@ deleteTeacher(id: number) {
 }
 
 deleteAllTeachers() {
+  this.deleteAllTeachersMessage.set('');
+  this.deleteAllTeachersError.set(false);
   this.requestTypedConfirmation('מחיקת כל המורות', 'מחיקת כל המורות, השיעורים והנוכחות שלהן', () => {
     this.deleteAllTeachersConfirmed();
   });
 }
 
 private deleteAllTeachersConfirmed() {
+  this.deletingAllTeachers.set(true);
   this.api.deleteAllTeachers().subscribe({
-    next: () => this.loadTeachers(),
-    error: e => alert(e.error?.error || 'שגיאה במחיקת המורות')
+    next: result => {
+      this.deletingAllTeachers.set(false);
+      this.deleteAllTeachersMessage.set(`המחיקה הושלמה. נמחקו ${result.deleted} מורות.`);
+      this.loadTeachers();
+    },
+    error: e => {
+      this.deletingAllTeachers.set(false);
+      this.deleteAllTeachersError.set(true);
+      this.deleteAllTeachersMessage.set(e.error?.error || 'שגיאה במחיקת המורות');
+    }
   });
 }
 

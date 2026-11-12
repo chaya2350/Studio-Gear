@@ -29,6 +29,9 @@ export class WorkspaceService {
   getNotes(type: 'student' | 'equipment', id: string | number) {
     return this.http.get<StaffNote[]>('/api/notes', { params: { item_type: type, item_id: String(id) } });
   }
+  getStudentActivity(id: string | number) {
+    return this.http.get<ActivityItem[]>(`/api/students/${encodeURIComponent(String(id))}/activity`);
+  }
   addNote(type: 'student' | 'equipment', id: string | number, body: string) {
     return this.http.post<{ id: number }>('/api/notes', { item_type: type, item_id: String(id), body });
   }

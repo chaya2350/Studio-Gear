@@ -279,4 +279,83 @@ function buildClassReport(students, exams, gradesByExam, className) {
   return { class_name: normalizedClass, year, parallel, columns, rows: studentsWithGrades, exams: filteredExams, students: studentsWithGrades };
 }
 
-module.exports = { buildTrackReport, buildClassReport, buildClassName, splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey };
+function buildScopedStudentReport(students, exams, gradesByExam, options) {
+  const scope = options.scope;
+  const normalizedClass = normalizeClassValue(options.className || '');
+  const classParts = parseClassParts(normalizedClass);
+  const track = displayTrackName(options.track || '');
+  const activeStudents = (students || []).filter(student => {
+    const year = normalizeYear(student?.year);
+    if (!year || year === 'בוגרות') return false;
+    if (scope === 'class') {
+      const extra = parseExtraData(student?.extra_data);
+      const parallelEntry = Object.entries(extra).find(([key]) => {
+        const normalizedKey = String(key || '').replace(/\s+/g, '').toLowerCase();
+        return normalizedKey.includes('מקב') || normalizedKey.includes('parallel') || normalizedKey.includes('קבוצה');
+      });
+      return year === normalizeYear(classParts.year) &&
+        (!classParts.parallel || normalizeParallelValue(student.parallel || parallelEntry?.[1]) === normalizeParallelValue(classParts.parallel));
+    }
+    if (scope === 'track') return studentHasTrack(student?.track, track);
+    return scope === 'school';
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'he'));
+
+  const validExams = (exams || []).filter(exam => {
+    if (scope === 'class') return !exam.year || normalizeYear(exam.year) === normalizeYear(classParts.year);
+    if (scope === 'track') return studentHasTrack(exam.track, track);
+    return scope === 'school';
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'he'));
+
+  const safeExams = validExams.map(({ id, name, year }) => ({ id, name, year }));
+  const rows = activeStudents.map(student => {
+    const extra = parseExtraData(student?.extra_data);
+    const parallelEntry = Object.entries(extra).find(([key]) => {
+      const normalizedKey = String(key || '').replace(/\s+/g, '').toLowerCase();
+      return normalizedKey.includes('מקב') || normalizedKey.includes('parallel') || normalizedKey.includes('קבוצה');
+    });
+    const row = {
+      name: student.name || '',
+      class_name: buildClassName(student.year, student.parallel || parallelEntry?.[1]),
+      track: splitTrackValues(student.track).join(' / ')
+    };
+    if (options.includeProfileData) {
+      row.id_number = student.id_number || '';
+      row.photo_url = student.photo_url || '';
+    }
+    for (const exam of safeExams) row[`exam_${exam.id}`] = gradesByExam?.[exam.id]?.[student.id_number] ?? '';
+    return row;
+  });
+
+  return {
+    scope,
+    class_name: scope === 'class' ? normalizedClass : '',
+    track: scope === 'track' ? track : '',
+    count: rows.length,
+    rows,
+    exams: safeExams
+  };
+}
+
+function minimizeClassReport(report) {
+  const exams = (report.exams || []).map(({ id, name, year }) => ({ id, name, year }));
+  const rows = (report.rows || []).map(row => {
+    const safeRow = { name: row.name || '' };
+    for (const exam of exams) safeRow[`exam_${exam.id}`] = row[`exam_${exam.id}`] ?? '';
+    return safeRow;
+  });
+  return {
+    class_name: report.class_name,
+    year: report.year,
+    columns: [
+      { key: 'name', label: 'שם' },
+      ...exams.map(exam => ({ key: `exam_${exam.id}`, label: exam.name || 'מבחן' }))
+    ],
+    rows,
+    exams
+  };
+}
+
+module.exports = {
+  buildTrackReport, buildClassReport, buildScopedStudentReport, minimizeClassReport, buildClassName,
+  splitTrackValues, studentHasTrack, resolveStudentTrackIds, displayTrackName, normalizeTrackKey
+};

@@ -116,6 +116,18 @@ import { filter, takeUntil } from 'rxjs/operators';
             <line x1="18.36" y1="5.64"  x2="19.78" y2="4.22"/>
           </svg>
         </button>
+        <div class="accent-control">
+          <button class="icon-btn accent-trigger" type="button" (click)="accentPickerOpen = !accentPickerOpen"
+                  title="בחירת צבע לאתר" aria-label="בחירת צבע לאתר" [attr.aria-expanded]="accentPickerOpen">
+            <span class="accent-preview" [style.background]="selectedAccent().gradient"></span>
+          </button>
+          <div *ngIf="accentPickerOpen" class="accent-picker" role="group" aria-label="צבעי אתר">
+            <button *ngFor="let accent of accentPresets" type="button" (click)="setAccent(accent)"
+                    [attr.aria-label]="'בחירת צבע ' + accent.label" [title]="accent.label">
+              <span [style.background]="accent.gradient"></span>
+            </button>
+          </div>
+        </div>
 
         <!-- Notifications -->
         <button class="icon-btn notif-btn" (click)="toggleNotifications(); $event.stopPropagation()"
@@ -327,6 +339,12 @@ import { filter, takeUntil } from 'rxjs/operators';
             </svg>
             <span>מסד נתונים</span>
           </a>
+          <a *ngIf="auth.hasPermission('reports')" routerLink="/reports" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'דוחות' : ''" (click)="clearSearch()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 6-7"/>
+            </svg>
+            <span>דוחות</span>
+          </a>
           <a *ngIf="auth.hasPermission('admin_panel')" routerLink="/admin" routerLinkActive="active" class="sidebar-item" [title]="sidebarCollapsed ? 'ניהול מערכת' : ''" (click)="clearSearch()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"/>
@@ -498,6 +516,19 @@ import { filter, takeUntil } from 'rxjs/operators';
         &:hover { color: var(--text); }
       }
     }
+
+    .accent-control { position:relative; flex-shrink:0; }
+    .accent-trigger { position:relative; }
+    .accent-preview { width:17px; height:17px; border-radius:50%; display:block; border:2px solid var(--surface); box-shadow:0 0 0 1px var(--border); }
+    .accent-picker {
+      position:absolute; top:calc(100% + 8px); right:0; z-index:320; display:grid;
+      grid-template-columns:repeat(4,34px); gap:8px;
+      padding:10px; border:1px solid var(--border); border-radius:14px; background:var(--surface);
+      box-shadow:var(--shadow-lg);
+    }
+    .accent-picker button { width:34px; height:34px; border:1px solid var(--border); border-radius:50%; padding:5px; background:var(--surface); cursor:pointer; }
+    .accent-picker button:hover,.accent-picker button:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+    .accent-picker button span { display:block; width:100%; height:100%; border-radius:50%; }
 
     .search-results {
       position: absolute;
@@ -947,7 +978,19 @@ export class App implements OnInit {
   searchQuery = '';
   searchResults: { students: any[]; equipment: any[]; examCodes: any[]; teachers: any[]; pages: any[]; calendarEvents: any[]; exams: any[] } | null = null;
   private searchTimer: any;
-
+  accentPickerOpen = false;
+  readonly accentPresets = [
+    { id: 'turquoise', label: 'טורקיז', color: '#0d9488', light: 'rgba(13,148,136,.1)', glow: 'rgba(13,148,136,.18)', gradient: 'linear-gradient(135deg,#0d9488,#0891b2)' },
+    { id: 'blue', label: 'כחול', color: '#2563eb', light: 'rgba(37,99,235,.1)', glow: 'rgba(37,99,235,.18)', gradient: 'linear-gradient(135deg,#2563eb,#06b6d4)' },
+    { id: 'purple', label: 'סגול', color: '#7c3aed', light: 'rgba(124,58,237,.1)', glow: 'rgba(124,58,237,.18)', gradient: 'linear-gradient(135deg,#7c3aed,#c026d3)' },
+    { id: 'rose', label: 'ורוד', color: '#e11d48', light: 'rgba(225,29,72,.1)', glow: 'rgba(225,29,72,.18)', gradient: 'linear-gradient(135deg,#e11d48,#f97316)' },
+    { id: 'emerald', label: 'ירוק', color: '#059669', light: 'rgba(5,150,105,.1)', glow: 'rgba(5,150,105,.18)', gradient: 'linear-gradient(135deg,#059669,#34d399)' },
+    { id: 'orange', label: 'כתום', color: '#ea580c', light: 'rgba(234,88,12,.1)', glow: 'rgba(234,88,12,.18)', gradient: 'linear-gradient(135deg,#ea580c,#f59e0b)' },
+    { id: 'indigo', label: 'אינדיגו', color: '#4f46e5', light: 'rgba(79,70,229,.1)', glow: 'rgba(79,70,229,.18)', gradient: 'linear-gradient(135deg,#4f46e5,#8b5cf6)' },
+    { id: 'sky', label: 'תכלת', color: '#0284c7', light: 'rgba(2,132,199,.1)', glow: 'rgba(2,132,199,.18)', gradient: 'linear-gradient(135deg,#0284c7,#38bdf8)' },
+    { id: 'amber', label: 'ענבר', color: '#b45309', light: 'rgba(180,83,9,.1)', glow: 'rgba(180,83,9,.18)', gradient: 'linear-gradient(135deg,#b45309,#fbbf24)' },
+    { id: 'fuchsia', label: 'פוקסיה', color: '#c026d3', light: 'rgba(192,38,211,.1)', glow: 'rgba(192,38,211,.18)', gradient: 'linear-gradient(135deg,#c026d3,#e879f9)' },
+  ];
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;
     localStorage.setItem('sidebarCollapsed', this.sidebarCollapsed ? '1' : '0');
@@ -990,6 +1033,40 @@ export class App implements OnInit {
 
   clearSearch() { this.searchQuery = ''; this.searchResults = null; }
 
+  selectedAccent() {
+    try {
+      const saved = localStorage.getItem(`theme-accent:${this.auth.user()?.id ?? 'guest'}`);
+      return this.accentPresets.find(accent => accent.id === saved) || this.accentPresets[0];
+    } catch {
+      return this.accentPresets[0];
+    }
+  }
+
+  setAccent(accent: typeof this.accentPresets[number]) {
+    this.applyAccent(accent);
+    try { localStorage.setItem(`theme-accent:${this.auth.user()?.id ?? 'guest'}`, accent.id); }
+    catch { console.warn('Unable to save color preference'); }
+    this.accentPickerOpen = false;
+  }
+
+  private applyAccent(accent: typeof this.accentPresets[number]) {
+    const root = document.documentElement.style;
+    root.setProperty('--primary', accent.color);
+    root.setProperty('--primary-light', accent.light);
+    root.setProperty('--primary-glow', accent.glow);
+    root.setProperty('--grad-primary', accent.gradient);
+  }
+
+  private restoreAccent(userId: number) {
+    try {
+      const saved = localStorage.getItem(`theme-accent:${userId}`);
+      const accent = this.accentPresets.find(item => item.id === saved);
+      this.applyAccent(accent || this.accentPresets[0]);
+    } catch {
+      this.applyAccent(this.accentPresets[0]);
+    }
+  }
+
   isDark() { return document.documentElement.classList.contains('dark'); }
 
   toggleDarkMode() {
@@ -1025,6 +1102,7 @@ export class App implements OnInit {
     effect(() => {
       const user = this.auth.user();
       if (user) {
+        this.restoreAccent(user.id);
         this.refreshUnreadMessages();
         this.api.getApprovalTypes().subscribe((t) => {
           if (this.auth.user()) this.approvalTypes = t;
