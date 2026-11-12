@@ -113,6 +113,15 @@ interface TrackScheduleSlot {
                      [style.height.px]="timelineItemHeight(period.start_time, period.end_time)">
                   {{ periodAvailability(dayIndex, period) === 'kodesh' ? 'קודש' : 'הוראה' }}
                 </div>
+                <button *ngFor="let period of addablePeriods(dayIndex)" type="button"
+                        class="timeline-add-slot no-print"
+                        [style.top.px]="timelineItemPosition(period.start_time)"
+                        [style.height.px]="timelineItemHeight(period.start_time, period.end_time)"
+                        [attr.aria-label]="'הוספת שיעור ביום ' + days[dayIndex] + ' בשעה ' + period.start_time"
+                        [title]="'הוספת שיעור · ' + period.name + ' · יום ' + days[dayIndex]"
+                        (click)="openAdd(dayIndex, period)">
+                  <span aria-hidden="true">+</span>
+                </button>
                 <article *ngFor="let slot of slotsForDay(dayIndex)"
                          class="lesson-card"
                          [style.top.px]="timelineItemPosition(slot.start_time)"
@@ -227,6 +236,8 @@ interface TrackScheduleSlot {
     .timeline-gridline { position: absolute; right: 0; left: 0; z-index: 0; border-top: 1px solid var(--border); pointer-events: none; }
     .timeline-blocked { position: absolute; right: 2px; left: 2px; z-index: 1; box-sizing: border-box; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); font-size: .72rem; opacity: .8; pointer-events: none; }
     .blocked-instruction { background: var(--primary-light); }
+    .timeline-add-slot { position: absolute; right: 4px; left: 4px; z-index: 1; display: grid; place-items: center; min-height: 28px; padding: 2px 6px; border: 1px dashed var(--primary); border-radius: 6px; background: var(--surface); color: var(--primary); opacity: .28; cursor: pointer; font: inherit; font-size: 1.15rem; font-weight: 800; }
+    .timeline-add-slot:hover, .timeline-add-slot:focus-visible { z-index: 3; background: var(--primary-light); opacity: 1; outline: 2px solid var(--primary); outline-offset: 1px; }
     .lesson-card { position: absolute; right: 4px; left: 4px; z-index: 2; box-sizing: border-box; display: grid; align-content: start; gap: 1px; overflow: hidden; padding: 4px 6px; border: 1px solid var(--primary); border-radius: 8px; background: var(--surface); color: var(--text); text-align: right; }
     .lesson-card strong, .lesson-card > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lesson-card strong { color: var(--primary); font-size: .8rem; line-height: 1.2; }
@@ -270,7 +281,7 @@ export class TrackScheduleComponent implements OnInit {
   private readonly pixelsPerMinute = 1.8;
   private readonly defaultAvailability: ScheduleAvailabilityMap = { kodesh: {}, instruction: {} };
   tracks = signal<{ id: number; name: string; years: { year: string; student_count: number }[] }[]>([]);
-  teachers = signal<{ id: number; name: string; subject: string | null; specialization: string | null }[]>([]);
+  teachers = signal<{ id: number; name: string; subject: string | null; specialization: string | null; track_ids: number[] }[]>([]);
   periods = signal<{ id: number; name: string; start_time: string; end_time: string; is_break?: number }[]>([]);
   roomDefaults = signal<{ track_id: number; study_year: string; room_number: string }[]>([]);
   selectableTracks = computed(() => this.tracks().filter(track =>
@@ -338,9 +349,8 @@ export class TrackScheduleComponent implements OnInit {
     return track?.years || [];
   });
   trackTeachers = computed(() => {
-    const track = this.selectableTracks().find(item => item.id === this.selectedTrackId());
-    const trackName = String(track?.name || '').trim();
-    return this.teachers().filter(teacher => String(teacher.specialization || '').trim() === trackName);
+    const trackId = this.selectedTrackId();
+    return this.teachers().filter(teacher => teacher.track_ids.includes(trackId ?? -1));
   });
 
   constructor(private api: ApiService) {}
@@ -424,6 +434,15 @@ export class TrackScheduleComponent implements OnInit {
 
   unavailablePeriods(day: number) {
     return this.lessonPeriods().filter(period => this.periodAvailability(day, period) !== 'track');
+  }
+
+  addablePeriods(day: number) {
+    return this.lessonPeriods().filter(period =>
+      this.periodAvailability(day, period) === 'track' &&
+      !this.slotsForDay(day).some(slot =>
+        slot.start_time < period.end_time && slot.end_time > period.start_time
+      )
+    );
   }
 
   timelineHeight() {

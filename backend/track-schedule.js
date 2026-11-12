@@ -4,6 +4,33 @@ const { findConflict, validTime } = require('./room-bookings');
 
 const STUDY_YEARS = ['ה', 'ו'];
 const DAYS = [0, 1, 2, 3, 4];
+const SPECIALIZATION_ALIASES = new Map([
+  ['מת', 'מתמטיקה'],
+  ['מתמטיקה', 'מתמטיקה'],
+  ['ספורט', 'ספורטטיפולי'],
+  ['ספורטטיפולי', 'ספורטטיפולי'],
+  ['חנמ', 'חינוךמיוחד'],
+  ['חנם', 'חינוךמיוחד'],
+  ['חינוךמיוחד', 'חינוךמיוחד'],
+  ['תכנות', 'הנדסאים'],
+  ['הנדסאים', 'הנדסאים'],
+  ['רוח', 'ראייתחשבון'],
+  ['ראייתחשבון', 'ראייתחשבון']
+]);
+
+function normalizeTrackSpecialization(value) {
+  const compact = String(value || '').normalize('NFKC').toLocaleLowerCase('he')
+    .replace(/[\s\-־.'"׳״`]/g, '');
+  return SPECIALIZATION_ALIASES.get(compact) || compact;
+}
+
+function teacherMatchesTrack(specialization, trackNames) {
+  const teacherSpecializations = String(specialization || '').split(/[;,،]/)
+    .map(normalizeTrackSpecialization).filter(Boolean);
+  return teacherSpecializations.some(teacherSpecialization => trackNames.some(name =>
+    normalizeTrackSpecialization(name) === teacherSpecialization
+  ));
+}
 
 function initializeTrackSchedule(db) {
   db.exec(`
@@ -141,7 +168,7 @@ function prepareInput(db, input) {
   }
   const teacher = db.prepare('SELECT id, specialization FROM teachers WHERE id = ? AND active = 1').get(value.teacherId);
   if (!teacher) return { error: 'יש לבחור מורה פעילה' };
-  if (String(teacher.specialization || '').trim() !== String(track.name).trim()) {
+  if (!teacherMatchesTrack(teacher.specialization, getTrackAliases(db, value.trackId) || [])) {
     return { error: `יש לבחור מורה שתחום ההתמחות שלה הוא ${track.name}` };
   }
   if (value.roomNumber) {
@@ -237,9 +264,16 @@ function registerTrackScheduleRoutes(app, db, {
 }) {
   app.get('/api/track-schedules', (req, res) => {
     const tracks = studentTrackCounts(db);
+    const activeTracks = db.prepare('SELECT id FROM tracks WHERE merged_into IS NULL').all()
+      .map(track => ({ id: track.id, aliases: getTrackAliases(db, track.id) || [] }));
     const teachers = db.prepare(`
       SELECT id, name, subject, specialization FROM teachers WHERE active = 1 ORDER BY name COLLATE NOCASE
-    `).all();
+    `).all().map(teacher => ({
+      ...teacher,
+      track_ids: activeTracks.filter(track =>
+        teacherMatchesTrack(teacher.specialization, track.aliases)
+      ).map(track => track.id)
+    }));
     const periods = db.prepare('SELECT id, name, start_time, end_time, is_break FROM lesson_periods ORDER BY start_time, id').all();
     const rooms = db.prepare('SELECT number, name FROM rooms WHERE usable = 1 ORDER BY floor DESC, number').all();
     const roomDefaults = db.prepare("SELECT track_id, study_year, room_number FROM schedule_room_defaults WHERE kind = 'track'").all();
@@ -334,5 +368,7 @@ module.exports = {
   registerTrackScheduleRoutes,
   studentTrackCounts,
   findScheduleConflict,
-  validScheduleInput
+  validScheduleInput,
+  normalizeTrackSpecialization,
+  teacherMatchesTrack
 };

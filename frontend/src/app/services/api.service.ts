@@ -337,7 +337,7 @@ export class ApiService {
   getTrackScheduleMeta() {
     return this.http.get<{
       tracks: { id: number; name: string; years: { year: string; student_count: number }[] }[];
-      teachers: { id: number; name: string; subject: string | null; specialization: string | null }[];
+      teachers: { id: number; name: string; subject: string | null; specialization: string | null; track_ids: number[] }[];
       periods: { id: number; name: string; start_time: string; end_time: string; is_break: number }[];
       rooms: { number: string; name: string }[];
       room_defaults: { track_id: number; study_year: string; room_number: string }[];

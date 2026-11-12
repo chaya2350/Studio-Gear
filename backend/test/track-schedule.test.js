@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const { initializeRoomBookings } = require('../room-bookings');
-const { initializeTrackSchedule, registerTrackScheduleRoutes } = require('../track-schedule');
+const {
+  initializeTrackSchedule, registerTrackScheduleRoutes, normalizeTrackSpecialization,
+  teacherMatchesTrack
+} = require('../track-schedule');
 
 function setup() {
   const db = new Database(':memory:');
@@ -21,12 +24,18 @@ function setup() {
       id INTEGER PRIMARY KEY, week_start TEXT, day_of_week INTEGER, start_time TEXT, end_time TEXT,
       subject TEXT, class_year TEXT, class_parallel TEXT, teacher_id INTEGER, series_id TEXT
     );
-    INSERT INTO tracks VALUES (1, 'ייעוץ', NULL), (2, 'ייעוץ ישן', 1), (3, 'טיפול', NULL);
+    INSERT INTO tracks VALUES
+      (1, 'ייעוץ', NULL), (2, 'ייעוץ ישן', 1), (3, 'טיפול', NULL),
+      (4, 'ראיית חשבון', NULL), (5, 'חינוך מיוחד', NULL);
     INSERT INTO students VALUES ('ייעוץ', 'ה'), ('ייעוץ ישן', 'ה'), ('ייעוץ', 'ו');
     INSERT INTO teachers VALUES
       (1, 'מורה א', 'מקצוע', 'ייעוץ', 1),
       (2, 'מורה ב', 'מקצוע', 'ייעוץ', 1),
-      (3, 'מורה ג', 'מקצוע', 'טיפול', 1);
+      (3, 'מורה ג', 'מקצוע', 'טיפול', 1),
+      (4, 'מורה ד', 'מקצוע', 'רו"ח', 1),
+      (5, 'מורה ה', 'מקצוע', 'מת׳', 1),
+      (6, 'מורה ו', 'מקצוע', 'ספורט', 1),
+      (8, 'מורה ח', 'מקצוע', 'רו"ח, חנ"מ', 1);
     INSERT INTO lesson_periods VALUES
       (1, 'שיעור ראשון', '09:00', '09:45', 0),
       (2, 'הפסקה', '09:45', '10:00', 1),
@@ -76,6 +85,36 @@ test('track schedule metadata includes merged-track counts and break periods for
     ]);
     assert.equal(res.body.tracks.some(track => track.id === 2), false);
     assert.equal(res.body.periods.find(period => period.id === 2).is_break, 1);
+    assert.ok(res.body.teachers.find(teacher => teacher.id === 4).track_ids.includes(4));
+    assert.ok(res.body.teachers.find(teacher => teacher.id === 5).track_ids.every(id => id !== 4));
+    assert.ok(res.body.teachers.find(teacher => teacher.id === 8).track_ids.includes(4));
+    assert.ok(res.body.teachers.find(teacher => teacher.id === 8).track_ids.includes(5));
+  } finally { db.close(); }
+});
+
+test('normalizes specialization aliases to their track names', () => {
+  assert.equal(normalizeTrackSpecialization('מת׳'), normalizeTrackSpecialization('מתמטיקה'));
+  assert.equal(normalizeTrackSpecialization('ספורט'), normalizeTrackSpecialization('ספורט טיפולי'));
+  assert.equal(normalizeTrackSpecialization('רו"ח'), normalizeTrackSpecialization('ראיית חשבון'));
+  assert.equal(normalizeTrackSpecialization('חנ"מ'), normalizeTrackSpecialization('חינוך מיוחד'));
+  assert.equal(normalizeTrackSpecialization('תכנות'), normalizeTrackSpecialization('הנדסאים'));
+  assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['ראיית חשבון']), true);
+  assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['חינוך מיוחד']), true);
+  assert.equal(teacherMatchesTrack('רו"ח, חנ"מ', ['הנדסאים']), false);
+});
+
+test('allows an accountant-specialized teacher to be scheduled in the accounting track', async () => {
+  const db = setup();
+  try {
+    db.prepare('INSERT INTO teachers VALUES (?, ?, ?, ?, ?)').run(7, 'מורה בדיקה', 'מקצוע', 'רו"ח', 1);
+    const { handlers } = routesFor(db);
+    const res = response();
+    await handlers.get('post /api/track-schedules/:trackId/:studyYear')({
+      params: { trackId: '4', studyYear: 'ה' },
+      body: { teacher_id: 7, day_of_week: 1, period_id: 3 }
+    }, res);
+
+    assert.equal(res.code, 201);
   } finally { db.close(); }
 });
 

@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { formatHebrewDate } from '../../hebrew-date';
 
 @Component({
   selector: 'app-teacher-profile',
@@ -16,7 +17,7 @@ import { ApiService } from '../../services/api.service';
     <div *ngIf="teacher() as t">
       <div class="page-header">
         <div style="display:flex; align-items:center; gap:16px;">
-          <a href="#" (click)="goBack($event)" class="back-btn">→</a>
+          <a href="#" (click)="goBack($event)" class="back-btn no-print">→</a>
           <div>
             <h1>{{ t.name }}</h1>
             <p class="subtitle">
@@ -25,6 +26,9 @@ import { ApiService } from '../../services/api.service';
             </p>
           </div>
         </div>
+        <button type="button" class="btn btn-secondary no-print" (click)="saveAsPdf()" [disabled]="!lessons().length">
+          שמירה כ־PDF
+        </button>
       </div>
 
       <!-- Profile Card -->
@@ -83,13 +87,14 @@ import { ApiService } from '../../services/api.service';
           <div *ngFor="let lesson of currentLessons()" class="current-lesson-detail">
             {{ lesson.start_time }}–{{ lesson.end_time }}
             <span *ngIf="lesson.subject">· {{ lesson.subject }}</span>
+            <span *ngIf="lesson.room_number">· חדר {{ lesson.room_number }}<span *ngIf="lesson.room_name"> · {{ lesson.room_name }}</span></span>
           </div>
         </div>
       </div>
 
       <div class="detail-grid">
         <!-- Personal Details -->
-        <div class="card">
+        <div class="card personal-details-card">
           <div class="section-title">פרטים אישיים</div>
           <div class="info-grid">
             <div class="info-row highlight">
@@ -116,9 +121,9 @@ import { ApiService } from '../../services/api.service';
         </div>
 
         <!-- Lessons by Day -->
-        <div class="card">
+        <div class="card weekly-schedule-card">
           <div class="section-title">
-            השיעורים בשבוע הקרוב
+            <span>מערכת השעות לשבוע</span>
             <span class="week-label" *ngIf="weekStart()"> · {{ weekStart() }}</span>
           </div>
 
@@ -126,7 +131,7 @@ import { ApiService } from '../../services/api.service';
             <div *ngFor="let day of lessonsByDay()" class="day-group">
               <div class="day-header">
                 <span class="day-name">{{ day.dayName }}</span>
-                <span class="day-date">{{ day.date }}</span>
+                <span class="day-date">{{ day.date }} · {{ formatHebrewDate(day.date) }}</span>
                 <span class="day-count">{{ day.lessons.length }} שיעורים</span>
               </div>
               <div class="day-lessons">
@@ -138,6 +143,7 @@ import { ApiService } from '../../services/api.service';
                   <div class="lesson-class">
                     <strong>{{ lesson.class_name }}</strong>
                     <span class="lesson-subject" *ngIf="lesson.subject">{{ lesson.subject }}</span>
+                    <span class="lesson-room" *ngIf="lesson.room_number">חדר {{ lesson.room_number }}<span *ngIf="lesson.room_name"> · {{ lesson.room_name }}</span></span>
                   </div>
                 </div>
               </div>
@@ -151,7 +157,7 @@ import { ApiService } from '../../services/api.service';
       </div>
 
       <!-- Classes Summary -->
-      <div *ngIf="uniqueClasses().length" class="card" style="margin-top:20px">
+      <div *ngIf="uniqueClasses().length" class="card classes-summary" style="margin-top:20px">
         <div class="section-title">הכיתות שלי</div>
         <div class="classes-grid">
           <div *ngFor="let cls of uniqueClasses()" class="class-chip">
@@ -278,6 +284,7 @@ import { ApiService } from '../../services/api.service';
     .lesson-class { display: flex; flex-direction: column; gap: 2px; }
     .lesson-class strong { font-size: 0.92rem; }
     .lesson-subject { font-size: 0.78rem; color: var(--text-muted); }
+    .lesson-room { font-size: 0.76rem; color: var(--primary-dark); font-weight: 700; }
 
     /* Classes summary */
     .classes-grid { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -292,12 +299,23 @@ import { ApiService } from '../../services/api.service';
     .empty-state { margin: 0; color: var(--text-muted); text-align: center; padding: 24px; }
     .loading-state { text-align: center; padding: 40px; color: var(--text-muted); }
 
+    @media print {
+      .no-print, .profile-card, .current-location, .personal-details-card, .classes-summary { display: none !important; }
+      .page-header { margin: 0 0 12px; }
+      .detail-grid { display: block; }
+      .weekly-schedule-card { padding: 0; border: 0; box-shadow: none; }
+      .day-group, .lesson-row { break-inside: avoid; }
+      .day-group { margin-bottom: 10px; }
+      .lesson-row { grid-template-columns: 90px 1fr; }
+    }
+
     @media (max-width: 640px) {
       .lesson-row { grid-template-columns: 1fr; }
     }
   `,
 })
 export class TeacherProfileComponent implements OnInit, OnDestroy {
+  readonly formatHebrewDate = formatHebrewDate;
   readonly teacher = signal<any | null>(null);
   readonly lessons = signal<any[]>([]);
   readonly weekStart = signal<string>('');
@@ -362,6 +380,10 @@ export class TeacherProfileComponent implements OnInit, OnDestroy {
   goBack(event: Event) {
     event.preventDefault();
     this.location.back();
+  }
+
+  saveAsPdf() {
+    window.print();
   }
 
   // Group lessons by day
