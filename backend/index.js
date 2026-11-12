@@ -5007,7 +5007,7 @@ app.get('/api/notifications', (req, res) => {
       icon: '⏰',
       title: 'משימות שפג מועדן',
       body: `${overdueTasks.c} משימות שלא הושלמו עברו את תאריך היעד`,
-      link: '/messages',
+      link: '/calendar/personal',
       created_at: today,
     });
   }
