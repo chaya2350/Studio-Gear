@@ -28,7 +28,7 @@ export interface CalendarImportResult {
 export interface ScheduleRoomDefaults {
   rooms: { number: string; name: string }[];
   classes: { class_year: string; class_parallel: string }[];
-  tracks: { id: number; name: string }[];
+  tracks: { id: number; name: string; years: { year: string; student_count: number }[] }[];
   class_defaults: { class_year: string; class_parallel: string; room_number: string }[];
   track_defaults: { track_id: number; study_year: string; room_number: string }[];
 }
@@ -302,6 +302,11 @@ export class ApiService {
     kind: 'class' | 'track'; class_year?: string; class_parallel?: string;
     track_id?: number; study_year?: string; room_number: string | null;
   }) { return this.http.put<{ success: boolean }>(`${this.base}/schedule/room-defaults`, data); }
+  applyScheduleRoomDefaults() {
+    return this.http.post<{ success: boolean; kodeshAssigned: number; trackAssigned: number; skippedConflicts: number }>(
+      `${this.base}/schedule/room-defaults/apply`, {}
+    );
+  }
   getScheduleYearEnd() { return this.http.get<{through_date:string}>(`${this.base}/schedule/school-year-end`); }
   updateScheduleYearEnd(throughDate: string) {
     return this.http.put<{through_date:string}>(`${this.base}/schedule/school-year-end`, { through_date: throughDate });

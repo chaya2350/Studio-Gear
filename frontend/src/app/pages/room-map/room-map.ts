@@ -331,7 +331,9 @@ export class RoomMapComponent implements OnInit {
   }
 
   roomsOnFloor(floor: number, side: number): Room[] {
-    return this.rooms.filter(room => room.floor === floor && Number(room.number) % 2 === side);
+    return this.rooms.filter(room => room.floor === floor && (
+      Number.isFinite(Number(room.number)) ? Number(room.number) % 2 === side : side === 0
+    ));
   }
 
   roomBookings(room: Room): Booking[] {

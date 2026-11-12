@@ -5071,7 +5071,6 @@ async function runBackup() {
     backupInProgress = false;
   }
 }
-runBackup();
 cron.schedule('0 2 * * *', runBackup, { timezone: 'Asia/Jerusalem' });
 
 const keyFile = path.join(certDirForCheck, 'key.pem');

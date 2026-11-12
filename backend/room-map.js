@@ -1,4 +1,8 @@
 const { DEFAULT_ROOMS } = require('./room-map-defaults');
+const { studentHasTrack } = require('./database-report');
+const { assignLesson } = require('./room-bookings');
+
+const CURRENT_ROOM_MAP_REVISION = 'tashpaz_2027';
 
 function initializeRoomMap(db) {
   db.exec(`
@@ -25,17 +29,35 @@ function initializeRoomMap(db) {
     );
   `);
   db.transaction(() => {
-    if (db.prepare("SELECT 1 FROM room_map_settings WHERE key = 'initial_rooms'").get()) return;
     const insert = db.prepare(`
       INSERT INTO rooms (number, floor, name, capacity, projector, air_conditioner,
         computers, usable, capacity_needs_confirmation)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    if (!db.prepare("SELECT 1 FROM room_map_settings WHERE key = 'initial_rooms'").get()) {
+      for (const room of DEFAULT_ROOMS) {
+        insert.run(room.number, room.floor, room.name, room.capacity, Number(room.projector),
+          room.airConditioner, Number(room.computers), Number(room.usable), Number(room.capacityNeedsConfirmation));
+      }
+      db.prepare("INSERT INTO room_map_settings (key, value) VALUES ('initial_rooms', '1')").run();
+    }
+
+    if (db.prepare('SELECT 1 FROM room_map_settings WHERE key = ?').get(CURRENT_ROOM_MAP_REVISION)) return;
+    const update = db.prepare(`
+      INSERT INTO rooms (number, floor, name, capacity, projector, air_conditioner,
+        computers, usable, capacity_needs_confirmation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(number) DO UPDATE SET floor = excluded.floor, name = excluded.name,
+        capacity = excluded.capacity, projector = excluded.projector,
+        air_conditioner = excluded.air_conditioner, computers = excluded.computers,
+        usable = excluded.usable, capacity_needs_confirmation = excluded.capacity_needs_confirmation
+    `);
     for (const room of DEFAULT_ROOMS) {
-      insert.run(room.number, room.floor, room.name, room.capacity, Number(room.projector),
+      update.run(room.number, room.floor, room.name, room.capacity, Number(room.projector),
         room.airConditioner, Number(room.computers), Number(room.usable), Number(room.capacityNeedsConfirmation));
     }
-    db.prepare("INSERT INTO room_map_settings (key, value) VALUES ('initial_rooms', '1')").run();
+    db.prepare('DELETE FROM schedule_room_defaults WHERE room_number IN (SELECT number FROM rooms WHERE usable = 0)').run();
+    db.prepare('INSERT INTO room_map_settings (key, value) VALUES (?, ?)').run(CURRENT_ROOM_MAP_REVISION, '1');
   })();
 }
 
@@ -57,6 +79,78 @@ function getRoomDefault(db, { kind, classYear = '', classParallel = '', trackId 
     SELECT room_number FROM schedule_room_defaults
     WHERE kind = ? AND class_year = ? AND class_parallel = ? AND track_id = ? AND study_year = ?
   `).get(kind, classYear, classParallel, trackId, studyYear)?.room_number || null;
+}
+
+function applyRoomDefaultsToExistingLessons(db) {
+  const result = { kodeshAssigned: 0, trackAssigned: 0, skippedConflicts: 0 };
+  const hasTable = name => Boolean(db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
+  ).get(name));
+
+  if (hasTable('schedule_slots') && hasTable('room_lesson_bookings')) {
+    const slots = db.prepare(`
+      SELECT s.*, d.room_number
+      FROM schedule_slots s
+      JOIN schedule_room_defaults d ON d.kind = 'class'
+        AND d.class_year = s.class_year AND d.class_parallel = s.class_parallel
+      LEFT JOIN room_lesson_bookings b ON b.slot_id = s.id
+      WHERE b.slot_id IS NULL
+    `).all();
+    for (const slot of slots) {
+      try {
+        assignLesson(db, slot, slot.room_number);
+        result.kodeshAssigned++;
+      } catch {
+        result.skippedConflicts++;
+      }
+    }
+  }
+
+  if (hasTable('track_schedule_slots') && hasTable('room_manual_bookings')) {
+    const slots = db.prepare(`
+      SELECT s.id, s.day_of_week, s.start_time, s.end_time, s.room_number,
+        d.room_number AS default_room_number
+      FROM track_schedule_slots s
+      JOIN schedule_room_defaults d ON d.kind = 'track'
+        AND d.track_id = s.track_id AND d.study_year = s.study_year
+      WHERE s.room_number IS NULL
+    `).all();
+    const trackConflict = db.prepare(`
+      SELECT 1 FROM track_schedule_slots
+      WHERE room_number = ? AND day_of_week = ?
+        AND start_time < ? AND end_time > ? AND id != ? LIMIT 1
+    `);
+    const manualConflict = db.prepare(`
+      SELECT 1 FROM room_manual_bookings
+      WHERE room_number = ? AND day_of_week = ? AND start_time < ? AND end_time > ? LIMIT 1
+    `);
+    const kodeshConflict = db.prepare(`
+      SELECT 1 FROM room_lesson_bookings b
+      JOIN schedule_slots s ON s.id = b.slot_id
+      WHERE b.room_number = ? AND s.day_of_week = ?
+        AND s.start_time < ? AND COALESCE(s.end_time, s.start_time) > ?
+        AND date(s.week_start, '+' || s.day_of_week || ' days') >= date('now')
+      LIMIT 1
+    `);
+    const usableRoom = db.prepare('SELECT 1 FROM rooms WHERE number = ? AND usable = 1');
+    const update = db.prepare(`
+      UPDATE track_schedule_slots SET room_number = ?, updated_at = datetime('now')
+      WHERE id = ? AND room_number IS NULL
+    `);
+    for (const slot of slots) {
+      const roomNumber = slot.default_room_number;
+      if (!usableRoom.get(roomNumber) ||
+          trackConflict.get(roomNumber, slot.day_of_week, slot.end_time, slot.start_time, slot.id) ||
+          manualConflict.get(roomNumber, slot.day_of_week, slot.end_time, slot.start_time) ||
+          kodeshConflict.get(roomNumber, slot.day_of_week, slot.end_time, slot.start_time)) {
+        result.skippedConflicts++;
+        continue;
+      }
+      result.trackAssigned += update.run(roomNumber, slot.id).changes;
+    }
+  }
+
+  return result;
 }
 
 function registerRoomMapRoutes(app, db) {
@@ -83,9 +177,21 @@ function registerRoomMapRoutes(app, db) {
       WHERE TRIM(COALESCE(year, '')) <> '' AND TRIM(COALESCE(parallel, '')) <> ''
       ORDER BY class_year, class_parallel
     `).all();
-    const tracks = db.prepare(`
+    const activeTracks = db.prepare(`
       SELECT id, name FROM tracks WHERE merged_into IS NULL ORDER BY name COLLATE NOCASE
     `).all();
+    const students = db.prepare('SELECT track, year FROM students WHERE track IS NOT NULL').all();
+    const tracks = activeTracks.map(track => {
+      const aliases = [track.name, ...db.prepare('SELECT name FROM tracks WHERE merged_into = ?').all(track.id).map(row => row.name)];
+      return {
+        ...track,
+        years: ['ה', 'ו'].map(year => ({
+          year,
+          student_count: students.filter(student => student.year === year &&
+            aliases.some(alias => studentHasTrack(student.track, alias))).length
+        }))
+      };
+    });
     res.json({
       rooms: db.prepare('SELECT number, name FROM rooms WHERE usable = 1 ORDER BY floor DESC, number').all(),
       classes,
@@ -133,6 +239,12 @@ function registerRoomMapRoutes(app, db) {
     }
     res.json({ success: true });
   });
+  app.post('/api/schedule/room-defaults/apply', (req, res) => {
+    res.json({ success: true, ...applyRoomDefaultsToExistingLessons(db) });
+  });
 }
 
-module.exports = { initializeRoomMap, registerRoomMapRoutes, validateRoomUpdate, getRoomDefault };
+module.exports = {
+  initializeRoomMap, registerRoomMapRoutes, validateRoomUpdate, getRoomDefault,
+  applyRoomDefaultsToExistingLessons
+};
