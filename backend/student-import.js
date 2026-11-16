@@ -222,7 +222,11 @@ function isPasswordHeader(value) {
 }
 
 function passwordHeaderKey(value) {
-  return compactHeader(value).replace(/סיסמ[אה]/g, 'סיסמ');
+  const header = compactHeader(value);
+  if (/^סיסמ(?:ת|ה|א)(?:ל|ד)?הדפסה$/.test(header)) {
+    return 'סיסמתהדפסה';
+  }
+  return header.replace(/סיסמ[אה]/g, 'סיסמ');
 }
 
 function mergeStudentExtraFields(existing, incoming) {

@@ -160,6 +160,10 @@ template: `
 <input name="address" [(ngModel)]="studentDraft.address">
 </label>
 <label class="field">
+<span>כתובת לאחר סיום הלימודים</span>
+<input name="graduate_address" [(ngModel)]="studentDraft.graduate_address">
+</label>
+<label class="field">
 <span>תאריך לידה לועזי</span>
 <input type="date" name="birth_date" [(ngModel)]="studentDraft.birth_date">
 </label>
@@ -225,6 +229,24 @@ template: `
 <label class="field">
 <span>קוד לטלפון ציבורי</span>
 <input name="phone_code" [(ngModel)]="studentDraft.phone_code" placeholder="למשל 02 / 03 / 04">
+</label>
+<label class="field">
+<span>שלוחה</span>
+<input name="phone_extension" [(ngModel)]="studentDraft.phone_extension">
+</label>
+</div>
+</section>
+
+<section class="edit-section">
+<h3>פרטי התחברות והדפסה</h3>
+<div class="edit-grid">
+<label class="field">
+<span>שם משתמש</span>
+<input name="username" [(ngModel)]="studentDraft.username" autocomplete="off">
+</label>
+<label class="field">
+<span>סיסמת הדפסה</span>
+<input name="print_password" [(ngModel)]="studentDraft.print_password" autocomplete="off">
 </label>
 </div>
 </section>
@@ -297,6 +319,10 @@ template: `
 <span class="info-label">כתובת</span>
 <span class="info-value">{{ safeAddress() }}</span>
 </div>
+<div class="info-row" *ngIf="student()!.graduate_address">
+<span class="info-label">כתובת לאחר סיום הלימודים</span>
+<span class="info-value">{{ student()!.graduate_address }}</span>
+</div>
 <div class="info-row" *ngIf="classDisplayValue()">
 <span class="info-label">{{ student()!.year === 'ג' ? 'שנה' : 'כיתה' }}</span>
 <span class="info-value">{{ classDisplayValue() }}</span>
@@ -338,6 +364,7 @@ template: `
 <div class="info-row extra highlight-import credentials-card" *ngIf="hasCredentialsBlock()">
 <span class="info-label">פרטי התחברות</span>
 <span class="info-value" *ngIf="usernameValue()">שם משתמש: {{ usernameValue() }}</span>
+<span class="info-value" *ngIf="printPasswordValue()">סיסמת הדפסה: {{ printPasswordValue() }}</span>
 <span class="info-value" *ngFor="let field of otherPasswordFields()">{{ field.key }}: {{ field.value }}</span>
 </div>
 <div class="info-row extra highlight-import gov-password-card" *ngIf="officialCredentialFields().length">
@@ -366,14 +393,14 @@ template: `
 <div class="card notices-card">
   <div class="section-title-row">
     <div class="section-title">📋 לוח מודעות</div>
-    <button *ngIf="auth.hasPermission('students','create')"
+    <button *ngIf="auth.hasPermission('students','change')"
             class="btn btn-ghost" style="font-size:0.8rem; padding:5px 12px;"
             (click)="noticeFormOpen.set(!noticeFormOpen())">
       {{ noticeFormOpen() ? 'סגור' : '+ מודעה חדשה' }}
     </button>
   </div>
 
-  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','create')" class="notice-form">
+  <div *ngIf="noticeFormOpen() && auth.hasPermission('students','change')" class="notice-form">
     <div class="form-row">
       <div class="form-group">
         <label>כותרת *</label>
@@ -415,7 +442,7 @@ template: `
             {{ n.visibility === 'staff' ? '👩‍💼 צוות' : n.visibility === 'student' ? '👩‍🎓 תלמידה' : '🌐 כולם' }}
           </span>
           <span class="notice-date">{{ n.notice_date }}</span>
-          <button *ngIf="auth.hasPermission('students','delete')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
+          <button *ngIf="auth.hasPermission('students','change')" class="doc-del" (click)="deleteNotice(n)" title="מחיקה">✕</button>
         </div>
         <strong class="notice-title">{{ n.title }}</strong>
         <p class="notice-body">{{ n.body }}</p>
@@ -444,11 +471,11 @@ template: `
 <p *ngIf="!reqs.track" class="req-note">לא הוגדר מסלול לתלמידה. אפשר להגדיר אותו בעריכת הפרטים.</p>
 <p *ngIf="reqs.track && !reqs.defined" class="req-note">
 עדיין לא הוגדרו דרישות למסלול הזה.
-<a *ngIf="auth.hasPermission('tracks', 'edit')" routerLink="/admin" class="req-link">להגדרת המסלול</a>
+<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להגדרת המסלול</a>
 </p>
 <p *ngIf="reqs.defined && !reqs.requirements.length" class="req-note">
 למסלול הזה עדיין אין דרישות.
-<a *ngIf="auth.hasPermission('tracks', 'edit')" routerLink="/admin" class="req-link">להוספת דרישות</a>
+<a *ngIf="auth.hasPermission('tracks', 'change')" routerLink="/admin" class="req-link">להוספת דרישות</a>
 </p>
 <ng-container *ngIf="reqs.requirements.length">
 <div class="req-summary" [class.done]="missingRequired() === 0">
@@ -1054,7 +1081,7 @@ editing = signal(false);
 saving = signal(false);
 deleting = signal(false);
 editError = signal('');
-studentDraft = { name: '', phone: '', address: '', birth_date: '', birth_date_hebrew: '', phone_code: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
+studentDraft = { name: '', phone: '', address: '', graduate_address: '', birth_date: '', birth_date_hebrew: '', phone_code: '', phone_extension: '', username: '', print_password: '', track: '', year: '', parallel: '', marital_status: '', married_name: '', personal_phone: '', wedding_date: '', wedding_venue: '' };
 editingExtraFields: { key: string; value: string }[] = [];
 newExtraField = { key: '', value: '' };
 today = new Date().toISOString().split('T')[0];
@@ -1739,9 +1766,13 @@ this.studentDraft = {
 name: current.name,
 phone: current.phone || '',
 address: current.address || '',
+graduate_address: current.graduate_address || '',
 birth_date: current.birth_date || '',
 birth_date_hebrew: this.formatHebrewBirthDate(current.birth_date_hebrew),
 phone_code: this.phoneCodeValue(),
+phone_extension: this.phoneExtensionValue(),
+username: this.usernameValue(),
+print_password: this.printPasswordValue(),
 track: current.track || '',
 year: current.year || '',
 parallel: current.parallel || '',
@@ -1761,8 +1792,8 @@ addEditingExtraField() {
 const key = String(this.newExtraField.key || '').trim();
 const value = String(this.newExtraField.value || '').trim();
 if (!key || !value) return;
-if (isHiddenStudentField(key)) {
-this.editError.set('לא ניתן להוסיף פרט מסוג זה.');
+if (!this.isEditableExtraFieldKey(key)) {
+this.editError.set('הפרט הזה מנוהל בשדה ייעודי או שאינו ניתן לעריכה כאן.');
 return;
 }
 const exists = this.editingExtraFields.some((field) => field.key.trim() === key);
@@ -1793,18 +1824,24 @@ const value = String(field.value || '').trim();
 if (!key || !value) continue;
 data[key] = value;
 }
-const ext = String(this.phoneExtensionValue() || '').trim();
-if (ext && !Object.keys(data).some((key) => this.isPhoneExtensionKey(key))) {
-data['שלוחה'] = ext;
-}
+this.setExtraDataValue(data, key => this.isPhoneExtensionKey(key), 'שלוחה', this.studentDraft.phone_extension);
+this.setExtraDataValue(data, key => this.isUsernameKey(key), 'שם משתמש', this.studentDraft.username);
+this.setExtraDataValue(data, key => this.isPrintPasswordKey(key), 'סיסמת הדפסה', this.studentDraft.print_password);
 return data;
+}
+
+setExtraDataValue(data: Record<string, string>, matches: (key: string) => boolean, canonicalKey: string, value: string) {
+const existingKey = Object.keys(data).find(matches);
+if (existingKey) delete data[existingKey];
+const cleanValue = String(value || '').trim();
+if (cleanValue) data[existingKey || canonicalKey] = cleanValue;
 }
 
 saveStudent() {
 const current = this.student();
 if (!current || this.saving()) return;
-if (this.editingExtraFields.some(field => isHiddenStudentField(field.key))) {
-this.editError.set('לא ניתן לשמור פרט מסוג זה.');
+if (this.editingExtraFields.some(field => !this.isEditableExtraFieldKey(field.key))) {
+this.editError.set('יש להסיר פרטים שמנוהלים בשדות ייעודיים או שאינם ניתנים לעריכה כאן.');
 return;
 }
 this.saving.set(true);
@@ -1872,12 +1909,12 @@ return Object.entries(data)
 
 displayExtraFields() {
 return this.extraFields().filter(field => !this.isEmailKey(field.key) && !this.isGovCodeKey(field.key)
-  && !this.isEducationUserCodeKey(field.key));
+  && !this.isEducationUserCodeKey(field.key) && !this.isPasswordKey(field.key));
 }
 
 isEditableExtraFieldKey(key: string) {
 return !this.isPhoneCodeKey(key) && !this.isPhoneExtensionKey(key)
-  && !this.isUsernameKey(key) && !this.isPasswordKey(key)
+  && !this.isUsernameKey(key) && !this.isPrintPasswordKey(key)
   && !this.isNameKey(key) && !this.isHiddenExtraField(key);
 }
 
@@ -1904,7 +1941,7 @@ return Boolean(this.phoneCodeValue() || this.phoneExtensionValue());
 }
 
 hasCredentialsBlock() {
-return Boolean(this.usernameValue() || this.otherPasswordFields().length);
+return Boolean(this.usernameValue() || this.printPasswordValue() || this.otherPasswordFields().length);
 }
 
 phoneCodeValue() {
@@ -1944,6 +1981,18 @@ const found = Object.entries(data).find(([key, value]) => this.isUsernameKey(key
 return found ? String(found[1] || '').trim() : '';
 }
 
+printPasswordValue() {
+const data = this.student()?.extra_data;
+if (!data || typeof data !== 'object') return '';
+const found = Object.entries(data).find(([key, value]) => this.isPrintPasswordKey(key) && String(value || '').trim());
+return found ? String(found[1] || '').trim() : '';
+}
+
+isPrintPasswordKey(key: string) {
+const normalized = this.normalizeFieldKey(key);
+return this.isPasswordKey(key) && /הדפס|מדפסת|printer/.test(normalized);
+}
+
 private passwordFields(): { key: string; value: string }[] {
 const data = this.student()?.extra_data;
 if (!data || typeof data !== 'object') return [];
@@ -1970,7 +2019,7 @@ return 2;
 }
 
 otherPasswordFields(): { key: string; value: string }[] {
-return this.passwordFields().filter(field => !this.isOfficialPasswordKey(field.key));
+return this.passwordFields().filter(field => !this.isOfficialPasswordKey(field.key) && !this.isPrintPasswordKey(field.key));
 }
 
 isOfficialPasswordKey(key: string) {

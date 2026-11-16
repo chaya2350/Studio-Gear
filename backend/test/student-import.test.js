@@ -112,6 +112,83 @@ test('preserves different password fields when importing and reimporting', () =>
   });
 });
 
+test('reimporting print passwords replaces spelling variants without changing other credentials', () => {
+  const result = mergeStudentExtraFields(
+    { 'סיסמת הדפסה': 'old', 'סיסמה לגוב': 'gov' },
+    { 'סיסמה להדפסה': 'new' }
+  );
+  assert.deepEqual(result, {
+    merged: { 'סיסמה לגוב': 'gov', 'סיסמה להדפסה': 'new' },
+    added: 0,
+    passwordsImported: 1
+  });
+});
+
+test('print password variants replace each other in either direction and preserve unrelated passwords', () => {
+  for (const [oldKey, newKey] of [
+    ['סיסמת הדפסה', 'סיסמא להדפסה'],
+    ['סיסמה להדפסה', 'סיסמת הדפסה'],
+    ['סיסמא דהדפסה', 'סיסמה הדפסה']
+  ]) {
+    const result = mergeStudentExtraFields(
+      { [oldKey]: 'old', 'סיסמה אישית': 'keep', 'סיסמת הדפסה שנה קודמת': 'archive' },
+      { [newKey]: 'new' }
+    );
+    assert.deepEqual(result.merged, {
+      'סיסמה אישית': 'keep',
+      'סיסמת הדפסה שנה קודמת': 'archive',
+      [newKey]: 'new'
+    });
+  }
+});
+
+test('imports print passwords from their own rows on first and second year sheets', () => {
+  const workbook = XLSX.utils.book_new();
+  for (const [sheetName, rows] of [
+    ['שנה א', [
+      ['111111111', 'תלמידה ראשונה', '00127'],
+      ['222222222', 'תלמידה שנייה', '08019']
+    ]],
+    ['שנה ב', [
+      ['333333333', 'תלמידה שלישית', '00533'],
+      ['444444444', 'תלמידה רביעית', '00448']
+    ]]
+  ]) {
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['מספר זהות', 'שם מלא', 'סיסמת הדפסה'],
+      ...rows
+    ]);
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+  }
+  const students = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  assert.deepEqual(students.map(student => [student.id_number, student.year, student.extra_fields['סיסמת הדפסה']]), [
+    ['111111111', 'א', '00127'],
+    ['222222222', 'א', '08019'],
+    ['333333333', 'ב', '00533'],
+    ['444444444', 'ב', '00448']
+  ]);
+});
+
+test('imports distinct password columns from the same student row without mixing them', () => {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['מספר', 'ת.ז.', 'משפחה', 'שם', 'שם משתמש', 'סיסמא', 'סיסמת הדפסה', 'שלוחה לטלפון', 'קוד לטלפון', 'סיסמא לאנגלית'],
+    [1, '111111111', 'דוגמה', 'ראשונה', 'user-1', 'login-1', 'print-1', '101', '111111111', 'english-1'],
+    [2, '222222222', 'דוגמה', 'שנייה', 'user-2', 'login-2', 'print-2', '102', '222222222', 'english-2']
+  ]);
+  XLSX.utils.book_append_sheet(workbook, sheet, 'שנה ב');
+  const students = parseStudentWorkbook(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  const secondStudent = students.find(student => student.id_number === '222222222');
+  assert.ok(secondStudent);
+  const { merged } = mergeStudentExtraFields(
+    { 'סיסמא': 'old-login', 'סיסמת הדפסה': 'old-print' },
+    secondStudent.extra_fields
+  );
+  assert.equal(merged['סיסמא'], 'login-2');
+  assert.equal(merged['סיסמת הדפסה'], 'print-2');
+  assert.equal(merged['סיסמא לאנגלית'], 'english-2');
+});
+
 function setCell(sheet, address, value) {
   sheet[address] = { t: typeof value === 'number' ? 'n' : 's', v: value };
 }
