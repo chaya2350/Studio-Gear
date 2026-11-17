@@ -81,11 +81,16 @@ template: `
 <div class="cat-counts">
 <span class="cat-total">{{ countByTopLevelGroup(cat.name) }} פריטים</span>
 <span *ngIf="loanedByTopLevelGroup(cat.name)" class="cat-loaned">{{ loanedByTopLevelGroup(cat.name) }} מושאל</span>
+<span *ngIf="!loanedByTopLevelGroup(cat.name) && countByTopLevelGroup(cat.name)" class="cat-all-free">הכל פנוי ✓</span>
 </div>
 <div class="cat-bar">
 <div class="cat-bar-fill"
-[style.width.%]="countByTopLevelGroup(cat.name) ? (loanedByTopLevelGroup(cat.name) / countByTopLevelGroup(cat.name)) * 100 : 0">
+[style.width.%]="countByTopLevelGroup(cat.name) ? (loanedByTopLevelGroup(cat.name) / countByTopLevelGroup(cat.name)) * 100 : 0"
+[style.background]="getCatBarColor(loanedByTopLevelGroup(cat.name), countByTopLevelGroup(cat.name))">
 </div>
+</div>
+<div class="cat-available-label">
+{{ countByTopLevelGroup(cat.name) - loanedByTopLevelGroup(cat.name) }} פנויים מתוך {{ countByTopLevelGroup(cat.name) }}
 </div>
 </div>
 <div class="cat-card cat-all" (click)="addTopLevelCategory()">
@@ -122,11 +127,16 @@ template: `
 <div class="cat-counts">
 <span class="cat-total">{{ countBySubcategory(sub) }} פריטים</span>
 <span *ngIf="loanedBySubcategory(sub)" class="cat-loaned">{{ loanedBySubcategory(sub) }} מושאל</span>
+<span *ngIf="!loanedBySubcategory(sub) && countBySubcategory(sub)" class="cat-all-free">הכל פנוי ✓</span>
 </div>
 <div class="cat-bar">
 <div class="cat-bar-fill"
-[style.width.%]="countBySubcategory(sub) ? (loanedBySubcategory(sub) / countBySubcategory(sub)) * 100 : 0">
+[style.width.%]="countBySubcategory(sub) ? (loanedBySubcategory(sub) / countBySubcategory(sub)) * 100 : 0"
+[style.background]="getCatBarColor(loanedBySubcategory(sub), countBySubcategory(sub))">
 </div>
+</div>
+<div class="cat-available-label">
+{{ countBySubcategory(sub) - loanedBySubcategory(sub) }} פנויים מתוך {{ countBySubcategory(sub) }}
 </div>
 </div>
 <!-- Items without subcategory -->
@@ -167,6 +177,7 @@ template: `
 <span class="badge" [class]="getStatusClass(item)">
 {{ item.is_under_maintenance ? 'בתחזוקה' : (item.is_reserved ? ' שמור' : (item.is_loaned ? (isOverdue(item) ? ' איחור' : (item.category === 'מחשב נייד' ? ' תפוס' : 'מושאל')) : ' פנוי')) }}
 </span>
+<span *ngIf="isNew(item)" class="badge-new">✦ חדש</span>
 </div>
 <h3 class="eq-name">{{ item.name }}</h3>
 <p class="eq-category">
@@ -235,7 +246,16 @@ padding: 2px 9px; border-radius: 20px; font-weight: 700;
 }
 .cat-bar { height: 4px; background: var(--surface-3); border-radius: 4px; margin-top: 10px; overflow: hidden; }
 .cat-bar-fill {
-height: 100%; background: var(--grad-primary); border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1), background 0.4s ease;
+}
+
+.cat-all-free {
+font-size: 0.72rem; background: #dcfce7; color: #15803d;
+padding: 2px 9px; border-radius: 20px; font-weight: 700;
+}
+
+.cat-available-label {
+font-size: 0.7rem; color: var(--text-light); font-weight: 600; margin-top: 6px;
 }
 
 .stat-card.clickable { cursor: pointer;
@@ -250,6 +270,17 @@ transition: all var(--transition); display: block;
 border-color: transparent; outline: 2px solid var(--primary); outline-offset: -1px; }
 }
 .eq-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.badge-new {
+  font-size: 0.63rem; font-weight: 800; letter-spacing: 0.4px;
+  background: linear-gradient(135deg, #f43f5e 0%, #fb923c 100%);
+  color: #fff; padding: 2px 8px; border-radius: 20px;
+  animation: new-pulse 2s ease-in-out infinite;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+@keyframes new-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(244,63,94,0); }
+}
 .eq-name { font-size: 1rem; font-weight: 800; margin-bottom: 3px; letter-spacing: -0.3px; }
 .eq-category { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; font-weight: 600;
 text-transform: uppercase; letter-spacing: 0.4px; }
@@ -698,11 +729,28 @@ return 'ציוד';
 
 isOverdue(item: Equipment) { return item.expected_return && item.expected_return < this.today; }
 
+isNew(item: Equipment): boolean {
+  if (!item.created_at) return false;
+  const created = new Date(item.created_at);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  return created >= sevenDaysAgo;
+}
+
 getStatusClass(item: Equipment) {
 if (item.is_under_maintenance) return 'badge-maintenance';
 if (item.is_reserved) return 'badge-reserved';
 if (!item.is_loaned) return 'badge-available';
 return this.isOverdue(item) ? 'badge-overdue' : 'badge-loaned';
+}
+
+getCatBarColor(loaned: number, total: number): string {
+  if (!total) return 'var(--grad-primary)';
+  const ratio = loaned / total;
+  if (ratio === 0) return 'linear-gradient(135deg, #10b981 0%, #0d9488 100%)';
+  if (ratio <= 0.5) return 'linear-gradient(135deg, #0d9488 0%, #f59e0b 100%)';
+  if (ratio < 1) return 'linear-gradient(135deg, #f59e0b 0%, #e11d48 100%)';
+  return 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)';
 }
 
 getCategoryIcon(cat: string) {

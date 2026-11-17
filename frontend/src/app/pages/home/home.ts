@@ -1,4 +1,12 @@
 import { Component, OnInit, signal, computed } from '@angular/core';
+import { formatHebrewDate, todayLocalDate } from '../../hebrew-date';
+
+interface BirthdayStudent {
+  id_number: string;
+  name: string;
+  year?: string;
+  parallel?: string;
+}
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
@@ -28,6 +36,12 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
   template: `
 <div class="page">
 
+  <!-- ══════════  WELCOME TOAST  ══════════ -->
+  <div class="welcome-toast" [class.welcome-toast--visible]="toastVisible()" aria-live="polite">
+    <span class="welcome-toast-wave">👋</span>
+    שלום {{ auth.user()?.name?.split(' ')[0] || '' }}! ברוכה הבאה 🌸
+  </div>
+
   <!-- ══════════════  HERO  ══════════════ -->
   <section class="hero">
     <div class="hero-bg-lines" aria-hidden="true">
@@ -35,8 +49,13 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
     </div>
 
     <div class="hero-content">
-      <div class="hero-left">
-        <p class="hero-eyebrow">{{ todayLabel }}</p>
+      @if (birthdays().length > 0) {
+      <div class="birthday-banner" role="status">
+        מזל טוב ל{{ birthdays()[0].name }}{{ birthdays().length > 1 ? ' ול' + birthdays().slice(1).map(b => b.name).join(', ') : '' }} — חוגגת היום יום הולדת
+      </div>
+    }
+    <div class="hero-left">
+        <p class="hero-eyebrow">{{ todayLabel }} · {{ hebrewToday }}</p>
         <h1 class="hero-heading">
           שלום,&nbsp;<em>{{ auth.user()?.name || '' }}</em>
         </h1>
@@ -116,6 +135,7 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
           </a>
         </header>
 
+        <p class="day-verse">{{ dayVerse }}</p>
         <div class="card-body">
           @if (tasksLoading()) {
             <div class="shimmer-stack">
@@ -126,7 +146,7 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
           } @else if (todayTasks().length === 0) {
             <div class="nil-state">
               <div class="nil-rule"></div>
-              <p>אין משימות להיום</p>
+              <p>{{ emptyTasksPhrase }}</p>
             </div>
           } @else {
             <ul class="task-list">
@@ -141,6 +161,11 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
                     </svg>
                   </button>
                   <span>{{ task.title }}</span>
+                  @if (task === lastCompletedTask()) {
+                    <span class="confetti" aria-hidden="true">
+                      <i></i><i></i><i></i><i></i><i></i><i></i>
+                    </span>
+                  }
                 </li>
               }
             </ul>
@@ -207,6 +232,7 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
               <div class="footer-row">
                 <span class="footer-date">{{ formatDate(ev.event_date) }}</span>
                 <span class="footer-text">{{ ev.title }}</span>
+                <span class="footer-countdown" [class.footer-countdown--soon]="daysUntil(ev.event_date) <= 3">בעוד {{ daysUntil(ev.event_date) }} ימים</span>
               </div>
             }
           </footer>
@@ -276,6 +302,46 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
       flex-direction: column;
     }
 
+    /* ── welcome toast ── */
+    .welcome-toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      opacity: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 11px 22px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text);
+      box-shadow: var(--shadow-lg);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 9999;
+      transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .welcome-toast--visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .welcome-toast-wave {
+      display: inline-block;
+      animation: wave 1.5s ease-in-out 0.5s 2;
+      transform-origin: 70% 70%;
+    }
+    @keyframes wave {
+      0%, 100% { transform: rotate(0deg); }
+      20%       { transform: rotate(-15deg); }
+      40%       { transform: rotate(14deg); }
+      60%       { transform: rotate(-8deg); }
+      80%       { transform: rotate(10deg); }
+    }
+
     /* ══════════════════════════════════════════════════════
        HERO
     ══════════════════════════════════════════════════════ */
@@ -315,6 +381,71 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
       display: flex;
       align-items: center;
       gap: 48px;
+    }
+
+    /* birthday banner — small greeting pinned at top of hero */
+    .birthday-banner {
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      padding: 10px 44px;
+      background: rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.9);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      backdrop-filter: blur(4px);
+    }
+
+    /* verse line above the tasks card */
+    .day-verse {
+      padding: 0 24px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--primary);
+      opacity: 0.75;
+    }
+
+    /* tiny countdown chip next to upcoming events */
+    .footer-countdown {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--text-light);
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color 0.2s;
+    }
+    .footer-countdown--soon { color: var(--primary); }
+
+    /* confetti burst when a task is completed */
+    .task { position: relative; overflow: visible; }
+    .confetti {
+      pointer-events: none;
+      position: absolute;
+      inset-inline-end: 12px;
+      top: 50%;
+    }
+    .confetti i {
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      border-radius: 1.5px;
+      background: var(--primary);
+      opacity: 0;
+      animation: confetti-burst 0.7s ease-out forwards;
+    }
+    .confetti i:nth-child(1) { background: var(--primary); }
+    .confetti i:nth-child(2) { background: var(--success, #22c55e); animation-delay: 40ms; }
+    .confetti i:nth-child(3) { background: var(--primary-light, var(--primary)); animation-delay: 80ms; }
+    .confetti i:nth-child(4) { background: #fbbf24; animation-delay: 120ms; }
+    .confetti i:nth-child(5) { background: var(--primary); animation-delay: 160ms; }
+    .confetti i:nth-child(6) { background: var(--success, #22c55e); animation-delay: 200ms; }
+    .confetti i:nth-child(odd)  { --dx: 22px;  --dy: -26px; }
+    .confetti i:nth-child(even) { --dx: -18px; --dy: -34px; }
+    @keyframes confetti-burst {
+      0%   { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(160deg); }
     }
 
     .hero-left { flex-shrink: 0; }
@@ -852,6 +983,10 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
       .nav-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
+    @media (max-width: 740px) {
+    .birthday-banner { padding: 10px 24px; }
+    }
+
     @media (max-width: 480px) {
       .hero-video-wrap { width: 132px; height: 132px; border-radius: 50%; aspect-ratio: 1 / 1; }
       .hero-video { width: 100%; height: 100%; }
@@ -871,6 +1006,8 @@ export class HomeComponent implements OnInit {
   readonly events        = signal<CalendarEvent[]>([]);
   readonly stats         = signal<DashboardStats | null>(null);
   readonly customizeOpen = signal(false);
+  readonly toastVisible  = signal(false);
+  readonly birthdays = signal<BirthdayStudent[]>([]);
   readonly classesLoading = signal(true);
   readonly classCounts = signal<{ parallel: string; label: string; count: number }[]>([]);
   readonly dashboardOrder = signal<DashboardWidgetKey[]>(['tasks', 'events', 'classes']);
@@ -886,6 +1023,37 @@ export class HomeComponent implements OnInit {
   readonly todayLabel = new Date().toLocaleDateString('he-IL', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
+
+  /** התאריך העברי של היום — תוספת קטנה לכותרת ה-Hero */
+  readonly hebrewToday = formatHebrewDate(todayLocalDate());
+
+  /** פסוק היום — נבחר לפי היום בשנה כדי שיתחלף מדי יום */
+  readonly dayVerse = (() => {
+    const verses = [
+      'ואהבת לרעך כמוך',
+      'שמחת ימים טובים מכל',
+      'והיו חייך קדושים ומתוקים',
+      'כל העולם כולו גשר צר מאוד',
+      'ועשית עמו חסד ורחמים',
+      'נר תורה ודרך ארץ',
+      'ולמדתם אותם את בניכם',
+    ];
+    const start = new Date(new Date().getFullYear(), 0, 0);
+    const dayOfYear = Math.floor((Date.now() - start.getTime()) / 86400000);
+    return verses[dayOfYear % verses.length];
+  })();
+
+  /** משפט מרגיע כשאין משימות — מתחלף לפי היום בחודש */
+  readonly emptyTasksPhrase = [
+    'אין משימות להיום — יום נקי ליצירה',
+    'היום פנוי — זמן טוב להתארגנות',
+    'אין משימות — קחי נשימה ותיהני',
+    'היום רגוע — תור פנוי לכל מה שדחית',
+    'אין משימות להיום — סדר יום פתוח',
+  ][new Date().getDate() % 5];
+
+  /** המשימה שסומנה לאחרונה — עבור אנימציית הקונפטי */
+  readonly lastCompletedTask = signal<Task | null>(null);
 
   readonly greetingSub = (() => {
     const h = new Date().getHours();
@@ -938,8 +1106,19 @@ export class HomeComponent implements OnInit {
     this.loadTasks();
     this.loadEvents();
     this.loadStats();
-    if (this.auth.hasPermission('students')) this.loadClassCounts();
+    if (this.auth.hasPermission('students')) {
+      this.loadClassCounts();
+      this.loadBirthdays();
+    }
     else this.classesLoading.set(false);
+
+    // Welcome toast — show for 3.5 seconds
+    setTimeout(() => this.toastVisible.set(true), 300);
+    setTimeout(() => this.toastVisible.set(false), 3800);
+  }
+
+  daysUntil(dateStr: string): number {
+    return Math.max(0, Math.round((new Date(dateStr + 'T12:00:00').getTime() - Date.now()) / 86400000));
   }
 
   widgetVisible(key: DashboardWidgetKey): boolean { return this.dashboardVisibility()[key]; }
@@ -996,6 +1175,13 @@ export class HomeComponent implements OnInit {
     }
   }
 
+  private loadBirthdays(): void {
+    this.http.get<BirthdayStudent[]>('/api/birthdays-today').subscribe({
+      next: rows => this.birthdays.set(rows),
+      error: () => this.birthdays.set([]),
+    });
+  }
+
   private loadClassCounts(): void {
     this.api.getStudentClasses().subscribe({
       next: rows => { this.classCounts.set(rows); this.classesLoading.set(false); },
@@ -1043,11 +1229,14 @@ export class HomeComponent implements OnInit {
   toggleTask(task: Task): void {
     const next = !task.completed;
     this.http.patch(`/api/tasks/${task.id}/completion`, { completed: next }).subscribe({
-      next: () => this.tasks.update(list =>
+      next: () => {
+        if (next) this.lastCompletedTask.set(task);
+        this.tasks.update(list =>
         list.map(t => t.id === task.id
           ? { ...t, completed: next, completed_at: next ? new Date().toISOString() : undefined }
           : t)
-      ),
+        );
+      },
     });
   }
 

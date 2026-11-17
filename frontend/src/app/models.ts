@@ -19,6 +19,7 @@ export interface Equipment {
   notes?: string;
   is_reserved: number;
   is_under_maintenance?: number;
+  created_at?: string;
 }
 
 export interface EquipmentMaintenanceRecord {

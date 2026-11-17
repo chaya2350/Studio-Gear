@@ -4,5 +4,9 @@
 
 <footer class="app-footer">
   <img src="/MCP.png" alt="MCP" class="footer-logo" />
-  <span>כל הזכויות שמורות</span>
+  @if (isErevShabbat()) {
+    <span class="footer-shabbat">שבת שלום</span>
+  } @else {
+    <span>כל הזכויות שמורות</span>
+  }
 </footer>

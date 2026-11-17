@@ -1363,6 +1363,16 @@ export class App implements OnInit {
   ngOnInit() {}
   ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
 
+  /** יום שישי אחרי 12:00 — הפוטר מברך שבת שלום (זמן ישראל) */
+  isErevShabbat(): boolean {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jerusalem', weekday: 'short', hour: 'numeric', hour12: false,
+    }).formatToParts(new Date());
+    const weekday = parts.find(p => p.type === 'weekday')?.value;
+    const hour = Number(parts.find(p => p.type === 'hour')?.value ?? 0);
+    return weekday === 'Fri' && hour >= 12;
+  }
+
   roleLabel(role: UserRole): string {
     const user = this.auth.user();
     return user?.role === role ? user.role_name || role : role;

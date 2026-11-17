@@ -50,7 +50,7 @@ template: `
 <section class="login-card">
 <img src="/logo.png" alt="לוגו סמינר גור" />
 <h1>כניסה למערכת</h1>
-<p>התחברי עם פרטי החשבון שקיבלת ממנהלת המערכת.</p>
+<p>{{ loginGreeting }}</p>
 <form (ngSubmit)="submit()">
 <div class="form-group">
 <label for="email">אימייל</label>
@@ -178,6 +178,16 @@ error = signal('');
 googleError = signal('');
 googleClientId = signal('');
 googleUnavailable = signal('');
+
+/** ברכת כניסה קטנה — מתחלפת לפי שעת היום */
+readonly loginGreeting = (() => {
+  const h = new Date().getHours();
+  if (h < 6) return 'לילה טוב — נעים לראותך שוב.';
+  if (h < 12) return 'בוקר טוב — התחברי עם פרטי החשבון שקיבלת ממנהלת המערכת.';
+  if (h < 17) return 'צהריים טובים — התחברי עם פרטי החשבון שקיבלת ממנהלת המערכת.';
+  if (h < 21) return 'ערב טוב — התחברי עם פרטי החשבון שקיבלת ממנהלת המערכת.';
+  return 'ערב טוב — נעים לראותך שוב.';
+})();
 
 constructor(
 private auth: AuthService,
