@@ -2,6 +2,10 @@
   <router-outlet />
 </div>
 
+@if (encouragementVisible()) {
+  <div class="encouragement-toast" role="status">{{ encouragementText }}</div>
+}
+
 <footer class="app-footer">
   <img src="/MCP.png" alt="MCP" class="footer-logo" />
   @if (isErevShabbat()) {

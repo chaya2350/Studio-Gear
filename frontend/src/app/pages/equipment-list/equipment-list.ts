@@ -75,9 +75,14 @@ template: `
 <hr class="section-divider">
 
 <div class="cat-grid">
-<div *ngFor="let cat of topLevelCategories()" class="cat-card" (click)="selectCategory(cat)">
+<div *ngFor="let cat of topLevelCategories()" class="cat-card" (click)="selectCategory(cat)"
+  [style.--cat-accent]="getCatAccentColor(cat.name).accent"
+  [style.--cat-accent-bg]="getCatAccentColor(cat.name).bg">
 <button class="delete-mini" type="button" (click)="deleteCategoryRow(cat, $event)">מחק</button>
-<div class="cat-name">{{ cat.name }}</div>
+<div class="cat-icon-row">
+  <span class="cat-color-dot"></span>
+  <div class="cat-name">{{ cat.name }}</div>
+</div>
 <div class="cat-counts">
 <span class="cat-total">{{ countByTopLevelGroup(cat.name) }} פריטים</span>
 <span *ngIf="loanedByTopLevelGroup(cat.name)" class="cat-loaned">{{ loanedByTopLevelGroup(cat.name) }} מושאל</span>
@@ -121,9 +126,14 @@ template: `
 
 <div class="cat-grid">
 <!-- Subcategory cards -->
-<div *ngFor="let sub of subcategoriesInCat()" class="cat-card" (click)="selectSubcategory(sub)">
+<div *ngFor="let sub of subcategoriesInCat()" class="cat-card" (click)="selectSubcategory(sub)"
+  [style.--cat-accent]="getCatAccentColor(sub).accent"
+  [style.--cat-accent-bg]="getCatAccentColor(sub).bg">
 <button class="delete-mini" type="button" (click)="deleteSubcategoryRow(sub, $event)">מחק</button>
-<div class="cat-name">{{ sub }}</div>
+<div class="cat-icon-row">
+  <span class="cat-color-dot"></span>
+  <div class="cat-name">{{ sub }}</div>
+</div>
 <div class="cat-counts">
 <span class="cat-total">{{ countBySubcategory(sub) }} פריטים</span>
 <span *ngIf="loanedBySubcategory(sub)" class="cat-loaned">{{ loanedBySubcategory(sub) }} מושאל</span>
@@ -183,7 +193,12 @@ template: `
 <p class="eq-category">
 {{ item.category }}<span *ngIf="item.subcategory"> › {{ item.subcategory }}</span>
 </p>
-<div class="eq-barcode"> {{ item.barcode }}</div>
+<div class="eq-barcode eq-barcode--copy" (click)="copyBarcode(item.barcode, $event)"
+  [attr.title]="'לחצי להעתקה'"
+  [class.eq-barcode--copied]="copiedBarcode() === item.barcode">
+  <span class="eq-barcode-text">{{ item.barcode }}</span>
+  <span class="eq-barcode-tooltip">{{ copiedBarcode() === item.barcode ? '✓ הועתק!' : 'לחצי להעתקה' }}</span>
+</div>
 <div *ngIf="item.is_loaned" class="eq-borrower">
 <span> {{ item.borrower_name }}{{ item.track ? ' — ' + item.track : '' }}</span>
 <span class="eq-return" [style.color]="isOverdue(item) ? 'var(--danger)' : 'var(--text-muted)'">
@@ -207,12 +222,19 @@ margin-top: 10px; max-height: calc(100vh - 260px); overflow-y: auto; padding: 4p
 }
 
 .cat-card {
-background: var(--surface); border-radius: var(--radius); padding: 24px 22px 20px;
+background: var(--cat-accent-bg, var(--surface)); border-radius: var(--radius); padding: 24px 22px 20px;
 border: 1px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
 transition: all var(--transition); display: flex; flex-direction: column; gap: 8px;
 position: relative;
-&:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: transparent;
-outline: 2px solid var(--primary); outline-offset: -1px; }
+&:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: var(--cat-accent, var(--primary));
+outline: 2px solid var(--cat-accent, var(--primary)); outline-offset: -1px; }
+}
+
+.cat-icon-row { display: flex; align-items: center; gap: 8px; }
+.cat-color-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--cat-accent, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat-accent, var(--primary)) 15%, transparent);
 }
 
 .delete-mini {
@@ -289,6 +311,31 @@ font-size: 0.72rem; color: var(--text-light); font-family: monospace;
 background: var(--surface-2); padding: 3px 8px; border-radius: var(--radius-xs);
 display: inline-block; margin-bottom: 10px; border: 1px solid var(--border);
 }
+.eq-barcode--copy {
+position: relative; cursor: pointer;
+transition: background var(--transition), border-color var(--transition), color var(--transition);
+&:hover {
+  background: var(--primary-light); border-color: var(--primary); color: var(--primary);
+  .eq-barcode-tooltip { opacity: 1; transform: translateY(0); }
+}
+}
+.eq-barcode--copied {
+  background: #dcfce7 !important; border-color: #86efac !important; color: #15803d !important;
+  .eq-barcode-tooltip { opacity: 1; transform: translateY(0); }
+}
+.eq-barcode-tooltip {
+position: absolute; bottom: calc(100% + 6px); right: 50%;
+transform: translateX(50%) translateY(4px);
+background: var(--text); color: #fff;
+font-size: 0.65rem; font-weight: 700; white-space: nowrap;
+padding: 4px 9px; border-radius: 6px;
+opacity: 0; pointer-events: none;
+transition: opacity 0.18s ease, transform 0.18s ease;
+&::after {
+  content: ''; position: absolute; top: 100%; right: 50%; transform: translateX(50%);
+  border: 4px solid transparent; border-top-color: var(--text);
+}
+}
 .eq-borrower {
 display: flex; justify-content: space-between; align-items: center;
 font-size: 0.82rem; padding-top: 10px; border-top: 1px solid var(--border);
@@ -344,6 +391,8 @@ search = '';
 private itemsSource: 'categories' | 'subcategories' = 'categories';
 
 readonly today = new Date().toISOString().split('T')[0];
+readonly copiedBarcode = signal<string | null>(null);
+private copiedTimer?: ReturnType<typeof setTimeout>;
 
 constructor(private api: ApiService, private router: Router, private route: ActivatedRoute) {}
 
@@ -358,6 +407,17 @@ this.refreshTimer = setInterval(() => this.refreshInBackground(), 30000);
 
 ngOnDestroy() {
 clearInterval(this.refreshTimer);
+clearTimeout(this.copiedTimer);
+}
+
+copyBarcode(barcode: string, event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+  navigator.clipboard.writeText(barcode).then(() => {
+    clearTimeout(this.copiedTimer);
+    this.copiedBarcode.set(barcode);
+    this.copiedTimer = setTimeout(() => this.copiedBarcode.set(null), 1800);
+  }).catch(() => {});
 }
 
 // Updates item data in place so the current view, filters and search are kept
@@ -742,6 +802,27 @@ if (item.is_under_maintenance) return 'badge-maintenance';
 if (item.is_reserved) return 'badge-reserved';
 if (!item.is_loaned) return 'badge-available';
 return this.isOverdue(item) ? 'badge-overdue' : 'badge-loaned';
+}
+
+private readonly catPalette = [
+  { accent: '#0d9488', bg: '#f0fdfa' }, // teal
+  { accent: '#7c3aed', bg: '#f5f3ff' }, // violet
+  { accent: '#db2777', bg: '#fdf2f8' }, // pink
+  { accent: '#d97706', bg: '#fffbeb' }, // amber
+  { accent: '#2563eb', bg: '#eff6ff' }, // blue
+  { accent: '#059669', bg: '#ecfdf5' }, // emerald
+  { accent: '#dc2626', bg: '#fef2f2' }, // red
+  { accent: '#0891b2', bg: '#ecfeff' }, // cyan
+];
+private catColorCache = new Map<string, { accent: string; bg: string }>();
+
+getCatAccentColor(name: string): { accent: string; bg: string } {
+  if (this.catColorCache.has(name)) return this.catColorCache.get(name)!;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  const color = this.catPalette[hash % this.catPalette.length];
+  this.catColorCache.set(name, color);
+  return color;
 }
 
 getCatBarColor(loaned: number, total: number): string {

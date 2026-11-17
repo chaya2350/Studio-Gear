@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { formatHebrewDate, todayLocalDate } from '../../hebrew-date';
 
 interface BirthdayStudent {
@@ -68,22 +68,22 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
 
       <div class="hero-metrics">
         <a *ngIf="auth.hasPermission('loans')" routerLink="/loans" class="metric" [class.metric--warn]="(stats()?.overdueLoans ?? 0) > 0">
-          <span class="metric-number">{{ stats()?.overdueLoans ?? '—' }}</span>
+          <span class="metric-number">{{ displayedStats().overdueLoans ?? '—' }}</span>
           <span class="metric-label">איחורים</span>
           <span class="metric-line"></span>
         </a>
         <a *ngIf="auth.hasPermission('loans')" routerLink="/loans" class="metric">
-          <span class="metric-number">{{ stats()?.activeLoans ?? '—' }}</span>
+          <span class="metric-number">{{ displayedStats().activeLoans ?? '—' }}</span>
           <span class="metric-label">השאלות פעילות</span>
           <span class="metric-line"></span>
         </a>
         <a *ngIf="auth.hasPermission('messages')" routerLink="/messages" class="metric" [class.metric--info]="(stats()?.unreadMessages ?? 0) > 0">
-          <span class="metric-number">{{ stats()?.unreadMessages ?? '—' }}</span>
+          <span class="metric-number">{{ displayedStats().unreadMessages ?? '—' }}</span>
           <span class="metric-label">הודעות חדשות</span>
           <span class="metric-line"></span>
         </a>
         <a *ngIf="auth.hasPermission('students')" routerLink="/students" class="metric">
-          <span class="metric-number">{{ stats()?.totalStudents ?? '—' }}</span>
+          <span class="metric-number">{{ displayedStats().totalStudents ?? '—' }}</span>
           <span class="metric-label">תלמידות</span>
           <span class="metric-line"></span>
         </a>
@@ -998,13 +998,16 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
     }
   `]
 })
-export class HomeComponent implements OnInit {
+export class HomeComponent implements OnInit, OnDestroy {
 
   readonly tasksLoading = signal(true);
   readonly eventsLoading = signal(true);
   readonly tasks         = signal<Task[]>([]);
   readonly events        = signal<CalendarEvent[]>([]);
   readonly stats         = signal<DashboardStats | null>(null);
+  readonly displayedStats = signal<{ overdueLoans: number | null; activeLoans: number | null; unreadMessages: number | null; totalStudents: number | null }>({
+    overdueLoans: null, activeLoans: null, unreadMessages: null, totalStudents: null,
+  });
   readonly customizeOpen = signal(false);
   readonly toastVisible  = signal(false);
   readonly birthdays = signal<BirthdayStudent[]>([]);
@@ -1117,6 +1120,10 @@ export class HomeComponent implements OnInit {
     setTimeout(() => this.toastVisible.set(false), 3800);
   }
 
+  ngOnDestroy(): void {
+    Object.values(this._countUpTimers).forEach(id => clearInterval(id));
+  }
+
   daysUntil(dateStr: string): number {
     return Math.max(0, Math.round((new Date(dateStr + 'T12:00:00').getTime() - Date.now()) / 86400000));
   }
@@ -1219,12 +1226,40 @@ export class HomeComponent implements OnInit {
         const eq  = m.find(x => x.link === '/equipment');
         if (msg && this.auth.hasPermission('messages')) msg.badge = d.unreadMessages ?? 0;
         if (eq && this.auth.hasPermission('loans')) eq.badge = d.overdueLoans ?? 0;
+
+        // Count-up animation for each metric
+        this.animateCountUp('overdueLoans',   d.overdueLoans   ?? 0);
+        this.animateCountUp('activeLoans',    d.activeLoans    ?? 0);
+        this.animateCountUp('unreadMessages', d.unreadMessages ?? 0);
+        this.animateCountUp('totalStudents',  d.totalStudents  ?? 0);
       },
       error: () => {
         this.stats.set({ activeLoans: 0, overdueLoans: 0, unreadMessages: 0, totalStudents: 0 });
+        this.displayedStats.set({ overdueLoans: 0, activeLoans: 0, unreadMessages: 0, totalStudents: 0 });
       }
     });
   }
+
+  private animateCountUp(key: keyof typeof this._countUpTimers, target: number): void {
+    clearInterval(this._countUpTimers[key]);
+    const duration = Math.min(900, 300 + target * 8); // faster for small numbers
+    const steps    = 28;
+    const interval = duration / steps;
+    let current    = 0;
+    this._countUpTimers[key] = setInterval(() => {
+      current++;
+      const eased = Math.round(this.easeOut(current / steps) * target);
+      this.displayedStats.update(s => ({ ...s, [key]: eased }));
+      if (current >= steps) {
+        clearInterval(this._countUpTimers[key]);
+        this.displayedStats.update(s => ({ ...s, [key]: target }));
+      }
+    }, interval) as unknown as number;
+  }
+
+  private easeOut(t: number): number { return 1 - Math.pow(1 - t, 3); }
+
+  private _countUpTimers: Record<string, number> = {};
 
   toggleTask(task: Task): void {
     const next = !task.completed;

@@ -111,9 +111,11 @@ interface BookingResults {
             <table>
               <thead><tr><th>מס׳ חדר</th><th>שיבוץ במפה המקורית</th><th>מקומות</th><th>תפוסה</th><th>פעולות</th></tr></thead>
               <tbody>
-                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable">
+                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable" [class.room-free]="room.usable && checkedDate && !roomBookings(room).length">
                   <td><span class="room-number">{{ room.number }}</span></td>
-                  <td class="room-name">{{ room.name }} <span *ngIf="room.computers" class="computer-label">מחשבים</span></td>
+                  <td class="room-name">{{ room.name }} <span *ngIf="room.computers" class="computer-label">מחשבים</span><span *ngIf="room.projector" class="projector-label" title="יש מקרן בחדר">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-label="מקרן"><rect x="2.5" y="8" width="15" height="9" rx="2"/><circle cx="8" cy="12.5" r="2.6"/><path d="M17.5 10.5h4M17.5 14.5h4M21.5 10.5v4"/></svg>
+                  </span></td>
                   <td>{{ room.capacity === null ? '—' : room.capacity }}<span *ngIf="room.capacity_needs_confirmation" title="דורש בדיקה"> *</span></td>
                   <td class="occupancy">
                     <span *ngIf="!room.usable" class="status status-unusable">אין להשתמש</span>
@@ -254,6 +256,18 @@ interface BookingResults {
     .room-name { font-weight: 600; min-width: 95px; }
     .room-number { display: inline-block; min-width: 43px; padding: 5px 7px; border-radius: 8px; color: var(--primary); background: var(--primary-light); font-weight: 700; direction: ltr; }
     .computer-label { display: block; color: var(--primary); font-size: 11px; font-weight: 500; margin-top: 3px; }
+    .projector-label { display: inline-flex; align-items: center; color: var(--primary); opacity: .85; margin-inline-start: 5px; vertical-align: middle; }
+    .projector-label svg { width: 13px; height: 13px; }
+
+    /* נצנוץ עדין על חדר פנוי — נשימה בלבד, בלי הבהוב חד */
+    tr.room-free td { animation: room-free-breathe 2.6s ease-in-out infinite; }
+    @keyframes room-free-breathe {
+      0%, 100% { background: transparent; }
+      50%      { background: var(--success-soft, rgba(34,197,94,0.08)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      tr.room-free td { animation: none; background: var(--success-soft, rgba(34,197,94,0.08)); }
+    }
     .status { display: inline-block; padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; line-height: 1.3; }
     .status-free { color: var(--text); background: var(--success-soft); }
     .status-busy, .status-unusable { color: var(--text); background: var(--danger-soft); }
