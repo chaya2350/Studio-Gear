@@ -1043,6 +1043,8 @@ export class App implements OnInit {
       return;
     }
 
+    if (event.key === 'Shift') return;
+
     const now = performance.now();
     if (event.key === 'Enter' || event.key === 'Tab') {
       const barcode = this.barcodeBuffer;
