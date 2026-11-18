@@ -12,6 +12,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { hashPassword, verifyPassword, initializeAuthSchema, sessionCookie: makeSessionCookie, SESSION_SECONDS } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
+const { graduateYearFor } = require('./graduate-year');
 const { buildStudentUpdateNotice } = require('./student-update-notice');
 const {
   parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber,
@@ -1729,6 +1730,10 @@ function mapStudentRow(row) {
   const extraData = parseExtraData(row.extra_data);
   return {
     ...row,
+    // שנת גמר — רק לבוגרות, לפי הקידום האחרון ל"בוגרות"
+    graduate_year: String(row.year || '').trim() === 'בוגרות'
+      ? graduateYearFor(db, row.id_number)
+      : null,
     class_name: String(row.year || '').trim() === 'ג'
       ? null
       : (buildStudentClassName(row.year, row.parallel) || String(row.class_name || '').trim()),

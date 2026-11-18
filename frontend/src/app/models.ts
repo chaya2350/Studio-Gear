@@ -92,6 +92,7 @@ export interface Student {
   graduate_address?: string;
   wedding_date?: string;
   wedding_venue?: string;
+  graduate_year?: number | null;
 }
 
 export interface Teacher {

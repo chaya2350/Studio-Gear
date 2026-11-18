@@ -87,6 +87,9 @@ template: `
 <td>{{ l.loan_date }}</td>
 <td [style.color]="isOverdue(l) ? 'var(--danger)' : 'inherit'" [style.fontWeight]="isOverdue(l) ? '700' : '400'">
 {{ l.expected_return }}
+@if (isDueTomorrow(l)) {
+<span class="badge badge-tomorrow" title="תאריך ההחזרה הוא מחר">מחר חוזרת הביתה</span>
+}
 </td>
 <td>
 <span *ngIf="!l.actual_return && isFuture(l)" class="badge badge-reserved"> שמור</span>
@@ -184,6 +187,9 @@ margin-top: 10px; font-size: 0.82rem; font-weight: 700; color: #166534; backgrou
 .student-link { color: var(--primary); text-decoration: none; font-weight: 700; &:hover { text-decoration: underline; } }
 .cat-chip { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
 .overdue-row td { background: #fef2f2 !important; }
+.badge-tomorrow { background: var(--primary-light, #ccfbf1); color: var(--primary, #0d9488); margin-inline-start: 6px; font-size: 0.68rem; animation: tomorrow-glow 2.4s ease-in-out infinite; }
+@keyframes tomorrow-glow { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) { .badge-tomorrow { animation: none; } }
 .order-highlight-row td { background: #f0fdfa !important; box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2); }
 `]
 })
@@ -343,6 +349,13 @@ return !!orderId && this.matchesOrder(l, orderId);
 
 isFuture(l: Loan) { return l.is_future === 1; }
 isOverdue(l: Loan) { return !l.actual_return && !this.isFuture(l) && l.expected_return < new Date().toISOString().split('T')[0]; }
+/** ההחזרה מחר בדיוק — תג מתוק במקום אזהרה */
+isDueTomorrow(l: Loan) {
+  if (l.actual_return || this.isFuture(l)) return false;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return l.expected_return === tomorrow.toISOString().split('T')[0];
+}
 
 returnLoan(l: Loan) {
 this.api.returnLoan(l.id).subscribe({

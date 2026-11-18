@@ -54,7 +54,35 @@ export interface PersonalTask {
 export class MessagesService {
   readonly unreadCount = signal(0);
 
+  private lastUnread = -1;
+  private chimeCtx: AudioContext | null = null;
+
   constructor(private http: HttpClient) {}
+
+  /** צליל עדין בן שתי תוויות — Web Audio, בלי קובץ סאונד */
+  private playChime(): void {
+    try {
+      this.chimeCtx = this.chimeCtx || new (window.AudioContext || (window as any).webkitAudioContext)();
+      const ctx = this.chimeCtx;
+      if (!ctx) return;
+      if (ctx.state === 'suspended') { void ctx.resume(); }
+      const now = ctx.currentTime;
+      [[880, now], [1174.7, now + 0.14]].forEach(([freq, at]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.06, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + 0.55);
+      });
+    } catch {
+      // דפדפן לא תומך או חסום — מתעלמים בשקט
+    }
+  }
 
   getUsers(): Observable<MessageUser[]> {
     return this.http.get<MessageUser[]>('/api/messages/users');
@@ -69,7 +97,12 @@ export class MessagesService {
     return this.http.get<{ count: number }>('/api/messages/unread-count', {
       context: background ? backgroundLoadingContext() : undefined,
     })
-      .pipe(tap(({ count }) => this.unreadCount.set(count)));
+      .pipe(tap(({ count }) => {
+        // פעמון רק כשהמספר עולה — לא בטעינה הראשונה ולא בירידה
+        if (this.lastUnread >= 0 && count > this.lastUnread) this.playChime();
+        this.lastUnread = count;
+        this.unreadCount.set(count);
+      }));
   }
 
   sendMessage(recipient_ids: number[], body: string, attachment?: File | null, reply_to_id?: number | null): Observable<{ id: number; ids: number[] }> {
