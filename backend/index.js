@@ -1624,7 +1624,11 @@ const eqColNames = cols.map(c => c.name);
 if (!eqColNames.includes('subcategory')) db.exec('ALTER TABLE equipment ADD COLUMN subcategory TEXT');
 if (!eqColNames.includes('rental_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN rental_price_per_day REAL DEFAULT 0');
 if (!eqColNames.includes('overdue_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN overdue_price_per_day REAL DEFAULT 0');
-if (!eqColNames.includes('created_at')) db.exec("ALTER TABLE equipment ADD COLUMN created_at TEXT DEFAULT (datetime('now'))");
+if (!eqColNames.includes('created_at')) {
+  // SQLite לא מאפשר DEFAULT עם ביטוי ב-ALTER TABLE — מוסיפים טור ריק וממלאים בנפרד
+  db.exec('ALTER TABLE equipment ADD COLUMN created_at TEXT');
+  db.exec("UPDATE equipment SET created_at = datetime('now') WHERE created_at IS NULL");
+}
 initializeEquipmentMaintenance(db);
 registerEquipmentMaintenanceRoutes(app, db);
 
