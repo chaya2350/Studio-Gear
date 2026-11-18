@@ -39,7 +39,7 @@ type DashboardWidgetKey = 'tasks' | 'events' | 'classes';
   <!-- ══════════  WELCOME TOAST  ══════════ -->
   <div class="welcome-toast" [class.welcome-toast--visible]="toastVisible()" aria-live="polite">
     <span class="welcome-toast-wave">👋</span>
-    שלום {{ auth.user()?.name?.split(' ')[0] || '' }}! ברוכה הבאה 🌸
+    שלום {{ firstName() }}! ברוכה הבאה 🌸
   </div>
 
   <!-- ══════════════  HERO  ══════════════ -->
@@ -1273,6 +1273,13 @@ export class HomeComponent implements OnInit, OnDestroy {
         );
       },
     });
+  }
+
+  /** השם הפרטי בלבד — בטוח מפני undefined */
+  firstName(): string {
+    const name = this.auth.user()?.name || '';
+    const first = name.split(' ')[0];
+    return first ?? name;
   }
 
   formatDate(dateStr: string): string {
