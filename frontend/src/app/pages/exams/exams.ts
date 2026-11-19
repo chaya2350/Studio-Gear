@@ -24,10 +24,13 @@ template: `
 <div class="exams-grid">
 <!-- רשימת מבחנים -->
 <div class="card">
-<div class="section-title"> מבחנים קרובים</div>
-<p class="hint">מבחנים מהיום והלאה, ומבחנים ללא תאריך.</p>
+<div class="section-title"> מבחנים</div>
+<div class="exam-view-toggle">
+  <button type="button" [class.active]="examView() === 'upcoming'" (click)="examView.set('upcoming')">קרובים וללא תאריך</button>
+  <button type="button" [class.active]="examView() === 'recent'" (click)="examView.set('recent')">חודש אחרון</button>
+</div>
 <div class="exam-list">
-<div *ngFor="let e of upcomingExams()" class="exam-row" [class.selected]="selectedExam()?.id === e.id" (click)="selectExam(e)">
+<div *ngFor="let e of visibleExams()" class="exam-row" [class.selected]="selectedExam()?.id === e.id" (click)="selectExam(e)">
 <div class="exam-row-info">
 <strong>{{ e.name }}</strong>
 <span *ngIf="e.subject">מקצוע: {{ e.subject }}</span>
@@ -42,9 +45,10 @@ template: `
 <button class="del-btn" (click)="deleteExam(e, $event)" title="מחיקה"></button>
 </div>
 </div>
-<div *ngIf="!upcomingExams().length" class="empty-state">
+<div *ngIf="!visibleExams().length" class="empty-state">
 <div class="empty-icon"></div>
-<p>אין מבחנים קרובים או מבחנים ללא תאריך.</p>
+<p *ngIf="examView() === 'upcoming'">אין מבחנים קרובים או מבחנים ללא תאריך.</p>
+<p *ngIf="examView() === 'recent'">אין מבחנים מ-30 הימים האחרונים.</p>
 </div>
 </div>
 </div>
@@ -197,6 +201,10 @@ cursor: pointer; transition: all var(--transition);
 .del-btn { border: none; background: transparent; cursor: pointer; opacity: 0.5; &:hover { opacity: 1; } }
 .icon-btn { border: none; background: transparent; cursor: pointer; font-size: 1rem; opacity: 0.7; &:hover { opacity: 1; } }
 
+.exam-view-toggle { display: flex; gap: 6px; margin-bottom: 10px;
+  button { flex: 1; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    &.active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); } } }
+
 .filter-mode-toggle { display:flex; gap:6px;
   button { flex:1; padding:7px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font:inherit; font-size:0.82rem; font-weight:700; cursor:pointer;
     &.active { border-color:var(--primary); color:var(--primary); background:var(--primary-light); } } }
@@ -243,6 +251,7 @@ saving = signal(false);
 printMode = signal<'class' | 'personal'>('class');
 message = signal('');
 error = signal('');
+examView = signal<'upcoming' | 'recent'>('upcoming');
 
 newExam: { name: string; subject: string; track: string; year: string; exam_date: string; start_time: string; end_time: string; all_day: boolean; filterMode: 'track' | 'class'; parallel: string } = { name: '', subject: '', track: '', year: '', exam_date: '', start_time: '08:00', end_time: '09:00', all_day: false, filterMode: 'track', parallel: '' };
 classForm: { track: string | null; year: string | null; parallel: string | null; filterMode: 'track' | 'class' } = { track: null, year: null, parallel: null, filterMode: 'track' };
@@ -301,6 +310,21 @@ this.api.getExamStats().subscribe(stats => this.stats.set(stats));
 upcomingExams() {
   const now = new Date();
   return this.exams().filter(exam => isUpcomingExam(exam.exam_date, now));
+}
+
+recentExams() {
+  const now = new Date();
+  const monthAgo = new Date(now);
+  monthAgo.setDate(monthAgo.getDate() - 30);
+  return this.exams().filter(exam => {
+    if (!exam.exam_date) return false;
+    const d = new Date(exam.exam_date);
+    return d >= monthAgo && d < now;
+  });
+}
+
+visibleExams() {
+  return this.examView() === 'recent' ? this.recentExams() : this.upcomingExams();
 }
 
 upcomingExamStats() {

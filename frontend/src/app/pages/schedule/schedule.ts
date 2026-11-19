@@ -411,6 +411,11 @@ function formatHebrewDayHeading(dateStr: string): string {
       <span *ngIf="copyYearLoading()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
       <ng-container *ngIf="!copyYearLoading()">השלם מערכת לשנת הלימודים</ng-container>
     </button>
+    <button class="btn btn-secondary" style="margin-top:8px;" [disabled]="fillEmptyLoading()" (click)="fillEmptyWeeks()"
+            title="מעתיק לכל שבוע ריק מהיום ועד סוף השנה על פי השבוע הקרוב שלפניו">
+      <span *ngIf="fillEmptyLoading()" class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <ng-container *ngIf="!fillEmptyLoading()">מלא שבועות ריקים</ng-container>
+    </button>
     <p *ngIf="copyYearMessage()" class="success-msg">{{ copyYearMessage() }}</p>
     <p *ngIf="copyYearError()" class="error-msg">{{ copyYearError() }}</p>
   </div>
@@ -945,6 +950,7 @@ export class ScheduleComponent implements OnInit {
   copyYearLoading = signal(false);
   copyYearMessage = signal('');
   copyYearError = signal('');
+  fillEmptyLoading = signal(false);
 
   // Quick add from grid
   quickAddSlot: any = null;
@@ -1196,6 +1202,29 @@ export class ScheduleComponent implements OnInit {
       error: error => {
         this.copyYearLoading.set(false);
         this.copyYearError.set(error.error?.error || 'השלמת המערכת השנתית נכשלה');
+      }
+    });
+  }
+
+  fillEmptyWeeks() {
+    if (this.fillEmptyLoading()) return;
+    if (!confirm('למלא את כל השבועות הריקים מהיום ועד סוף השנה על פי השבוע הקרוב שלפני כל שבוע ריק?')) return;
+    this.fillEmptyLoading.set(true);
+    this.copyYearMessage.set('');
+    this.copyYearError.set('');
+    this.api.fillEmptyScheduleWeeks().subscribe({
+      next: result => {
+        this.fillEmptyLoading.set(false);
+        if (result.weeks_filled === 0) {
+          this.copyYearMessage.set('לא נמצאו שבועות ריקים — המערכת מלאה.');
+        } else {
+          this.copyYearMessage.set(`מולאו ${result.weeks_filled} שבועות ריקים (${result.lessons_copied} שיעורים).`);
+        }
+        this.loadSchedule();
+      },
+      error: err => {
+        this.fillEmptyLoading.set(false);
+        this.copyYearError.set(err.error?.error || 'מילוי השבועות הריקים נכשל');
       }
     });
   }

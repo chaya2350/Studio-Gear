@@ -490,6 +490,29 @@ class="section-tab"
 </div>
 </div>
 
+<div *ngIf="activeSection() === 'students'" class="card" style="max-width:560px; margin-top:20px;">
+<div class="section-title">🖨️ ייבוא מכסות הדפסה צבעונית</div>
+<p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
+  העלי קובץ Excel עם גיליונות לפי שנה (שנה א / שנה ב) ועמודות: <strong>משפחה, שם, מסלול, כמות, השתמשה</strong>.<br>
+  הייבוא מחליף את הנתונים הקיימים לכל גיליון שהועלה.
+</p>
+<div class="upload-area" (click)="colorPrintFileInput.click()" style="cursor:pointer;">
+  <div class="upload-icon">🖨️</div>
+  <div class="upload-text">לחצי לבחירת קובץ Excel</div>
+  <div class="upload-hint">.xlsx / .xls</div>
+  <input #colorPrintFileInput type="file" accept=".xlsx,.xls" style="display:none" (change)="importColorPrints($event)">
+</div>
+<div *ngIf="colorPrintImporting()" class="import-status importing">
+  <span class="loading-dots" role="status"><i></i><i></i><i></i></span>
+</div>
+<div *ngIf="colorPrintResult()" class="import-status success">
+  ✓ יובאו {{ colorPrintResult()!.imported }} שורות מ-{{ colorPrintResult()!.year_groups.join(', ') }}
+</div>
+<div *ngIf="colorPrintError()" class="import-status error">
+  {{ colorPrintError() }}
+</div>
+</div>
+
 <div *ngIf="activeSection() === 'students' && canDeleteAllStudents()" class="card admin-card admin-danger-card">
   <div>
     <div class="section-title">פעולות בלתי הפיכות</div>
@@ -1133,6 +1156,9 @@ addedExtraFields?: number;
 error?: string;
 }[]>([]);
 totalImported = signal(0);
+colorPrintImporting = signal(false);
+colorPrintResult = signal<{ imported: number; year_groups: string[] } | null>(null);
+colorPrintError = signal('');
 approvalTypes = signal<any[]>([]);
 editingApproval = signal<any | null>(null);
 users = signal<UserAccount[]>([]);
@@ -2109,6 +2135,27 @@ onTeacherFileChange(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (file) this.importTeachers(file);
 }
+
+importColorPrints(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  this.colorPrintImporting.set(true);
+  this.colorPrintResult.set(null);
+  this.colorPrintError.set('');
+  this.api.importColorPrints(file).subscribe({
+    next: res => {
+      this.colorPrintImporting.set(false);
+      this.colorPrintResult.set(res);
+      (e.target as HTMLInputElement).value = '';
+    },
+    error: err => {
+      this.colorPrintImporting.set(false);
+      this.colorPrintError.set(err.error?.error || 'ייבוא נכשל');
+      (e.target as HTMLInputElement).value = '';
+    }
+  });
+}
+
 onDropTeachers(e: DragEvent) {
   e.preventDefault(); this.draggingTeachers.set(false);
   const file = e.dataTransfer?.files?.[0];

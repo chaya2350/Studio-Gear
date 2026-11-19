@@ -18,6 +18,7 @@ const PERMISSION_CATALOG = [
   { key: 'reports', label: 'דוחות', group: 'כלים וניהול', description: 'צפייה והפקת דוחות. צפייה בלבד.', supportsChange: false },
   { key: 'search', label: 'חיפוש כללי', group: 'כלים וניהול', description: 'חיפוש וצפייה בתוצאות מהתחומים המותרים. צפייה בלבד.', supportsChange: false },
   { key: 'admin_panel', label: 'מסכי ניהול', group: 'כלים וניהול', description: 'כניסה למסכי ניהול; כל מסך כפוף להרשאה של התחום המתאים.', supportsChange: false },
+  { key: 'color_prints', label: 'הדפסה צבעונית', group: 'כלים וניהול', description: 'מעקב מכסות הדפסה צבעונית לתלמידות.' },
 ];
 
 const apiRoutes = [
@@ -51,6 +52,7 @@ const apiRoutes = [
   [/^\/pages(?:\/|$)/, 'pages'],
   [/^\/reports\/loans\.csv\/?$/, 'loans'],
   [/^\/reports(?:\/|$)/, 'reports'],
+  [/^\/color-prints(?:\/|$)/, 'color_prints'],
   [/^\/search\/?$/, 'search'],
   [/^\/favorites(?:\/|$)/, 'favorites'],
   [/^\/notes(?:\/|$)/, 'favorites'],

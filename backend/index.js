@@ -533,7 +533,7 @@ const migratedTaskCols = db.prepare('PRAGMA table_info(personal_tasks)').all().m
 if (!migratedTaskCols.includes('start_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN start_time TEXT');
 if (!migratedTaskCols.includes('end_time')) db.exec('ALTER TABLE personal_tasks ADD COLUMN end_time TEXT');
 
-// ── דפים אישיים (נושאים / דפים / הרשאות) ──────────────────
+// ?? דפים אישיים (נושאים / דפים / הרשאות) ??????????????????
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS personal_tasks_user_source_message_unique_idx
   ON personal_tasks(user_id, source_message_id)
@@ -729,7 +729,7 @@ app.get('/api/pages/requests/incoming', (req, res) => {
   res.json(rows);
 });
 
-const allowedMessageReactions = new Set(['👍', '❤️', '😊', '😂', '🙏', '🎉', '✅', '❓']);
+const allowedMessageReactions = new Set(['??', '??', '??', '??', '??', '??', '?', '?']);
 
 app.get('/api/calendar-events', async (req, res) => {
   try {
@@ -1072,7 +1072,7 @@ app.get('/api/messages/group/:group_id/recipients', (req, res) => {
   res.json(rows);
 });
 
-// ── Dashboard stats — endpoint ייעודי לדשבורד (קריאה אחת במקום 4) ──
+// ?? Dashboard stats — endpoint ייעודי לדשבורד (קריאה אחת במקום 4) ??
 app.get('/api/stats', (req, res) => {
   const permissions = getUserPermissions(req.user.role);
   const today = new Date().toISOString().split('T')[0];
@@ -1100,7 +1100,7 @@ app.get('/api/stats', (req, res) => {
   res.json(stats);
 });
 
-// ── Birthdays today — דשבורד: ברכת יום הולדת קטנה בהירו ──
+// ?? Birthdays today — דשבורד: ברכת יום הולדת קטנה בהירו ??
 app.get('/api/birthdays-today', (req, res) => {
   if (!getUserPermissions(req.user.role).students?.view) return res.json([]);
   // birth_date מאוחסן כ-YYYY-MM-DD. משווים רק חודש-יום כדי לתפוס את היום בכל שנה.
@@ -1581,7 +1581,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    icon TEXT DEFAULT '📦',
+    icon TEXT DEFAULT '??',
     parent_id INTEGER DEFAULT NULL
   );
 `);
@@ -1633,17 +1633,17 @@ initializeEquipmentMaintenance(db);
 registerEquipmentMaintenanceRoutes(app, db);
 
 const defaultCategories = [
-  ['ציוד צילום','📷', null],
-  ['מצלמות','📷', null],
-  ['עדשות','🔭', null],
-  ['תאורה','💡', null],
-  ['שמע','🎙️', null],
-  ['חצובות','🎬', null],
-  ['גימבל','🎥', null],
-  ['נק','📦', null],
-  ['אחר','📦', null],
-  ['מחשבים ניידים','🖥️', null],
-  ['מחשב נייד','💻', null],
+  ['ציוד צילום','??', null],
+  ['מצלמות','??', null],
+  ['עדשות','??', null],
+  ['תאורה','??', null],
+  ['שמע','???', null],
+  ['חצובות','??', null],
+  ['גימבל','??', null],
+  ['נק','??', null],
+  ['אחר','??', null],
+  ['מחשבים ניידים','???', null],
+  ['מחשב נייד','??', null],
 ];
 const ins = db.prepare('INSERT OR IGNORE INTO categories (name, icon, parent_id) VALUES (?, ?, ?)');
 defaultCategories.forEach(([n, i, p]) => ins.run(n, i, p));
@@ -1662,7 +1662,7 @@ if (legacyPhotoCategory && photoGroupId) {
   db.prepare("UPDATE categories SET parent_id = ? WHERE id = ?").run(photoGroupId, legacyPhotoCategory);
 }
 
-// ── Students ───────────────────────────────────────────────
+// ?? Students ???????????????????????????????????????????????
 db.exec(`
   CREATE TABLE IF NOT EXISTS students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1928,6 +1928,15 @@ app.post('/api/students', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
   `).run(id_number, name, phone, track, year, parallel, className, address, birth_date, birth_date_hebrew);
   logActivity(req.user.id, 'נרשמה תלמידה חדשה', 'student', id_number, 'נוספה למערכת');
+  // צור רשומת הדפסה צבעונית אוטומטית (0/20)
+  if (name && name.trim()) {
+    const nameParts = name.trim().split(/\s+/);
+    const cpFamily  = nameParts.length > 1 ? nameParts[nameParts.length - 1] : name.trim();
+    const cpFirst   = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : name.trim();
+    const cpYear    = year || 'ללא שנה';
+    const cpTrack   = track || 'ללא מסלול';
+    db.prepare(`INSERT OR IGNORE INTO color_prints (student_name, family_name, track, year_group, quota, used, updated_at) VALUES (?, ?, ?, ?, 20, 0, datetime('now'))`).run(cpFirst, cpFamily, cpTrack, cpYear);
+  }
   res.status(201).json({ id_number, name });
 });
 
@@ -2099,7 +2108,7 @@ app.get('/api/students/:id_number/details', (req, res) => {
   res.json(mapStudentRow(student));
 });
 
-// ── תיק סרוק (מסמכים) ──────────────────────────────────────
+// ?? תיק סרוק (מסמכים) ??????????????????????????????????????
 app.get('/api/students/:id_number/documents', (req, res) => {
   const docs = db.prepare(`
     SELECT d.id, d.file_name, d.file_url, d.created_at, u.name AS uploaded_by_name
@@ -2134,7 +2143,7 @@ app.delete('/api/students/:id_number/documents/:doc_id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── לוח מודעות ──────────────────────────────────────────────
+// ?? לוח מודעות ??????????????????????????????????????????????
 app.get('/api/students/:id_number/notices', (req, res) => {
   const notices = db.prepare(`
     SELECT n.id, n.title, n.body, n.notice_date, n.visibility, n.created_at, u.name AS created_by_name
@@ -2233,7 +2242,7 @@ app.post('/api/admin/reset-database', (req, res) => {
   });
 });
 
-// ── Tracks and requirements ────────────────────────────────
+// ?? Tracks and requirements ????????????????????????????????
 db.exec(`
   CREATE TABLE IF NOT EXISTS tracks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2818,7 +2827,7 @@ app.post('/api/students/import', xlsxUpload.single('file'), (req, res) => {
   }
 });
 
-// ── Categories ─────────────────────────────────────────────
+// ?? Categories ?????????????????????????????????????????????
 app.get('/api/categories', (req, res) => {
   res.json(db.prepare(`
     SELECT c.*, p.name as parent_name
@@ -2832,8 +2841,8 @@ app.post('/api/categories', (req, res) => {
   if (!name) return res.status(400).json({ error: 'שם קטגוריה חובה' });
   try {
     const result = db.prepare('INSERT INTO categories (name, icon, parent_id) VALUES (?, ?, ?)')
-      .run(name, icon || '📦', parent_id ?? null);
-    res.json({ id: result.lastInsertRowid, name, icon: icon || '📦', parent_id: parent_id ?? null });
+      .run(name, icon || '??', parent_id ?? null);
+    res.json({ id: result.lastInsertRowid, name, icon: icon || '??', parent_id: parent_id ?? null });
   } catch { res.status(400).json({ error: 'קטגוריה כבר קיימת' }); }
 });
 app.delete('/api/categories/:id', (req, res) => {
@@ -2841,7 +2850,7 @@ app.delete('/api/categories/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Equipment ──────────────────────────────────────────────
+// ?? Equipment ??????????????????????????????????????????????
 // Helper: build equipment status for a given date
 function equipmentQuery(whereClause = '', date = null) {
   const d = date || "date('now')";
@@ -2985,7 +2994,7 @@ app.get('/api/subcategories/:category', (req, res) => {
   res.json(rows.map(r => r.subcategory));
 });
 
-// ── Loans ──────────────────────────────────────────────────
+// ?? Loans ??????????????????????????????????????????????????
 app.get('/api/loans', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const rows = db.prepare(`
@@ -3165,7 +3174,7 @@ app.delete('/api/loans/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Order receipt barcode ────────────────────────────────
+// ?? Order receipt barcode ????????????????????????????????
 app.get('/api/loans/receipt-barcode/:id', async (req, res) => {
   try {
     const png = await bwipjs.toBuffer({
@@ -3184,7 +3193,7 @@ app.get('/api/loans/receipt-barcode/:id', async (req, res) => {
   }
 });
 
-// ── Laptop overdue ────────────────────────────────────────
+// ?? Laptop overdue ????????????????????????????????????????
 
 function getLaptopOverdue() {
   const today = new Date().toISOString().split('T')[0];
@@ -3201,7 +3210,7 @@ app.get('/api/laptops/overdue', (req, res) => {
   res.json(getLaptopOverdue());
 });
 
-// ── Approval Types ──────────────────────────────────────
+// ?? Approval Types ??????????????????????????????????????
 db.exec(`
   CREATE TABLE IF NOT EXISTS approval_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3275,7 +3284,108 @@ app.delete('/api/approval-types/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Exams & barcode grades ───────────────────────────────
+// ?? הדפסה צבעונית ???????????????????????????????????????
+db.exec(`
+  CREATE TABLE IF NOT EXISTS color_prints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_name TEXT NOT NULL,
+    family_name TEXT NOT NULL,
+    track TEXT NOT NULL,
+    year_group TEXT NOT NULL,
+    quota INTEGER NOT NULL DEFAULT 20,
+    used INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS color_prints_track_idx ON color_prints(track, year_group);
+`);
+
+app.post('/api/color-prints/import', xlsxUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'לא נשלח קובץ' });
+  let workbook;
+  try { workbook = XLSX.read(req.file.buffer, { type: 'buffer' }); }
+  catch { return res.status(400).json({ error: 'הקובץ אינו קובץ Excel תקין' }); }
+
+  const rows = [];
+  for (const sheetName of workbook.SheetNames) {
+    const yearGroup = sheetName.trim();
+    const sheet = workbook.Sheets[sheetName];
+    // קריאה גולמית כמערך שורות — מאפשרת מציאת כותרות גם אם יש שורות ריקות בהתחלה
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    // מצא את שורת הכותרות — הראשונה שמכילה "משפחה" או "שם"
+    let headerIdx = -1;
+    for (let i = 0; i < raw.length; i++) {
+      const cells = raw[i].map(c => String(c).trim());
+      if (cells.includes('משפחה') || cells.includes('שם')) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) continue;
+    const headers = raw[headerIdx].map(c => String(c).trim());
+    const ci = name => headers.indexOf(name);
+    const iFamily = ci('משפחה'), iName = ci('שם'), iTrack = ci('מסלול');
+    const iQuota  = ci('כמות'),  iUsed  = ci('השתמשה');
+    if (iFamily === -1 || iName === -1 || iTrack === -1) continue;
+    for (let i = headerIdx + 1; i < raw.length; i++) {
+      const r = raw[i];
+      const familyName  = String(r[iFamily]  ?? '').trim();
+      const studentName = String(r[iName]    ?? '').trim();
+      const track       = String(r[iTrack]   ?? '').trim();
+      const quota       = 20;
+      const used        = parseInt(String(r[iUsed]  ?? '')) || 0;
+      if (!familyName || !studentName || !track) continue;
+      if (familyName === 'משפחה' || track === 'מסלול') continue; // שורת כותרת חוזרת
+      rows.push({ yearGroup, familyName, studentName, track, quota, used });
+    }
+  }
+  if (!rows.length) return res.status(400).json({ error: 'לא נמצאו שורות תקינות בקובץ' });
+
+  const upsert = db.prepare(`
+    INSERT INTO color_prints (student_name, family_name, track, year_group, quota, used, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT DO NOTHING
+  `);
+  // נקה ורייבא מחדש (כל גיליון מחדש)
+  const yearGroups = [...new Set(rows.map(r => r.yearGroup))];
+  const deleteOld = db.prepare('DELETE FROM color_prints WHERE year_group = ?');
+  const importAll = db.transaction(() => {
+    for (const yg of yearGroups) deleteOld.run(yg);
+    for (const r of rows) upsert.run(r.studentName, r.familyName, r.track, r.yearGroup, r.quota, r.used);
+  });
+  importAll();
+  res.json({ imported: rows.length, year_groups: yearGroups });
+});
+
+// רשימת כל הרשומות
+app.get('/api/color-prints', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, student_name, family_name, track, year_group, quota, used,
+           (quota - used) AS remaining, updated_at
+    FROM color_prints
+    ORDER BY year_group, track, family_name, student_name
+  `).all();
+  res.json(rows);
+});
+
+// ? שימוש נוסף
+app.post('/api/color-prints/:id/use', (req, res) => {
+  const row = db.prepare('SELECT id, quota, used FROM color_prints WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'רשומה לא נמצאה' });
+  if (row.used >= row.quota) return res.status(400).json({ error: 'מכסת ההדפסות נוצלה במלואה' });
+  db.prepare(`UPDATE color_prints SET used = used + 1, updated_at = datetime('now') WHERE id = ?`).run(row.id);
+  res.json({ success: true, used: row.used + 1, remaining: row.quota - row.used - 1 });
+});
+
+// עדכון ידני (עריכת מכסה / שימוש)
+app.patch('/api/color-prints/:id', (req, res) => {
+  const row = db.prepare('SELECT id FROM color_prints WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'רשומה לא נמצאה' });
+  const used = req.body?.used != null ? parseInt(req.body.used) : undefined;
+  if (used === undefined) return res.status(400).json({ error: 'אין שדות לעדכון' });
+  if (isNaN(used) || used < 0) return res.status(400).json({ error: 'שימוש לא תקין' });
+  db.prepare(`UPDATE color_prints SET used = ?, quota = 20, updated_at = datetime('now') WHERE id = ?`).run(used, row.id);
+  const updated = db.prepare('SELECT id, quota, used, (quota-used) AS remaining FROM color_prints WHERE id = ?').get(row.id);
+  res.json({ success: true, ...updated });
+});
+
+// ?? Exams & barcode grades ???????????????????????????????
 db.exec(`
   CREATE TABLE IF NOT EXISTS exams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3449,7 +3559,7 @@ app.get('/api/exam-codes/:code/barcode', async (req, res) => {
   }
 });
 
-// סריקה/הזנת קוד → פרטי המבחן והתלמידה + ציון קיים
+// סריקה/הזנת קוד ? פרטי המבחן והתלמידה + ציון קיים
 app.get('/api/exam-codes/:code', (req, res) => {
   const row = db.prepare(`
     SELECT c.code, c.exam_id, c.id_number, s.name AS student_name, s.track, s.year,
@@ -3518,7 +3628,29 @@ app.get('/api/students/:id_number/exams', (req, res) => {
   res.json(rows);
 });
 
-// ── Attendance / Schedule ─────────────────────────────────────
+// רישום/עדכון ציון ידני לתלמידה לפי id_number + exam_id (ללא צורך בברקוד)
+app.put('/api/students/:id_number/exams/:exam_id/grade', (req, res) => {
+  const { id_number, exam_id } = req.params;
+  const row = db.prepare('SELECT code FROM exam_codes WHERE id_number = ? AND exam_id = ?').get(id_number, exam_id);
+  if (!row) return res.status(404).json({ error: 'התלמידה אינה משויכת למבחן זה' });
+  const gradeRaw = req.body?.grade;
+  if (gradeRaw === null || gradeRaw === '' || gradeRaw === undefined) {
+    // מחיקת ציון
+    db.prepare('DELETE FROM exam_grades WHERE code = ?').run(row.code);
+    return res.json({ success: true, grade: null });
+  }
+  const grade = Number(gradeRaw);
+  if (!Number.isFinite(grade) || grade < 0 || grade > 100) {
+    return res.status(400).json({ error: 'ציון חייב להיות מספר בין 0 ל-100' });
+  }
+  db.prepare(`
+    INSERT INTO exam_grades (code, grade, graded_by) VALUES (?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET grade = excluded.grade, graded_by = excluded.graded_by, graded_at = datetime('now')
+  `).run(row.code, grade, req.user?.id || null);
+  res.json({ success: true, grade });
+});
+
+// ?? Attendance / Schedule ?????????????????????????????????????
 
 // Migration: add parallel and class_name columns to students
 const studentColsCheck = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
@@ -3746,7 +3878,7 @@ function compareByLastName(a, b) {
   return String(a.name || a).localeCompare(String(b.name || b), 'he', { numeric: true });
 }
 
-// ── Teachers CRUD ──────────────────────────────────────────────
+// ?? Teachers CRUD ??????????????????????????????????????????????
 app.get('/api/teachers', (req, res) => {
   const q = String(req.query.q || '').trim();
   const sql = q
@@ -3908,7 +4040,7 @@ app.delete('/api/teachers/:id', (req, res) => {
   }
 });
 
-// ── Day structure (lesson periods and breaks) ──────────────────
+// ?? Day structure (lesson periods and breaks) ??????????????????
 db.exec(`
   CREATE TABLE IF NOT EXISTS lesson_periods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3984,7 +4116,7 @@ app.delete('/api/schedule/periods/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Schedule Slots CRUD ────────────────────────────────────────
+// ?? Schedule Slots CRUD ????????????????????????????????????????
 app.get('/api/schedule/kodesh-availability', (req, res) => {
   res.json({ kodesh: KODESH_CUTOFFS, instruction: INSTRUCTION_WINDOWS });
 });
@@ -4254,6 +4386,51 @@ app.post('/api/schedule', async (req, res) => {
   }
 });
 
+// מילוי שבועות ריקים — ממלא כל שבוע ריק מהשבוע הנוכחי עד סוף השנה על פי הקרוב שלפניו
+app.post('/api/schedule/fill-empty-weeks', async (req, res) => {
+  try {
+    await ensureSchoolYearHolidays();
+    const today = todayInIsrael();
+    const throughDate = getSchoolYearEnd();
+    if (today > throughDate) return res.status(400).json({ error: 'שנת הלימודים כבר הסתיימה' });
+
+    let totalCopied = 0;
+    let weeksFilled = 0;
+
+    for (let week = getWeekStart(today); week <= throughDate; week = addDays(week, 7)) {
+      const existing = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(week);
+      if (existing.c > 0) continue; // שבוע מלא — דלג
+
+      // חפש שבוע מקור קרוב אחורה
+      let fromWeek = null;
+      for (let i = 1; i <= 8; i++) {
+        const candidate = addDays(week, -7 * i);
+        const count = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(candidate);
+        if (count.c > 0) { fromWeek = candidate; break; }
+      }
+      if (!fromWeek) continue;
+
+      const result = copyScheduleWeekIfEmpty(db, {
+        fromWeek,
+        toWeek: week,
+        validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+        isSchoolHoliday: (w, day) => Boolean(schoolHolidayForDate(addDays(w, day))),
+        createSeriesId: () => randomBytes(12).toString('hex'),
+        onCopied: (newSlot, sourceId) => copyLessonRoom(db, sourceId, newSlot.id)
+      });
+      if (result.reason === 'copied') {
+        totalCopied += result.copied;
+        weeksFilled++;
+      }
+    }
+
+    res.json({ success: true, weeks_filled: weeksFilled, lessons_copied: totalCopied });
+  } catch (err) {
+    console.error('fill-empty-weeks failed:', err.message);
+    res.status(500).json({ error: 'מילוי השבועות הריקים נכשל' });
+  }
+});
+
 app.post('/api/schedule/copy-school-year', async (req, res) => {
   const sourceDate = String(req.body?.source_week || '');
   const throughDate = String(req.body?.through_date || getSchoolYearEnd());
@@ -4507,7 +4684,7 @@ app.delete('/api/schedule/week/:week_start', (req, res) => {
   res.json({ deleted: slots.length });
 });
 
-// ── Weekly Sheets – PDF Data ───────────────────────────────────
+// ?? Weekly Sheets – PDF Data ???????????????????????????????????
 // Returns JSON with all data needed to render the printable sheets
 app.get('/api/attendance/weekly-sheets', async (req, res) => {
   await ensureSchoolYearHolidays();
@@ -4534,7 +4711,7 @@ app.get('/api/attendance/weekly-sheets', async (req, res) => {
     return d.toISOString().split('T')[0];
   }
 
-  // Group: teacher → class → days
+  // Group: teacher ? class ? days
   const teacherMap = new Map();
   const activeSlots = [];
   for (const slot of slots) {
@@ -4643,7 +4820,7 @@ app.get('/api/attendance/weekly-sheets', async (req, res) => {
   res.json({ week_start: weekStart, sheets, changes });
 });
 
-// ── Attendance Sessions CRUD ───────────────────────────────────
+// ?? Attendance Sessions CRUD ???????????????????????????????????
 
 // Resolve or create a session from a scanned attendance barcode
 // barcode format: ATT-T{teacherId}-{year}{parallel}-{date}
@@ -4826,7 +5003,7 @@ app.put('/api/attendance/sessions/:id/records', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Attendance Stats per student ───────────────────────────────
+// ?? Attendance Stats per student ???????????????????????????????
 app.get('/api/students/:id_number/attendance', (req, res) => {
   const student = db.prepare('SELECT * FROM students WHERE id_number=?').get(req.params.id_number);
   if (!student) return res.status(404).json({ error: 'תלמידה לא נמצאה' });
@@ -4905,7 +5082,7 @@ app.put('/api/students/:id_number/parallel', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Import teachers from Excel ─────────────────────────────────
+// ?? Import teachers from Excel ?????????????????????????????????
 app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'קובץ חסר' });
   try {
@@ -4995,7 +5172,7 @@ const teacherCols = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.n
 if (!teacherCols.includes('phone')) db.exec('ALTER TABLE teachers ADD COLUMN phone TEXT');
 if (!teacherCols.includes('email')) db.exec('ALTER TABLE teachers ADD COLUMN email TEXT');
 
-// ── Import schedule from Excel ──────────────────────────────────
+// ?? Import schedule from Excel ??????????????????????????????????
 // Expected columns: מורה/teacher, שנה/year, מקבילה/parallel, יום/day, שעה_התחלה/start_time, שעה_סיום/end_time, מקצוע/subject
 // day values: ראשון/1, שני/2 etc. or number 0-4
 app.post('/api/schedule/import', xlsxUpload.single('file'), async (req, res) => {
@@ -5107,7 +5284,7 @@ app.post('/api/schedule/import', xlsxUpload.single('file'), async (req, res) => 
   }
 });
 
-// ── Notifications ─────────────────────────────────────────────
+// ?? Notifications ?????????????????????????????????????????????
 // Returns a combined list of smart alerts across all modules
 app.get('/api/notifications', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
@@ -5134,7 +5311,7 @@ app.get('/api/notifications', (req, res) => {
       id: `loan-overdue-${l.id}`,
       type: 'overdue',
       severity: days >= 3 ? 'danger' : 'warning',
-      icon: '⚠️',
+      icon: '??',
       title: 'ציוד לא הוחזר',
       body: `${l.equipment_name} — ${l.borrower_name} (${days} ימי איחור)`,
       link: '/loans',
@@ -5178,7 +5355,7 @@ app.get('/api/notifications', (req, res) => {
       id: 'page-requests-pending',
       type: 'pages',
       severity: 'info',
-      icon: '📄',
+      icon: '??',
       title: 'בקשות גישה ממתינות',
       body: `${pendingPageRequests.c} בקשות גישה לדפים שלך ממתינות לאישור`,
       link: '/pages',
@@ -5195,7 +5372,7 @@ app.get('/api/notifications', (req, res) => {
       id: 'messages-unread',
       type: 'messages',
       severity: 'info',
-      icon: '💬',
+      icon: '??',
       title: 'הודעות שלא נקראו',
       body: `${unread.c} הודעות חדשות ממתינות לך`,
       link: '/messages',
@@ -5213,7 +5390,7 @@ app.get('/api/notifications', (req, res) => {
       id: 'tasks-overdue',
       type: 'tasks',
       severity: 'warning',
-      icon: '⏰',
+      icon: '?',
       title: 'משימות שפג מועדן',
       body: `${overdueTasks.c} משימות שלא הושלמו עברו את תאריך היעד`,
       link: '/calendar/personal',
@@ -5240,7 +5417,7 @@ app.get('/api/notifications', (req, res) => {
         id: 'requirements-incomplete',
         type: 'requirements',
         severity: 'warning',
-        icon: '📁',
+        icon: '??',
         title: 'דרישות חובה חסרות',
         body: `${incompleteMandatory.c} תלמידות עם דרישות חובה שלא הושלמו`,
         link: '/students',
@@ -5281,6 +5458,39 @@ async function runBackup() {
   }
 }
 cron.schedule('0 2 * * *', runBackup, { timezone: 'Asia/Jerusalem' });
+
+// העתקה אוטומטית של מערכת שעות — כל ראשון בשעה 03:00
+// אם השבוע הנוכחי ריק, מעתיק מהשבוע הקודם (ומהשבועות שלפניו עד שמוצא מקור)
+cron.schedule('0 3 * * 0', async () => {
+  try {
+    await ensureSchoolYearHolidays();
+    const today = todayInIsrael();
+    const throughDate = getSchoolYearEnd();
+    if (today > throughDate) return; // מחוץ לשנת הלימודים
+    const toWeek = getWeekStart(today);
+    // חפש שבוע מקור — נסה עד 8 שבועות אחורה
+    let fromWeek = null;
+    for (let i = 1; i <= 8; i++) {
+      const candidate = addDays(toWeek, -7 * i);
+      const count = db.prepare('SELECT COUNT(*) AS c FROM schedule_slots WHERE week_start = ?').get(candidate);
+      if (count.c > 0) { fromWeek = candidate; break; }
+    }
+    if (!fromWeek) return; // לא נמצא שבוע מקור
+    const result = copyScheduleWeekIfEmpty(db, {
+      fromWeek,
+      toWeek,
+      validateSlot: slot => validateConfiguredKodeshSlot(slot).valid,
+      isSchoolHoliday: (week, day) => Boolean(schoolHolidayForDate(addDays(week, day))),
+      createSeriesId: () => randomBytes(12).toString('hex'),
+      onCopied: (newSlot, sourceId) => copyLessonRoom(db, sourceId, newSlot.id)
+    });
+    if (result.reason === 'copied') {
+      console.log(`[auto-copy] העתקת מערכת שעות מ-${fromWeek} ל-${toWeek}: ${result.copied} שיעורים`);
+    }
+  } catch (err) {
+    console.error('[auto-copy] שגיאה בהעתקה אוטומטית של מערכת שעות:', err.message);
+  }
+}, { timezone: 'Asia/Jerusalem' });
 
 const keyFile = path.join(certDirForCheck, 'key.pem');
 const certFile = path.join(certDirForCheck, 'cert.pem');

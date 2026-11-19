@@ -313,6 +313,12 @@ export class ApiService {
   setExamCodeGrade(code: string, grade: number) { return this.http.put(`${this.base}/exam-codes/${encodeURIComponent(code)}/grade`, { grade }); }
   getExamStats() { return this.http.get<{ byStudent: any[]; byExam: any[] }>(`${this.base}/exams-stats/summary`); }
   getStudentExams(id_number: string) { return this.http.get<any[]>(`${this.base}/students/${encodeURIComponent(id_number)}/exams`); }
+  setStudentExamGrade(id_number: string, exam_id: number, grade: number | null) {
+    return this.http.put<{ success: boolean; grade: number | null }>(
+      `${this.base}/students/${encodeURIComponent(id_number)}/exams/${exam_id}/grade`,
+      { grade }
+    );
+  }
   getExamBarcodeUrl(code: string) { return `${this.base}/exam-codes/${encodeURIComponent(code)}/barcode`; }
   getExamTemplate(id: number) { return this.http.get<any>(`${this.base}/exams/${id}/template`); }
   saveExamTemplate(id: number, data: { template_type: string; questions: any[] }) { return this.http.put<{ success: boolean }>(`${this.base}/exams/${id}/template`, data); }
@@ -424,6 +430,11 @@ export class ApiService {
       `${this.base}/schedule/copy-school-year`, { source_week: sourceWeek }
     );
   }
+  fillEmptyScheduleWeeks() {
+    return this.http.post<{ success: boolean; weeks_filled: number; lessons_copied: number }>(
+      `${this.base}/schedule/fill-empty-weeks`, {}
+    );
+  }
   deleteWeekSchedule(week: string, change: { change_category: string; change_reason: string }) {
     return this.http.request<{deleted:number}>('DELETE', `${this.base}/schedule/week/${week}`, { body: change });
   }
@@ -459,4 +470,18 @@ export class ApiService {
     return this.http.post<{id:number}>(`${this.base}/students/${encodeURIComponent(id_number)}/notices`, data);
   }
   deleteStudentNotice(id_number: string, notice_id: number) { return this.http.delete(`${this.base}/students/${encodeURIComponent(id_number)}/notices/${notice_id}`); }
+
+  // ── הדפסה צבעונית ──
+  getColorPrints() { return this.http.get<any[]>(`${this.base}/color-prints`); }
+  importColorPrints(file: File) {
+    const fd = new FormData();
+    fd.append('file', file);
+    return this.http.post<{ imported: number; year_groups: string[] }>(`${this.base}/color-prints/import`, fd);
+  }
+  useColorPrint(id: number) {
+    return this.http.post<{ success: boolean; used: number; remaining: number }>(`${this.base}/color-prints/${id}/use`, {});
+  }
+  patchColorPrint(id: number, data: { quota?: number; used?: number }) {
+    return this.http.patch<{ success: boolean; id: number; quota: number; used: number; remaining: number }>(`${this.base}/color-prints/${id}`, data);
+  }
 }

@@ -142,6 +142,31 @@ template: `
 </button>
 </div>
 </div>
+<!-- ── הדפסה צבעונית (בתוך פרטי תלמידה, למעלה) ── -->
+<div class="color-print-inline" *ngIf="colorPrint()">
+  <span class="cp-title">🖨️ הדפסה צבעונית</span>
+  <div class="color-print-badge"
+    [class.cp-full]="colorPrint()!.remaining === 0"
+    [class.cp-low]="colorPrint()!.remaining > 0 && colorPrint()!.remaining <= 3">
+    <span class="cp-used">{{ colorPrint()!.used }}</span>
+    <span class="cp-sep">/</span>
+    <span class="cp-quota">{{ colorPrint()!.quota }}</span>
+    <span class="cp-label">נשאר {{ colorPrint()!.remaining }}</span>
+  </div>
+  <button class="use-print-btn" (click)="useColorPrint()"
+    [disabled]="colorPrint()!.remaining === 0 || savingColorPrint()"
+    title="רשום שימוש נוסף">
+    <span *ngIf="savingColorPrint()" class="loading-dots"><i></i><i></i><i></i></span>
+    <span *ngIf="!savingColorPrint()">＋ שימוש</span>
+  </button>
+  <button class="btn btn-secondary btn-sm" (click)="startEditColorPrint()" *ngIf="!editingColorPrint()">✎</button>
+  <ng-container *ngIf="editingColorPrint()">
+    <label>השתמשה <input type="number" min="0" [(ngModel)]="cpEditUsed" style="width:55px" class="cp-input"></label>
+    <button class="btn btn-primary btn-sm" (click)="saveColorPrint()">שמור</button>
+    <button class="btn btn-secondary btn-sm" (click)="editingColorPrint.set(false)">ביטול</button>
+  </ng-container>
+  <span *ngIf="colorPrintError()" class="edit-error" style="font-size:0.8rem;">{{ colorPrintError() }}</span>
+</div>
 <form *ngIf="editing()" class="student-edit-form" (ngSubmit)="saveStudent()">
 <div class="edit-shell">
 <section class="edit-section">
@@ -389,7 +414,7 @@ template: `
 </div>
 </div>
 
-<!-- ── לוח מודעות ── -->
+<!-- ── לוח מודעות (בתוך detail-grid כעמודה שנייה) ── -->
 <div class="card notices-card">
   <div class="section-title-row">
     <div class="section-title">📋 לוח מודעות</div>
@@ -524,17 +549,42 @@ type="checkbox"
 <div class="table-wrap" *ngIf="ex.length">
 <table>
 <thead>
-<tr><th>מבחן</th><th>תאריך</th><th>ציון</th><th>סטטוס</th></tr>
+<tr><th>מבחן</th><th>תאריך</th><th>ציון</th><th>סטטוס</th><th></th></tr>
 </thead>
 <tbody>
 <tr *ngFor="let e of ex">
 <td>{{ e.exam_name }}</td>
 <td>{{ e.exam_date || '—' }}</td>
-<td [class.grade-val]="e.grade != null">{{ e.grade != null ? e.grade : '—' }}</td>
+<td [class.grade-val]="e.grade != null">
+  <ng-container *ngIf="editingGradeExamId() === e.exam_id; else gradeDisplay">
+    <input
+      type="number" min="0" max="100" step="1"
+      class="grade-input"
+      [value]="editingGradeValue()"
+      (input)="editingGradeValue.set($any($event.target).value)"
+      (keydown.enter)="saveEditGrade()"
+      (keydown.escape)="cancelEditGrade()"
+      autofocus
+      placeholder="0–100"
+      [disabled]="savingGrade()"
+    />
+  </ng-container>
+  <ng-template #gradeDisplay>{{ e.grade != null ? e.grade : '—' }}</ng-template>
+</td>
 <td><span class="badge" [class.badge-green]="e.grade != null" [class.badge-red]="e.grade == null">{{ e.grade != null ? 'נבחנה' : 'לא נבחנה' }}</span></td>
+<td class="grade-actions">
+  <ng-container *ngIf="editingGradeExamId() === e.exam_id; else editBtn">
+    <button class="btn btn-primary btn-sm" (click)="saveEditGrade()" [disabled]="savingGrade()">שמור</button>
+    <button class="btn btn-secondary btn-sm" (click)="cancelEditGrade()" [disabled]="savingGrade()">ביטול</button>
+  </ng-container>
+  <ng-template #editBtn>
+    <button class="btn btn-secondary btn-sm" (click)="startEditGrade(e)" [disabled]="editingGradeExamId() !== null">✎</button>
+  </ng-template>
+</td>
 </tr>
 </tbody>
 </table>
+<p *ngIf="gradeEditError()" class="edit-error" role="alert" style="margin-top:6px;">{{ gradeEditError() }}</p>
 </div>
 <div class="exam-average" *ngIf="studentExamAvg()">
 ממוצע כללי: <strong>{{ studentExamAvg() }}</strong>
@@ -1067,6 +1117,42 @@ border-radius: 12px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700;
 .timeline-content strong { color:var(--text); font-size:.88rem; }
 .timeline-content p { margin:4px 0; color:var(--text-muted); font-size:.8rem; }
 .timeline-content time { color:var(--text-light); font-size:.72rem; }
+.grade-input {
+  width: 72px; padding: 3px 7px; border: 1px solid var(--primary); border-radius: var(--radius-sm);
+  font-size: 0.9rem; text-align: center; background: var(--surface); color: var(--text);
+  &:focus { outline: 2px solid var(--primary-glow); }
+}
+.grade-actions { white-space: nowrap; display: flex; gap: 4px; align-items: center; }
+.btn-sm { padding: 3px 10px; font-size: 0.8rem; }
+.color-print-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.color-print-card { padding:10px 16px; }
+.cp-title { font-weight:700; font-size:0.88rem; color:var(--text-muted); white-space:nowrap; }
+.color-print-inline {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:10px 16px; margin:0 -16px; border-bottom:1px solid var(--border);
+  background:var(--surface-2); border-radius:0;
+}
+.color-print-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  background:var(--surface-2); border-radius:10px; padding:6px 14px;
+  font-size:1rem; font-weight:700; border:2px solid var(--border);
+  &.cp-full { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
+  &.cp-low  { background:#fef9c3; border-color:#fde68a; color:#92400e; }
+  .cp-used  { color:var(--primary); font-size:1.15rem; }
+  .cp-sep   { color:var(--text-muted); margin:0 1px; }
+  .cp-quota { color:var(--text-muted); }
+  .cp-label { font-size:0.78rem; font-weight:500; color:var(--text-muted); border-right:1px solid var(--border); padding-right:8px; margin-right:4px; }
+}
+.use-print-btn {
+  padding:6px 14px; border-radius:20px; border:2px solid var(--primary);
+  background:var(--primary-light); color:var(--primary); font:inherit; font-weight:700; font-size:0.88rem;
+  cursor:pointer; transition:all var(--transition);
+  &:hover:not(:disabled) { background:var(--primary); color:#fff; }
+  &:disabled { opacity:0.4; cursor:default; }
+}
+.cp-edit-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  label { font-size:0.8rem; font-weight:600; display:flex; flex-direction:column; gap:2px; }
+  .cp-input { height:32px; padding:0 8px; border:1.5px solid var(--border); border-radius:var(--radius-sm); font:inherit; background:var(--surface); width:65px; } }
 `]
 })
 export class StudentComponent implements OnInit {
@@ -1089,6 +1175,10 @@ requirements = signal<StudentRequirements | null>(null);
 requirementError = signal('');
 savingRequirementId = signal<number | null>(null);
 exams = signal<any[]>([]);
+editingGradeExamId = signal<number | null>(null);
+editingGradeValue = signal<string>('');
+savingGrade = signal(false);
+gradeEditError = signal('');
 attendance = signal<any>(null);
 studentActivity = signal<ActivityItem[]>([]);
 activityLoading = signal(true);
@@ -1135,6 +1225,14 @@ gradeSheetReady = computed(() => this.examsLoaded() && !!this.attendance());
 
 uploadingPhoto = signal(false);
 photoError = signal('');
+
+// ── הדפסה צבעונית ──
+colorPrint = signal<{ id: number; quota: number; used: number; remaining: number } | null>(null);
+savingColorPrint = signal(false);
+editingColorPrint = signal(false);
+cpEditQuota = 20;
+cpEditUsed = 0;
+colorPrintError = signal('');
 
 // ── תיק סרוק ──
 documents = signal<any[]>([]);
@@ -1361,6 +1459,7 @@ next: s => {
   this.loadExams(s.id_number);
   this.loadAttendance(s.id_number);
   this.loadDocuments(s.id_number);
+  this.loadColorPrint(s.id_number);
   this.loadNotices(s.id_number);
   this.loadStudentActivity(s.id_number);
 },
@@ -1455,6 +1554,105 @@ next: rows => {
 },
 error: () => this.gradeSheetError.set('לא ניתן לטעון את ציוני התלמידה. נסי שוב לפני ייצוא הגיליון.')
 });
+}
+
+startEditGrade(exam: any) {
+  this.editingGradeExamId.set(exam.exam_id);
+  this.editingGradeValue.set(exam.grade != null ? String(exam.grade) : '');
+  this.gradeEditError.set('');
+}
+
+cancelEditGrade() {
+  this.editingGradeExamId.set(null);
+  this.editingGradeValue.set('');
+  this.gradeEditError.set('');
+}
+
+saveEditGrade() {
+  const student = this.student();
+  const examId = this.editingGradeExamId();
+  if (!student || examId == null) return;
+  const raw = this.editingGradeValue().trim();
+  const grade = raw === '' ? null : Number(raw);
+  if (grade !== null && (!Number.isFinite(grade) || grade < 0 || grade > 100)) {
+    this.gradeEditError.set('ציון חייב להיות מספר בין 0 ל-100');
+    return;
+  }
+  this.savingGrade.set(true);
+  this.gradeEditError.set('');
+  this.api.setStudentExamGrade(student.id_number, examId, grade).subscribe({
+    next: (res) => {
+      this.exams.update(list => list.map(e =>
+        e.exam_id === examId ? { ...e, grade: res.grade } : e
+      ));
+      this.editingGradeExamId.set(null);
+      this.savingGrade.set(false);
+    },
+    error: (err) => {
+      this.gradeEditError.set(err?.error?.error || 'שגיאה בשמירת הציון');
+      this.savingGrade.set(false);
+    }
+  });
+}
+
+loadColorPrint(id_number: string) {
+  this.api.getColorPrints().subscribe({
+    next: rows => {
+      const s = this.student();
+      if (!s) return;
+      // התאמה לפי שם ומשפחה (הפוך: השם הראשון + שם משפחה)
+      const nameParts = s.name?.trim().split(/\s+/) || [];
+      const firstName = nameParts.slice(0, -1).join(' ') || s.name;
+      const lastName  = nameParts[nameParts.length - 1] || '';
+      const match = rows.find((r: any) =>
+        (r.student_name === firstName && r.family_name === lastName) ||
+        (r.student_name === s.name) ||
+        (r.student_name + ' ' + r.family_name === s.name) ||
+        (r.family_name + ' ' + r.student_name === s.name)
+      );
+      this.colorPrint.set(match ?? null);
+    }
+  });
+}
+
+useColorPrint() {
+  const cp = this.colorPrint();
+  if (!cp || this.savingColorPrint()) return;
+  this.savingColorPrint.set(true);
+  this.colorPrintError.set('');
+  this.api.useColorPrint(cp.id).subscribe({
+    next: res => {
+      this.colorPrint.update(c => c ? { ...c, used: res.used, remaining: res.remaining } : c);
+      this.savingColorPrint.set(false);
+    },
+    error: err => {
+      this.colorPrintError.set(err.error?.error || 'שגיאה');
+      this.savingColorPrint.set(false);
+    }
+  });
+}
+
+startEditColorPrint() {
+  const cp = this.colorPrint();
+  if (!cp) return;
+  this.cpEditQuota = 20;
+  this.cpEditUsed  = Number(cp.used);
+  this.editingColorPrint.set(true);
+  this.colorPrintError.set('');
+}
+
+saveColorPrint() {
+  const cp = this.colorPrint();
+  if (!cp) return;
+  const usedVal = parseInt(String(this.cpEditUsed));
+  if (isNaN(usedVal) || usedVal < 0) { this.colorPrintError.set('ערך לא תקין'); return; }
+  this.api.patchColorPrint(cp.id, { quota: 20, used: usedVal }).subscribe({
+    next: res => {
+      this.colorPrint.update(c => c ? { ...c, quota: res.quota, used: res.used, remaining: res.remaining } : c);
+      this.editingColorPrint.set(false);
+    },
+    error: err => this.colorPrintError.set(err.error?.error || 'שגיאה בשמירה')
+  });
 }
 
 loadAttendance(id_number: string) {
