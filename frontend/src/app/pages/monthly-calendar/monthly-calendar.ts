@@ -97,6 +97,7 @@ interface GanttEntry {
   allDay: boolean;
   lane: number;
   laneCount: number;
+  event?: CalendarEvent;
 }
 
 @Component({
@@ -322,10 +323,10 @@ interface GanttEntry {
 
 <!-- Event detail / edit dialog -->
 <div *ngIf="eventDetailOpen()" class="modal-backdrop" (click)="closeEventDetail()">
-  <div class="modal-card" (click)="$event.stopPropagation()">
+  <div class="modal-card event-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-event-title" (click)="$event.stopPropagation()">
     <ng-container *ngIf="!editingEvent()">
-      <div class="modal-title" [style.color]="schoolEventColor(selectedEvent()!)">
-        {{ selectedEvent()!.title }}
+      <div id="calendar-event-title" class="modal-title event-detail-title" [style.color]="schoolEventColor(selectedEvent()!)">
+        <span class="event-title-icon" aria-hidden="true">📅</span>{{ selectedEvent()!.title }}
       </div>
       <div class="event-detail-info">
         <div class="event-info-row">
@@ -336,10 +337,18 @@ interface GanttEntry {
           <span class="event-detail-label">קטגוריה</span>
           <span class="event-category-chip" [style.background]="schoolEventColor(selectedEvent()!) + '22'" [style.color]="schoolEventColor(selectedEvent()!)">{{ selectedEvent()!.category }}</span>
         </div>
-        <ng-container *ngIf="selectedEvent()!.source_sheet === 'ידני'">
-          <div class="event-info-row"><span class="event-detail-label">שעות</span><span>{{ eventTimeLabel(selectedEvent()!) }}</span></div>
-          <div class="event-info-row"><span class="event-detail-label">כיתות</span><span>{{ eventAudienceLabel(selectedEvent()!) }}</span></div>
-        </ng-container>
+        <div class="event-info-row">
+          <span class="event-detail-label">שעות</span><span>{{ eventTimeLabel(selectedEvent()!) }}</span>
+        </div>
+        <div class="event-info-row" *ngIf="selectedEvent()!.class_scope && selectedEvent()!.class_scope !== 'none'">
+          <span class="event-detail-label">כיתות</span><span>{{ eventAudienceLabel(selectedEvent()!) }}</span>
+        </div>
+        <div class="event-info-row" *ngIf="selectedEvent()!.is_school_holiday">
+          <span class="event-detail-label">סוג יום</span><span>יום חופש — אין לימודים</span>
+        </div>
+        <div class="event-info-row event-notes-row" *ngIf="selectedEvent()!.notes">
+          <span class="event-detail-label">פרטים והערות</span><p>{{ selectedEvent()!.notes }}</p>
+        </div>
         <div class="event-info-row" *ngIf="selectedEvent()!.source_sheet">
           <span class="event-detail-label">מקור</span>
           <span>{{ selectedEvent()!.source_sheet === 'ידני' ? 'נוסף ידנית' : selectedEvent()!.source_sheet }}</span>
@@ -544,8 +553,10 @@ interface GanttEntry {
 
         <!-- Schedule-only: text labels -->
         <span *ngIf="visibleItems(cd).length && onlyScheduleOrExams()"
-              class="schedule-event-labels" aria-hidden="true">
+              class="schedule-event-labels">
           <span *ngFor="let item of visibleItems(cd).slice(0,2)" class="schedule-event-label"
+                [class.clickable-event-label]="item.kind==='event'"
+                (click)="item.kind==='event' && openEventDetail(item.event!); $event.stopPropagation()"
                 [style.border-inline-start-color]="item.kind==='exam' ? '#e11d48' : schoolEventColor(item.event!)">
             {{ item.kind==='exam' ? item.exam!.name : item.event?.title }}
           </span>
@@ -556,7 +567,11 @@ interface GanttEntry {
         <span *ngIf="visibleItems(cd).length && !onlyScheduleOrExams()"
               class="event-markers" aria-hidden="true">
           <ng-container *ngFor="let item of visibleItems(cd).slice(0,4)">
-            <span *ngIf="item.kind !== 'wedding' && item.kind !== 'birthday'" class="event-dot"
+            <span *ngIf="item.kind === 'event'" class="event-dot event-dot-clickable"
+                  [attr.title]="'פרטי אירוע: ' + item.event!.title"
+                  (click)="openEventDetail(item.event!); $event.stopPropagation()"
+                  [style.background]="dotColor(item)"></span>
+            <span *ngIf="item.kind !== 'event' && item.kind !== 'wedding' && item.kind !== 'birthday'" class="event-dot"
                   [class.task-dot]="item.kind==='task' && item.task?.visibility==='private'"
                   [class.public-task-dot]="item.kind==='task' && item.task?.visibility==='public'"
                   [class.shared-task-dot]="item.kind==='task' && item.task?.visibility==='shared'"
@@ -605,6 +620,7 @@ interface GanttEntry {
                   [style.background]="entry.color"
                   (mouseenter)="showGanttDetails($event, entry)" (mouseleave)="hideGanttDetails()"
                   (focus)="showGanttDetails($event, entry)" (blur)="hideGanttDetails()"
+                  (click)="openGanttEntry(entry); $event.stopPropagation()"
                   [attr.aria-label]="(entry.kind === 'birthday' ? 'יום הולדת: ' : 'חתונה: ') + entry.label">
             {{ entry.icon }} {{ entry.label }}
           </button>
@@ -628,6 +644,10 @@ interface GanttEntry {
              [class.all-day]="entry.allDay"
              (mouseenter)="showGanttDetails($event, entry)" (mouseleave)="hideGanttDetails()"
              (focus)="showGanttDetails($event, entry)" (blur)="hideGanttDetails()"
+             (click)="openGanttEntry(entry); $event.stopPropagation()"
+             (keydown.enter)="openGanttEntry(entry); $event.stopPropagation()"
+             (keydown.space)="openGanttEntry(entry); $event.preventDefault(); $event.stopPropagation()"
+             [class.gantt-event-clickable]="entry.kind === 'event'"
              tabindex="0"
              [attr.aria-label]="entry.label + ' · ' + entry.timeLabel + (entry.details ? ' · ' + entry.details : '')">
           <strong>{{ entry.icon }} {{ entry.label }}</strong>
@@ -777,6 +797,12 @@ interface GanttEntry {
       width: min(420px, 95vw); box-shadow: 0 16px 40px rgba(0,0,0,.25);
       display: flex; flex-direction: column; gap: 12px;
     }
+    .event-detail-dialog {
+      width: min(760px, calc(100vw - 32px)); max-height: min(82vh, 760px); overflow-y: auto;
+      padding: clamp(22px, 4vw, 40px); gap: 20px;
+    }
+    .event-detail-title { display: flex; align-items: center; gap: 12px; font-size: clamp(1.35rem, 3vw, 2rem); overflow-wrap: anywhere; }
+    .event-title-icon { flex: 0 0 auto; font-size: 1.5rem; }
     .modal-title {
       font-size: 1rem; font-weight: 800; color: var(--primary); margin-bottom: 4px;
     }
@@ -949,11 +975,14 @@ interface GanttEntry {
 
     .event-markers { display: flex; align-items: center; gap: 2px; margin-top: auto; min-height: 8px; }
     .event-dot { width: 8px; height: 8px; flex-basis: 8px; border-radius: 50%; }
+    .event-dot-clickable { cursor: pointer; outline-offset: 2px; }
     .schedule-event-labels { display: grid; gap: 2px; overflow: hidden; margin-top: auto; }
     .schedule-event-label {
       overflow: hidden; padding-inline-start: 4px; border-inline-start: 2px solid;
       font-size: 0.67rem; text-overflow: ellipsis; white-space: nowrap;
     }
+    .clickable-event-label { cursor: pointer; }
+    .clickable-event-label:hover, .clickable-event-label:focus-visible { text-decoration: underline; }
     .more-events { color: var(--text-muted); font-size: 0.62rem; }
 
     .day-tooltip {
@@ -1023,17 +1052,27 @@ interface GanttEntry {
       flex-shrink: 0;
     }
     .event-detail-info { display: flex; flex-direction: column; gap: 10px; }
+    .event-detail-dialog .event-detail-info { gap: 4px; }
     .event-info-row {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 6px 0; border-bottom: 1px solid var(--border);
       &:last-child { border-bottom: none; }
       cursor: default;
     }
+    .event-detail-dialog .event-info-row { min-height: 48px; padding: 12px 4px; font-size: 1rem; }
+    .event-info-row.event-notes-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+    .event-notes-row p { margin: 0; color: var(--text); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
     .event-detail-label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); }
+    .event-detail-dialog .event-detail-label { font-size: 0.88rem; }
+    .event-detail-dialog .modal-actions { flex-wrap: wrap; gap: 10px; }
     .event-category-chip {
       display: inline-block; padding: 3px 10px; border-radius: 999px;
       font-size: 0.8rem; font-weight: 700;
     }
+    .gantt-time-block { cursor: pointer; }
+    .gantt-time-block:focus-visible { z-index: 4; outline: 3px solid var(--primary); outline-offset: 2px; }
+    .gantt-time-block.gantt-event-clickable:hover { filter: brightness(1.08); }
+    .gantt-top-event { cursor: pointer; }
 
     .empty-state { color: var(--text-muted); font-size: 0.85rem; }
     .calendar-error { color: var(--danger); font-size: 0.85rem; margin-bottom: 10px; }
@@ -1145,6 +1184,7 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
           const eventDetails = [event.category, event.source_sheet, event.notes].filter(Boolean).join(' · ');
           add('event', event.title, eventDetails, this.ganttEventColor(event.category, Boolean(event.is_school_holiday)), '📅', date,
             event.start_time, event.end_time, Boolean(event.all_day));
+          entries[entries.length - 1].event = event;
         }
       }
 
@@ -1814,6 +1854,11 @@ export class MonthlyCalendarComponent implements OnInit, OnDestroy {
 
   canViewBirthdays() {
     return this.auth.hasPermission('students');
+  }
+
+  openGanttEntry(entry: GanttEntry) {
+    if (entry.kind === 'event' && entry.event) this.openEventDetail(entry.event);
+    else this.selectDate(entry.date);
   }
 
   openEventDetail(event: CalendarEvent) {
