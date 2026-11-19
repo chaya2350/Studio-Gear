@@ -12,6 +12,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { hashPassword, verifyPassword, initializeAuthSchema, sessionCookie: makeSessionCookie, SESSION_SECONDS } = require('./auth-utils');
 const { parseCalendarWorkbook } = require('./calendar-import');
 const { addIsraeliHolidays, getSchoolHoliday } = require('./calendar-holidays');
+const { graduateYearFor } = require('./graduate-year');
 const { buildStudentUpdateNotice } = require('./student-update-notice');
 const {
   parseStudentWorkbook, normalizeBirthDate, normalizeHebrewBirthDate, normalizeIdNumber,
@@ -1099,6 +1100,20 @@ app.get('/api/stats', (req, res) => {
   res.json(stats);
 });
 
+// ── Birthdays today — דשבורד: ברכת יום הולדת קטנה בהירו ──
+app.get('/api/birthdays-today', (req, res) => {
+  if (!getUserPermissions(req.user.role).students?.view) return res.json([]);
+  // birth_date מאוחסן כ-YYYY-MM-DD. משווים רק חודש-יום כדי לתפוס את היום בכל שנה.
+  const md = new Date().toISOString().split('T')[0].slice(5);
+  const rows = db.prepare(`
+    SELECT id_number, name, year, parallel FROM students
+    WHERE birth_date IS NOT NULL AND birth_date != ''
+      AND substr(birth_date, 6) = ?
+    ORDER BY name
+  `).all(md);
+  res.json(rows);
+});
+
 app.get('/api/messages/unread-count', (req, res) => {
   const { count } = db.prepare(`
     SELECT COUNT(*) AS count FROM messages
@@ -1609,6 +1624,11 @@ const eqColNames = cols.map(c => c.name);
 if (!eqColNames.includes('subcategory')) db.exec('ALTER TABLE equipment ADD COLUMN subcategory TEXT');
 if (!eqColNames.includes('rental_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN rental_price_per_day REAL DEFAULT 0');
 if (!eqColNames.includes('overdue_price_per_day')) db.exec('ALTER TABLE equipment ADD COLUMN overdue_price_per_day REAL DEFAULT 0');
+if (!eqColNames.includes('created_at')) {
+  // SQLite לא מאפשר DEFAULT עם ביטוי ב-ALTER TABLE — מוסיפים טור ריק וממלאים בנפרד
+  db.exec('ALTER TABLE equipment ADD COLUMN created_at TEXT');
+  db.exec("UPDATE equipment SET created_at = datetime('now') WHERE created_at IS NULL");
+}
 initializeEquipmentMaintenance(db);
 registerEquipmentMaintenanceRoutes(app, db);
 
@@ -1714,6 +1734,10 @@ function mapStudentRow(row) {
   const extraData = parseExtraData(row.extra_data);
   return {
     ...row,
+    // שנת גמר — רק לבוגרות, לפי הקידום האחרון ל"בוגרות"
+    graduate_year: String(row.year || '').trim() === 'בוגרות'
+      ? graduateYearFor(db, row.id_number)
+      : null,
     class_name: String(row.year || '').trim() === 'ג'
       ? null
       : (buildStudentClassName(row.year, row.parallel) || String(row.class_name || '').trim()),
@@ -2892,7 +2916,7 @@ app.post('/api/equipment', (req, res) => {
     const finalOverdue = finalCategory === 'מחשב נייד' ? 0 : (overdue_price_per_day || 0);
 
     const result = db.prepare(
-      'INSERT INTO equipment (barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      "INSERT INTO equipment (barcode, name, category, subcategory, description, image_url, rental_price_per_day, overdue_price_per_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
     ).run(barcode, normalizedName, finalCategory, finalSubcategory, description, image_url, finalRental, finalOverdue);
     res.json({ id: result.lastInsertRowid });
   } catch { res.status(400).json({ error: 'Barcode already exists' }); }

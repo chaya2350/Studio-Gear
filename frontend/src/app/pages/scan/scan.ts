@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { BeepService } from '../../services/beep.service';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 @Component({
@@ -177,7 +178,7 @@ manualBarcode = '';
 private reader = new BrowserMultiFormatReader();
 private scanning = false;
 
-constructor(private router: Router, private route: ActivatedRoute, private api: ApiService) {}
+constructor(private router: Router, private route: ActivatedRoute, private api: ApiService, private beep: BeepService) {}
 
 ngAfterViewInit() {
 const barcode = this.route.snapshot.queryParamMap.get('barcode');
@@ -232,17 +233,22 @@ navigate(barcode: string) {
 const trimmed = barcode.trim();
 const orderMatch = trimmed.match(/^ORDER-(\d+)$/i);
 if (orderMatch) {
+this.beep.success();
 this.router.navigate(['/loans'], { queryParams: { order: Number(orderMatch[1]) } });
 return;
 }
 
 this.api.getEquipmentByBarcode(trimmed).subscribe({
 next: (item) => {
+this.beep.success();
 const qp: any = { fromScan: '1' };
 if (item.is_loaned && item.loan_id) qp['pay'] = '1';
 this.router.navigate(['/equipment', item.id], { queryParams: qp });
 },
-error: () => this.error.set(`ברקוד "${trimmed}" לא נמצא במערכת`)
+error: () => {
+this.beep.error();
+this.error.set(`ברקוד "${trimmed}" לא נמצא במערכת`);
+}
 });
 }
 

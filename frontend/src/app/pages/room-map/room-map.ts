@@ -79,7 +79,7 @@ interface BookingResults {
           <div><h2>בדיקת תפוסה</h2><p>בחרי תאריך וטווח שעות כדי לראות אילו חדרים פנויים</p></div>
         </div>
         <div class="filter-fields">
-          <label>תאריך <input name="date" type="date" [(ngModel)]="date" required></label>
+          <label>תאריך <span class="date-input-row"><input name="date" type="date" [(ngModel)]="date" required><button class="today-button" type="button" (click)="searchToday()" [disabled]="bookingLoading">היום</button></span></label>
           <label>משעה <input name="start" type="time" [(ngModel)]="start" required></label>
           <label>עד שעה <input name="end" type="time" [(ngModel)]="end" required></label>
           <button class="primary search-button" type="submit" [disabled]="filterForm.invalid || bookingLoading"
@@ -117,10 +117,12 @@ interface BookingResults {
             <table>
               <thead><tr><th>מס׳ חדר</th><th>שיבוץ במפה המקורית</th><th>מקומות</th><th>תפוסה</th><th>פעולות</th></tr></thead>
               <tbody>
-                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable"
+                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable" [class.room-free]="room.usable && checkedDate && !roomBookings(room).length"
                     (contextmenu)="room.computers ? onRoomContextMenu($event, room) : null">
                   <td><span class="room-number">{{ room.number }}</span></td>
-                  <td class="room-name">{{ room.name }} <span *ngIf="room.computers" class="computer-label">מחשבים</span></td>
+                  <td class="room-name">{{ room.name }} <span *ngIf="room.computers" class="computer-label">מחשבים</span><span *ngIf="room.projector" class="projector-label" title="יש מקרן בחדר">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-label="מקרן"><rect x="2.5" y="8" width="15" height="9" rx="2"/><circle cx="8" cy="12.5" r="2.6"/><path d="M17.5 10.5h4M17.5 14.5h4M21.5 10.5v4"/></svg>
+                  </span></td>
                   <td>{{ room.capacity === null ? '—' : room.capacity }}<span *ngIf="room.capacity_needs_confirmation" title="דורש בדיקה"> *</span></td>
                   <td class="occupancy">
                     <span *ngIf="!room.usable" class="status status-unusable">אין להשתמש</span>
@@ -288,6 +290,9 @@ interface BookingResults {
     .filter-heading p, .map-heading p { color: var(--text-muted); font-size: 13px; }
     .filter-fields { display: grid; grid-template-columns: minmax(165px, 1.3fr) repeat(2, minmax(130px, 1fr)) auto; gap: 14px; align-items: end; }
     .filter-fields label { margin: 0; }
+    .date-input-row { display: flex; align-items: end; gap: 7px; }
+    .date-input-row input { flex: 1; }
+    .today-button { min-height: 43px; margin-top: 6px; padding-inline: 12px; color: var(--primary); white-space: nowrap; }
     label { display: block; margin: 14px 0; font-size: 13px; font-weight: 600; }
     input:not([type=checkbox]), select { display: block; width: 100%; min-width: 0; min-height: 43px; padding: 9px 12px; margin-top: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); font: inherit; }
     input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid var(--border-focus); outline-offset: 2px; }
@@ -323,6 +328,18 @@ interface BookingResults {
     .room-name { font-weight: 600; min-width: 95px; }
     .room-number { display: inline-block; min-width: 43px; padding: 5px 7px; border-radius: 8px; color: var(--primary); background: var(--primary-light); font-weight: 700; direction: ltr; }
     .computer-label { display: block; color: var(--primary); font-size: 11px; font-weight: 500; margin-top: 3px; }
+    .projector-label { display: inline-flex; align-items: center; color: var(--primary); opacity: .85; margin-inline-start: 5px; vertical-align: middle; }
+    .projector-label svg { width: 13px; height: 13px; }
+
+    /* נצנוץ עדין על חדר פנוי — נשימה בלבד, בלי הבהוב חד */
+    tr.room-free td { animation: room-free-breathe 2.6s ease-in-out infinite; }
+    @keyframes room-free-breathe {
+      0%, 100% { background: transparent; }
+      50%      { background: var(--success-soft, rgba(34,197,94,0.08)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      tr.room-free td { animation: none; background: var(--success-soft, rgba(34,197,94,0.08)); }
+    }
     .status { display: inline-block; padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; line-height: 1.3; }
     .status-free { color: var(--text); background: var(--success-soft); }
     .status-busy, .status-unusable { color: var(--text); background: var(--danger-soft); }
@@ -470,6 +487,13 @@ export class RoomMapComponent implements OnInit, OnDestroy {
       this.end = end;
       setTimeout(() => this.search(), 0);
     });
+  }
+
+  searchToday(): void {
+    this.date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    this.search();
   }
 
   load(): void {

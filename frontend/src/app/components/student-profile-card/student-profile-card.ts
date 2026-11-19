@@ -1,5 +1,5 @@
 import {
-  Component, Input, OnChanges, SimpleChanges,
+  Component, Input, OnChanges, SimpleChanges, signal,
   ChangeDetectionStrategy
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -46,6 +46,13 @@ import { RouterLink } from '@angular/router';
           <p class="student-meta">{{ idNumber }}<span *ngIf="track"> · {{ track }}{{ year ? ' ' + year : '' }}</span></p>
           <p class="student-meta" *ngIf="phone">
             <a [href]="'tel:' + phone" class="phone-link">{{ phone }}</a>
+            <button type="button" class="phone-copy-btn" (click)="copyPhone()"
+                    [attr.aria-label]="phoneCopied() ? 'מספר הטלפון הועתק' : 'העתקת מספר טלפון'"
+                    [title]="phoneCopied() ? 'הועתק' : 'העתקת מספר טלפון'">
+              <svg *ngIf="!phoneCopied()" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V3.8A1.3 1.3 0 0 0 9.2 2.5H3.8a1.3 1.3 0 0 0-1.3 1.3v6.4a1.3 1.3 0 0 0 1.3 1.3h1.7" stroke="currentColor" stroke-width="1.4"/></svg>
+              <span *ngIf="phoneCopied()" aria-hidden="true">✓</span>
+            </button>
+            <span class="phone-copy-status" *ngIf="phoneCopied()" role="status">הועתק</span>
           </p>
         </div>
 
@@ -307,6 +314,10 @@ import { RouterLink } from '@angular/router';
       text-decoration: none;
       &:hover { text-decoration: underline; }
     }
+    .phone-copy-btn { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-inline-start: 5px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; vertical-align: middle; }
+    .phone-copy-btn:hover { background: var(--surface-2); color: var(--primary); }
+    .phone-copy-btn svg { width: 15px; height: 15px; }
+    .phone-copy-status { margin-inline-start: 4px; color: var(--success); font-size: 0.75rem; }
 
     /* ── Status badge ── */
     .status-badge {
@@ -506,8 +517,19 @@ export class StudentProfileCardComponent implements OnChanges {
   statusLabel = '';
   statusIcon = '';
   photoOpen = false;
+  readonly phoneCopied = signal(false);
 
   openPhoto() { this.photoOpen = true; }
+
+  async copyPhone() {
+    try {
+      await navigator.clipboard.writeText(this.phone);
+      this.phoneCopied.set(true);
+      setTimeout(() => this.phoneCopied.set(false), 1800);
+    } catch {
+      this.phoneCopied.set(false);
+    }
+  }
 
   private readonly PALETTE = [
     '#0d9488', '#0891b2', '#6366f1', '#8b5cf6',

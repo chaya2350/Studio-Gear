@@ -19,6 +19,7 @@ export interface Equipment {
   notes?: string;
   is_reserved: number;
   is_under_maintenance?: number;
+  created_at?: string;
 }
 
 export interface EquipmentMaintenanceRecord {
@@ -91,6 +92,7 @@ export interface Student {
   graduate_address?: string;
   wedding_date?: string;
   wedding_venue?: string;
+  graduate_year?: number | null;
 }
 
 export interface Teacher {

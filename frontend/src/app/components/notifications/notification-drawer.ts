@@ -20,7 +20,7 @@ import { NotificationsService, AppNotification } from '../../services/notificati
         <h2 id="notif-title" class="drawer-title">🔔 התראות</h2>
         <div class="header-actions">
           <button *ngIf="svc.visible().length" class="btn-text" (click)="svc.dismissAll()">
-            נקה הכל
+            סמן הכל כטופל
           </button>
           <button class="close-btn" (click)="close.emit()" aria-label="סגור">
             <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -49,8 +49,8 @@ import { NotificationsService, AppNotification } from '../../services/notificati
                     <svg viewBox="0 0 16 16" fill="none"><path d="M10 8H6m4 0-2.5-2.5M10 8l-2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                   </span>
                 </a>
-                <button class="dismiss-btn" (click)="svc.dismiss(n.id)" title="הסר התראה" aria-label="הסר התראה">
-                  <svg viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3L3 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <button class="dismiss-btn" (click)="svc.dismiss(n.id)" title="סמן כטופל" [attr.aria-label]="'סמן התראה כטופלה: ' + n.title">
+                  <svg viewBox="0 0 14 14" fill="none"><path d="m2.5 7.5 3 3 6-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </li>
             }
@@ -275,7 +275,7 @@ import { NotificationsService, AppNotification } from '../../services/notificati
       flex-shrink: 0;
       padding: 0;
       svg { width: 12px; height: 12px; }
-      &:hover { color: var(--danger); }
+      &:hover { color: var(--success); }
     }
     .notif-item:hover .dismiss-btn { opacity: 1; }
 

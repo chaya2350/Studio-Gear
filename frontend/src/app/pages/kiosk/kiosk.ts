@@ -31,6 +31,11 @@ interface KioskEquipment {
         <button class="exit-btn" (click)="exitKiosk()" title="יציאה">יציאה</button>
       </header>
 
+      <!-- Greeting — changes with time of day -->
+      @if (!isIdle()) {
+        <p class="kiosk-greeting" role="status">{{ greeting() }}</p>
+      }
+
       <!-- Idle overlay -->
       @if (isIdle()) {
         <div class="idle-overlay" (click)="resetIdleTimer()">
@@ -284,6 +289,21 @@ interface KioskEquipment {
       color: rgba(255,255,255,0.7);
       font-size: 0.9rem;
       font-weight: 700;
+    }
+
+    /* greeting — breathes quietly under the kiosk header */
+    .kiosk-greeting {
+      margin: 18px 32px -6px;
+      text-align: center;
+      color: rgba(255,255,255,0.55);
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      animation: greeting-in 0.8s ease both;
+    }
+    @keyframes greeting-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
     .kiosk-logo {
@@ -749,6 +769,20 @@ interface KioskEquipment {
 export class KioskComponent implements OnInit, OnDestroy {
   step = signal<KioskStep>('id');
   isIdle = signal(true);
+
+  /** ברכת קיוסק — מתחלפת לפי שעת היום */
+  greeting = signal(this.computeGreeting());
+  private greetingInterval: any;
+
+  private computeGreeting(): string {
+    const h = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jerusalem', hour: 'numeric', hour12: false,
+    }).format(new Date()));
+    if (h < 6) return 'לילה טוב';
+    if (h < 12) return 'בוקר טוב ומתוק';
+    if (h < 17) return 'צהריים טובים';
+    return 'ערב טוב ומנוחה טובה';
+  }
   student = signal<any | null>(null);
   equipment = signal<KioskEquipment[]>([]);
   activeCategory = signal<string>('הכל');
@@ -809,10 +843,12 @@ export class KioskComponent implements OnInit, OnDestroy {
     document.documentElement.requestFullscreen?.().catch(() => {});
     this.loadEquipment();
     this.startIdleTimer();
+    this.greetingInterval = setInterval(() => this.greeting.set(this.computeGreeting()), 60000);
   }
 
   ngOnDestroy() {
     clearTimeout(this.idleTimer);
+    clearInterval(this.greetingInterval);
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   }
 

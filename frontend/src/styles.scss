@@ -960,6 +960,7 @@ app-schedule .schedule-table-wrap { flex: 1; min-height: 0; overflow: auto; }
 .graduate-profile-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
 .graduate-profile-heading h2 { margin: 0; font-size: 1.1rem; }
 .graduate-profile-heading span, .graduate-profile-details span { color: var(--text-muted); }
+.graduate-since { color: var(--primary); font-weight: 700; font-size: 0.78rem; }
 .graduate-profile-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 .graduate-profile-details > div { display: grid; gap: 4px; }
 .graduate-current-address { display: grid; gap: 6px; max-width: 520px; font-weight: 700; }

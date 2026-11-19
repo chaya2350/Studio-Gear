@@ -8,6 +8,7 @@ import { AuthService, UserRole } from './services/auth.service';
 import { MessagesService } from './services/messages.service';
 import { NotificationsService } from './services/notifications.service';
 import { LoadingService } from './services/loading.service';
+import { BeepService } from './services/beep.service';
 import { NotificationDrawerComponent } from './components/notifications/notification-drawer';
 import { Subject, forkJoin, interval } from 'rxjs';
 import { filter, takeUntil } from 'rxjs/operators';
@@ -32,7 +33,7 @@ import { filter, takeUntil } from 'rxjs/operators';
       </button>
 
       <!-- Brand -->
-      <a routerLink="/" class="topbar-brand">
+      <a routerLink="/" class="topbar-brand" (dblclick)="showLogoEncouragement($event)">
         <img src="/logo.png" class="topbar-logo" alt="לוגו סמינר גור" />
         <span class="topbar-title">סמינר גור</span>
       </a>
@@ -42,7 +43,7 @@ import { filter, takeUntil } from 'rxjs/operators';
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש או שאלה בעברית…" aria-label="חיפוש גלובלי">
+        <input [(ngModel)]="searchQuery" (input)="onGlobalSearch()" placeholder="חיפוש… (Ctrl+B)" aria-label="חיפוש גלובלי">
         <button *ngIf="searchQuery" class="search-clear" (click)="clearSearch()" aria-label="נקה חיפוש">✕</button>
         <div class="search-results" *ngIf="searchResults" (click)="$event.stopPropagation()">
           <div *ngIf="searchResults.students.length" class="search-group">
@@ -1031,6 +1032,14 @@ export class App implements OnInit {
 
   @HostListener('document:keydown', ['$event'])
   onGlobalBarcodeKeydown(event: KeyboardEvent) {
+    // Ctrl+B (or Cmd+B) → focus the global search input
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+      event.preventDefault();
+      const input = document.querySelector<HTMLInputElement>('.global-search input');
+      if (input) { input.focus(); input.select(); }
+      return;
+    }
+
     if (!this.auth.user() || this.currentPath === '/login' || this.currentPath === '/kiosk' ||
         event.ctrlKey || event.altKey || event.metaKey) {
       this.resetBarcodeBuffer();
@@ -1042,6 +1051,8 @@ export class App implements OnInit {
       this.resetBarcodeBuffer();
       return;
     }
+
+    if (event.key === 'Shift') return;
 
     const now = performance.now();
     if (event.key === 'Enter' || event.key === 'Tab') {
@@ -1077,15 +1088,18 @@ export class App implements OnInit {
     const barcode = rawBarcode.trim();
     const orderMatch = /^ORDER-(\d+)$/i.exec(barcode);
     if (orderMatch) {
+      this.beep.success();
       this.router.navigate(['/loans'], { queryParams: { order: Number(orderMatch[1]) } });
       return;
     }
     if (/^ATT-T\d+-[^-]+-\d{4}-\d{2}-\d{2}$/i.test(barcode)) {
+      this.beep.success();
       this.router.navigate(['/attendance/scan'], { queryParams: { barcode } });
       return;
     }
     const studentMatch = /^STU-(.+)$/i.exec(barcode);
     if (studentMatch) {
+      this.beep.success();
       if (this.currentPath === '/attendance/scan') {
         this.router.navigate(['/attendance/scan'], { queryParams: { barcode } });
       } else {
@@ -1094,15 +1108,22 @@ export class App implements OnInit {
       return;
     }
     if (/^EX\d+-/i.test(barcode)) {
+      this.beep.success();
       this.router.navigate(['/exams/scan'], { queryParams: { code: barcode } });
       return;
     }
 
     this.api.getEquipmentByBarcode(barcode).subscribe({
-      next: item => this.router.navigate(['/equipment', item.id], {
-        queryParams: { fromScan: '1', ...(item.is_loaned && item.loan_id ? { pay: '1' } : {}) }
-      }),
-      error: () => this.router.navigate(['/scan'], { queryParams: { barcode } })
+      next: item => {
+        this.beep.success();
+        this.router.navigate(['/equipment', item.id], {
+          queryParams: { fromScan: '1', ...(item.is_loaned && item.loan_id ? { pay: '1' } : {}) }
+        });
+      },
+      error: () => {
+        this.beep.error();
+        this.router.navigate(['/scan'], { queryParams: { barcode } });
+      }
     });
   }
 
@@ -1301,6 +1322,7 @@ export class App implements OnInit {
     public messages: MessagesService,
     public notifs: NotificationsService,
     public loading: LoadingService,
+    private beep: BeepService,
   ) {
     this.currentPath = this.router.url.split('?')[0];
     this.currentQuery = this.router.url;
@@ -1360,6 +1382,37 @@ export class App implements OnInit {
 
   ngOnInit() {}
   ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }
+
+  // ── Easter egg: לחיצה כפולה על הלוגו מציגה משפט מעודד ──
+  readonly encouragementVisible = signal(false);
+  encouragementText = '';
+  private encouragementTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly encouragements = [
+    'היום הוא הזדמנות חדשה',
+    'את עושה חיל',
+    'כל צעד קטן נחשב',
+    'מה שאת עושה חשוב',
+    'יש לך מה לתת',
+    'היום שייך לך',
+  ];
+
+  showLogoEncouragement(event: MouseEvent): void {
+    event.preventDefault();
+    this.encouragementText = this.encouragements[Math.floor(Math.random() * this.encouragements.length)];
+    this.encouragementVisible.set(true);
+    if (this.encouragementTimer) clearTimeout(this.encouragementTimer);
+    this.encouragementTimer = setTimeout(() => this.encouragementVisible.set(false), 2600);
+  }
+
+  /** יום שישי אחרי 12:00 — הפוטר מברך שבת שלום (זמן ישראל) */
+  isErevShabbat(): boolean {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jerusalem', weekday: 'short', hour: 'numeric', hour12: false,
+    }).formatToParts(new Date());
+    const weekday = parts.find(p => p.type === 'weekday')?.value;
+    const hour = Number(parts.find(p => p.type === 'hour')?.value ?? 0);
+    return weekday === 'Fri' && hour >= 12;
+  }
 
   roleLabel(role: UserRole): string {
     const user = this.auth.user();

@@ -75,17 +75,27 @@ template: `
 <hr class="section-divider">
 
 <div class="cat-grid">
-<div *ngFor="let cat of topLevelCategories()" class="cat-card" (click)="selectCategory(cat)">
+<div *ngFor="let cat of topLevelCategories()" class="cat-card" (click)="selectCategory(cat)"
+  [style.--cat-accent]="getCatAccentColor(cat.name).accent"
+  [style.--cat-accent-bg]="getCatAccentColor(cat.name).bg">
 <button class="delete-mini" type="button" (click)="deleteCategoryRow(cat, $event)">מחק</button>
-<div class="cat-name">{{ cat.name }}</div>
+<div class="cat-icon-row">
+  <span class="cat-color-dot"></span>
+  <div class="cat-name">{{ cat.name }}</div>
+</div>
 <div class="cat-counts">
 <span class="cat-total">{{ countByTopLevelGroup(cat.name) }} פריטים</span>
 <span *ngIf="loanedByTopLevelGroup(cat.name)" class="cat-loaned">{{ loanedByTopLevelGroup(cat.name) }} מושאל</span>
+<span *ngIf="!loanedByTopLevelGroup(cat.name) && countByTopLevelGroup(cat.name)" class="cat-all-free">הכל פנוי ✓</span>
 </div>
 <div class="cat-bar">
 <div class="cat-bar-fill"
-[style.width.%]="countByTopLevelGroup(cat.name) ? (loanedByTopLevelGroup(cat.name) / countByTopLevelGroup(cat.name)) * 100 : 0">
+[style.width.%]="countByTopLevelGroup(cat.name) ? (loanedByTopLevelGroup(cat.name) / countByTopLevelGroup(cat.name)) * 100 : 0"
+[style.background]="getCatBarColor(loanedByTopLevelGroup(cat.name), countByTopLevelGroup(cat.name))">
 </div>
+</div>
+<div class="cat-available-label">
+{{ countByTopLevelGroup(cat.name) - loanedByTopLevelGroup(cat.name) }} פנויים מתוך {{ countByTopLevelGroup(cat.name) }}
 </div>
 </div>
 <div class="cat-card cat-all" (click)="addTopLevelCategory()">
@@ -116,17 +126,27 @@ template: `
 
 <div class="cat-grid">
 <!-- Subcategory cards -->
-<div *ngFor="let sub of subcategoriesInCat()" class="cat-card" (click)="selectSubcategory(sub)">
+<div *ngFor="let sub of subcategoriesInCat()" class="cat-card" (click)="selectSubcategory(sub)"
+  [style.--cat-accent]="getCatAccentColor(sub).accent"
+  [style.--cat-accent-bg]="getCatAccentColor(sub).bg">
 <button class="delete-mini" type="button" (click)="deleteSubcategoryRow(sub, $event)">מחק</button>
-<div class="cat-name">{{ sub }}</div>
+<div class="cat-icon-row">
+  <span class="cat-color-dot"></span>
+  <div class="cat-name">{{ sub }}</div>
+</div>
 <div class="cat-counts">
 <span class="cat-total">{{ countBySubcategory(sub) }} פריטים</span>
 <span *ngIf="loanedBySubcategory(sub)" class="cat-loaned">{{ loanedBySubcategory(sub) }} מושאל</span>
+<span *ngIf="!loanedBySubcategory(sub) && countBySubcategory(sub)" class="cat-all-free">הכל פנוי ✓</span>
 </div>
 <div class="cat-bar">
 <div class="cat-bar-fill"
-[style.width.%]="countBySubcategory(sub) ? (loanedBySubcategory(sub) / countBySubcategory(sub)) * 100 : 0">
+[style.width.%]="countBySubcategory(sub) ? (loanedBySubcategory(sub) / countBySubcategory(sub)) * 100 : 0"
+[style.background]="getCatBarColor(loanedBySubcategory(sub), countBySubcategory(sub))">
 </div>
+</div>
+<div class="cat-available-label">
+{{ countBySubcategory(sub) - loanedBySubcategory(sub) }} פנויים מתוך {{ countBySubcategory(sub) }}
 </div>
 </div>
 <!-- Items without subcategory -->
@@ -167,12 +187,18 @@ template: `
 <span class="badge" [class]="getStatusClass(item)">
 {{ item.is_under_maintenance ? 'בתחזוקה' : (item.is_reserved ? ' שמור' : (item.is_loaned ? (isOverdue(item) ? ' איחור' : (item.category === 'מחשב נייד' ? ' תפוס' : 'מושאל')) : ' פנוי')) }}
 </span>
+<span *ngIf="isNew(item)" class="badge-new">✦ חדש</span>
 </div>
 <h3 class="eq-name">{{ item.name }}</h3>
 <p class="eq-category">
 {{ item.category }}<span *ngIf="item.subcategory"> › {{ item.subcategory }}</span>
 </p>
-<div class="eq-barcode"> {{ item.barcode }}</div>
+<div class="eq-barcode eq-barcode--copy" (click)="copyBarcode(item.barcode, $event)"
+  [attr.title]="'לחצי להעתקה'"
+  [class.eq-barcode--copied]="copiedBarcode() === item.barcode">
+  <span class="eq-barcode-text">{{ item.barcode }}</span>
+  <span class="eq-barcode-tooltip">{{ copiedBarcode() === item.barcode ? '✓ הועתק!' : 'לחצי להעתקה' }}</span>
+</div>
 <div *ngIf="item.is_loaned" class="eq-borrower">
 <span> {{ item.borrower_name }}{{ item.track ? ' — ' + item.track : '' }}</span>
 <span class="eq-return" [style.color]="isOverdue(item) ? 'var(--danger)' : 'var(--text-muted)'">
@@ -196,12 +222,19 @@ margin-top: 10px; max-height: calc(100vh - 260px); overflow-y: auto; padding: 4p
 }
 
 .cat-card {
-background: var(--surface); border-radius: var(--radius); padding: 24px 22px 20px;
+background: var(--cat-accent-bg, var(--surface)); border-radius: var(--radius); padding: 24px 22px 20px;
 border: 1px solid var(--border); box-shadow: var(--shadow-sm); cursor: pointer;
 transition: all var(--transition); display: flex; flex-direction: column; gap: 8px;
 position: relative;
-&:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: transparent;
-outline: 2px solid var(--primary); outline-offset: -1px; }
+&:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: var(--cat-accent, var(--primary));
+outline: 2px solid var(--cat-accent, var(--primary)); outline-offset: -1px; }
+}
+
+.cat-icon-row { display: flex; align-items: center; gap: 8px; }
+.cat-color-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--cat-accent, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat-accent, var(--primary)) 15%, transparent);
 }
 
 .delete-mini {
@@ -235,7 +268,16 @@ padding: 2px 9px; border-radius: 20px; font-weight: 700;
 }
 .cat-bar { height: 4px; background: var(--surface-3); border-radius: 4px; margin-top: 10px; overflow: hidden; }
 .cat-bar-fill {
-height: 100%; background: var(--grad-primary); border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1), background 0.4s ease;
+}
+
+.cat-all-free {
+font-size: 0.72rem; background: #dcfce7; color: #15803d;
+padding: 2px 9px; border-radius: 20px; font-weight: 700;
+}
+
+.cat-available-label {
+font-size: 0.7rem; color: var(--text-light); font-weight: 600; margin-top: 6px;
 }
 
 .stat-card.clickable { cursor: pointer;
@@ -250,6 +292,17 @@ transition: all var(--transition); display: block;
 border-color: transparent; outline: 2px solid var(--primary); outline-offset: -1px; }
 }
 .eq-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.badge-new {
+  font-size: 0.63rem; font-weight: 800; letter-spacing: 0.4px;
+  background: linear-gradient(135deg, #f43f5e 0%, #fb923c 100%);
+  color: #fff; padding: 2px 8px; border-radius: 20px;
+  animation: new-pulse 2s ease-in-out infinite;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+@keyframes new-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(244,63,94,0); }
+}
 .eq-name { font-size: 1rem; font-weight: 800; margin-bottom: 3px; letter-spacing: -0.3px; }
 .eq-category { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; font-weight: 600;
 text-transform: uppercase; letter-spacing: 0.4px; }
@@ -257,6 +310,31 @@ text-transform: uppercase; letter-spacing: 0.4px; }
 font-size: 0.72rem; color: var(--text-light); font-family: monospace;
 background: var(--surface-2); padding: 3px 8px; border-radius: var(--radius-xs);
 display: inline-block; margin-bottom: 10px; border: 1px solid var(--border);
+}
+.eq-barcode--copy {
+position: relative; cursor: pointer;
+transition: background var(--transition), border-color var(--transition), color var(--transition);
+&:hover {
+  background: var(--primary-light); border-color: var(--primary); color: var(--primary);
+  .eq-barcode-tooltip { opacity: 1; transform: translateY(0); }
+}
+}
+.eq-barcode--copied {
+  background: #dcfce7 !important; border-color: #86efac !important; color: #15803d !important;
+  .eq-barcode-tooltip { opacity: 1; transform: translateY(0); }
+}
+.eq-barcode-tooltip {
+position: absolute; bottom: calc(100% + 6px); right: 50%;
+transform: translateX(50%) translateY(4px);
+background: var(--text); color: #fff;
+font-size: 0.65rem; font-weight: 700; white-space: nowrap;
+padding: 4px 9px; border-radius: 6px;
+opacity: 0; pointer-events: none;
+transition: opacity 0.18s ease, transform 0.18s ease;
+&::after {
+  content: ''; position: absolute; top: 100%; right: 50%; transform: translateX(50%);
+  border: 4px solid transparent; border-top-color: var(--text);
+}
 }
 .eq-borrower {
 display: flex; justify-content: space-between; align-items: center;
@@ -313,6 +391,8 @@ search = '';
 private itemsSource: 'categories' | 'subcategories' = 'categories';
 
 readonly today = new Date().toISOString().split('T')[0];
+readonly copiedBarcode = signal<string | null>(null);
+private copiedTimer?: ReturnType<typeof setTimeout>;
 
 constructor(private api: ApiService, private router: Router, private route: ActivatedRoute) {}
 
@@ -327,6 +407,17 @@ this.refreshTimer = setInterval(() => this.refreshInBackground(), 30000);
 
 ngOnDestroy() {
 clearInterval(this.refreshTimer);
+clearTimeout(this.copiedTimer);
+}
+
+copyBarcode(barcode: string, event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+  navigator.clipboard.writeText(barcode).then(() => {
+    clearTimeout(this.copiedTimer);
+    this.copiedBarcode.set(barcode);
+    this.copiedTimer = setTimeout(() => this.copiedBarcode.set(null), 1800);
+  }).catch(() => {});
 }
 
 // Updates item data in place so the current view, filters and search are kept
@@ -698,11 +789,49 @@ return 'ציוד';
 
 isOverdue(item: Equipment) { return item.expected_return && item.expected_return < this.today; }
 
+isNew(item: Equipment): boolean {
+  if (!item.created_at) return false;
+  const created = new Date(item.created_at);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  return created >= sevenDaysAgo;
+}
+
 getStatusClass(item: Equipment) {
 if (item.is_under_maintenance) return 'badge-maintenance';
 if (item.is_reserved) return 'badge-reserved';
 if (!item.is_loaned) return 'badge-available';
 return this.isOverdue(item) ? 'badge-overdue' : 'badge-loaned';
+}
+
+private readonly catPalette = [
+  { accent: '#0d9488', bg: '#f0fdfa' }, // teal
+  { accent: '#7c3aed', bg: '#f5f3ff' }, // violet
+  { accent: '#db2777', bg: '#fdf2f8' }, // pink
+  { accent: '#d97706', bg: '#fffbeb' }, // amber
+  { accent: '#2563eb', bg: '#eff6ff' }, // blue
+  { accent: '#059669', bg: '#ecfdf5' }, // emerald
+  { accent: '#dc2626', bg: '#fef2f2' }, // red
+  { accent: '#0891b2', bg: '#ecfeff' }, // cyan
+];
+private catColorCache = new Map<string, { accent: string; bg: string }>();
+
+getCatAccentColor(name: string): { accent: string; bg: string } {
+  if (this.catColorCache.has(name)) return this.catColorCache.get(name)!;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  const color = this.catPalette[hash % this.catPalette.length];
+  this.catColorCache.set(name, color);
+  return color;
+}
+
+getCatBarColor(loaned: number, total: number): string {
+  if (!total) return 'var(--grad-primary)';
+  const ratio = loaned / total;
+  if (ratio === 0) return 'linear-gradient(135deg, #10b981 0%, #0d9488 100%)';
+  if (ratio <= 0.5) return 'linear-gradient(135deg, #0d9488 0%, #f59e0b 100%)';
+  if (ratio < 1) return 'linear-gradient(135deg, #f59e0b 0%, #e11d48 100%)';
+  return 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)';
 }
 
 getCategoryIcon(cat: string) {

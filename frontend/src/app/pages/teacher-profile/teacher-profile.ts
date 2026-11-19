@@ -51,6 +51,13 @@ import { formatHebrewDate } from '../../hebrew-date';
             </p>
             <p *ngIf="t.phone">
               <a [href]="'tel:' + t.phone" class="contact-link">{{ t.phone }}</a>
+              <button type="button" class="contact-copy-btn" (click)="copyPhone(t.phone)"
+                      [attr.aria-label]="phoneCopied() ? 'מספר הטלפון הועתק' : 'העתקת מספר טלפון'"
+                      [title]="phoneCopied() ? 'הועתק' : 'העתקת מספר טלפון'">
+                <svg *ngIf="!phoneCopied()" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V3.8A1.3 1.3 0 0 0 9.2 2.5H3.8a1.3 1.3 0 0 0-1.3 1.3v6.4a1.3 1.3 0 0 0 1.3 1.3h1.7" stroke="currentColor" stroke-width="1.4"/></svg>
+                <span *ngIf="phoneCopied()" aria-hidden="true">✓</span>
+              </button>
+              <span *ngIf="phoneCopied()" class="contact-copy-status" role="status">הועתק</span>
             </p>
           </div>
         </div>
@@ -245,6 +252,10 @@ import { formatHebrewDate } from '../../hebrew-date';
       border-radius: 12px; padding: 2px 12px; font-size: 0.78rem; font-weight: 700;
     }
     .contact-link { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .contact-copy-btn { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-inline-start: 5px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; vertical-align: middle; }
+    .contact-copy-btn:hover { background: var(--surface-2); color: var(--primary); }
+    .contact-copy-btn svg { width: 15px; height: 15px; }
+    .contact-copy-status { margin-inline-start: 4px; color: var(--success); font-size: .75rem; }
 
     .stats-row {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -352,6 +363,7 @@ export class TeacherProfileComponent implements OnInit, OnDestroy {
   readonly weekStart = signal<string>('');
   readonly loading = signal(true);
   readonly currentTime = signal(new Date());
+  readonly phoneCopied = signal(false);
   private clockInterval?: ReturnType<typeof setInterval>;
 
   readonly currentLessons = computed(() => {
@@ -373,6 +385,16 @@ export class TeacherProfileComponent implements OnInit, OnDestroy {
     private location: Location,
     public auth: AuthService,
   ) {}
+
+  async copyPhone(phone: string) {
+    try {
+      await navigator.clipboard.writeText(phone);
+      this.phoneCopied.set(true);
+      setTimeout(() => this.phoneCopied.set(false), 1800);
+    } catch {
+      this.phoneCopied.set(false);
+    }
+  }
 
   readonly editingDetails = signal(false);
   readonly savingDetails = signal(false);

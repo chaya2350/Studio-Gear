@@ -26,6 +26,9 @@ import { AuthService } from '../../services/auth.service';
         <div class="graduate-profile-heading">
           <h2>{{ graduate.name }}</h2>
           <span *ngIf="graduate.married_name">שם לאחר החתונה: {{ graduate.married_name }}</span>
+          @if (graduate.graduate_year) {
+            <span class="graduate-since" title="לפי הקידום האחרון לבוגרות במערכת">בוגרת מאז {{ graduate.graduate_year }} · {{ yearsSince(graduate.graduate_year) }} שנים</span>
+          }
         </div>
         <div class="graduate-profile-details">
           <div><strong>שם לפני החתונה</strong><span>{{ graduate.name }}</span></div>
@@ -80,6 +83,11 @@ export class GraduatesComponent {
         this.loadError.set(error.error?.error || 'טעינת רשימת הבוגרות נכשלה');
       }
     });
+  }
+
+  /** מספר שנים שעברו מאז שנת הגמר */
+  yearsSince(graduationYear: number): number {
+    return Math.max(0, new Date().getFullYear() - Number(graduationYear));
   }
 
   saveAddress(graduate: Student) {

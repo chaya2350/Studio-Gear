@@ -23,6 +23,36 @@
   opacity: 0.85;
 }
 
+.footer-shabbat {
+  color: var(--primary, #0d9488);
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+
+.encouragement-toast {
+  position: fixed;
+  bottom: 84px;
+  right: 50%;
+  transform: translateX(50%);
+  z-index: 1200;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  color: var(--primary, #0d9488);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: var(--shadow, 0 4px 16px rgba(0,0,0,0.12));
+  animation: encouragement-in 0.3s ease both;
+  pointer-events: none;
+}
+
+@keyframes encouragement-in {
+  from { opacity: 0; transform: translateX(50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(50%) translateY(0); }
+}
+
 @media (max-width: 640px) {
   .app-footer {
     font-size: 0.66rem;
