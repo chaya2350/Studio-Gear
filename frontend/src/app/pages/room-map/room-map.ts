@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
 import { ActivatedRoute } from '@angular/router';
+import { ApiService } from '../../services/api.service';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 interface Room {
   number: string;
@@ -101,17 +103,22 @@ interface BookingResults {
         <div><h2>החדרים שלנו</h2><p>בחרי חדר כדי לעדכן פרטים או להוסיף שיבוץ</p></div>
         <div class="legend" aria-label="מקרא"><span><i class="legend-dot computer-dot"></i>חדר מחשבים</span><span><i class="legend-dot unusable-dot"></i>אין להשתמש</span></div>
       </div>
-      <section *ngFor="let floor of floors" class="floor">
+      <div *ngIf="contextMenu" class="ctx-overlay" (click)="contextMenu = null"></div>
+      <div *ngIf="contextMenu" class="ctx-menu" [style.top.px]="contextMenu.y" [style.left.px]="contextMenu.x">
+        <button (click)="openLaptopLoan(contextMenu.room); contextMenu = null">קחי מחשב לכיתה זו</button>
+      </div>
+      <section *ngFor="let floor of floorList" class="floor">
         <div class="floor-header">
           <h2><span class="floor-icon" aria-hidden="true">▦</span> קומה {{ floor === 0 ? '0 (-1)' : floor === 1 ? '1 (כניסה)' : floor }}</h2>
           <span>{{ roomsOnFloor(floor, 0).length + roomsOnFloor(floor, 1).length }} חדרים</span>
         </div>
         <div class="floor-tables">
-          <div class="table-wrap" *ngFor="let side of [0, 1]">
+          <div class="table-wrap" *ngFor="let side of sides">
             <table>
               <thead><tr><th>מס׳ חדר</th><th>שיבוץ במפה המקורית</th><th>מקומות</th><th>תפוסה</th><th>פעולות</th></tr></thead>
               <tbody>
-                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable" [class.room-free]="room.usable && checkedDate && !roomBookings(room).length">
+                <tr *ngFor="let room of roomsOnFloor(floor, side)" [class.computer]="room.computers" [class.unusable]="!room.usable" [class.room-free]="room.usable && checkedDate && !roomBookings(room).length"
+                    (contextmenu)="room.computers ? onRoomContextMenu($event, room) : null">
                   <td><span class="room-number">{{ room.number }}</span></td>
                   <td class="room-name">{{ room.name }} <span *ngIf="room.computers" class="computer-label">מחשבים</span><span *ngIf="room.projector" class="projector-label" title="יש מקרן בחדר">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-label="מקרן"><rect x="2.5" y="8" width="15" height="9" rx="2"/><circle cx="8" cy="12.5" r="2.6"/><path d="M17.5 10.5h4M17.5 14.5h4M21.5 10.5v4"/></svg>
@@ -177,6 +184,71 @@ interface BookingResults {
             <div class="actions">
               <button type="submit" [disabled]="savingBooking">שמירת שיבוץ</button>
               <button type="button" [disabled]="savingBooking" (click)="bookingRoom = null">ביטול</button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <div *ngIf="laptopRoom" class="overlay">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="laptop-loan-title">
+          <h2 id="laptop-loan-title">קחי מחשב — חדר {{ laptopRoom.number }}</h2>
+          <p>תאריך: {{ date }}</p>
+          <form (ngSubmit)="saveLaptopLoan()">
+            <label>סריקת ברקוד מחשב
+              <div class="return-confirm-row">
+                <input class="return-barcode-input" [(ngModel)]="laptopBarcodeInput" name="barcode"
+                  placeholder="הקלד או סרוק ברקוד" (keyup.enter)="onLaptopBarcodeEnter()" autocomplete="off"
+                  [class.input-error]="laptopBarcodeError">
+                <button class="btn-scan" type="button" (click)="toggleLaptopScan()" [class.active]="laptopScanning">📷</button>
+                <button type="button" (click)="onLaptopBarcodeEnter()">בדוק</button>
+              </div>
+              <div *ngIf="laptopBarcodeError" style="color:var(--danger); font-size:12px; margin-top:4px;">ברקוד לא נמצא או אינו מחשב נייד</div>
+            </label>
+            <div *ngIf="laptopScanning" class="return-video-wrap">
+              <video #laptopVideoEl autoplay playsinline></video>
+              <div class="return-scan-overlay"><div class="return-scan-frame"></div></div>
+            </div>
+            <div *ngIf="laptopScannedItem" class="scanned-laptop-badge">✓ {{ laptopScannedItem.name }}</div>
+            <label>מז / שם תלמידה
+              <div style="position:relative;">
+                <input [(ngModel)]="laptopStudentQuery" name="studentQ" placeholder="הקלד מז או שם..." (input)="onLaptopStudentSearch()" autocomplete="off">
+                <div *ngIf="laptopStudentSuggestions.length" class="suggestions">
+                  <div *ngFor="let s of laptopStudentSuggestions" class="suggestion-item" (click)="selectLaptopStudent(s)">
+                    <strong>{{ s.name }}</strong>
+                    <span>{{ s.id_number }} · {{ s.track }}{{ s.year ? ' ' + s.year : '' }}</span>
+                  </div>
+                </div>
+              </div>
+              <div *ngIf="laptopSelectedStudent" style="margin-top:6px; font-size:13px; color:var(--primary);">{{ laptopSelectedStudent.name }} · {{ laptopSelectedStudent.id_number }}</div>
+            </label>
+            <label>מסלול
+              <select [(ngModel)]="laptopTrackName" name="trackName" required>
+                <option value="">בחר מסלול</option>
+                <option>אדריכלות</option>
+                <option>הנדסאים</option>
+                <option>הנדסת אנרגיה</option>
+                <option>הוראה מתקנת</option>
+                <option>תקשורת</option>
+                <option>גרפיקה</option>
+                <option>בימוי</option>
+                <option>ייעוץ מס</option>
+                <option value="אחר">אחר</option>
+              </select>
+            </label>
+            <label *ngIf="laptopTrackName && laptopTrackName !== 'אחר'">שנה
+              <select [(ngModel)]="laptopTrackYear" name="trackYear" required>
+                <option value="" disabled>שנה</option>
+                <option value="א">א</option>
+                <option value="ב">ב</option>
+              </select>
+            </label>
+            <label>כיתה / מיקום
+              <input [(ngModel)]="laptopLocation" name="location" readonly style="background:var(--surface-2);">
+            </label>
+            <p *ngIf="laptopLoanError" class="error" role="alert">{{ laptopLoanError }}</p>
+            <p *ngIf="laptopLoanSuccess" style="color:var(--primary); font-weight:700;">המחשב נלקח בהצלחה!</p>
+            <div class="actions">
+              <button type="submit" [disabled]="laptopLoanSaving || laptopLoanSuccess || !laptopScannedItem">{{ laptopLoanSaving ? 'שומר...' : 'תפסי מחשב' }}</button>
+              <button type="button" (click)="laptopRoom = null; laptopScanning = false">ביטול</button>
             </div>
           </form>
         </section>
@@ -284,6 +356,27 @@ interface BookingResults {
     .assign-button { color: var(--primary); border-color: var(--border-focus); }
     .empty-side, .footnote { color: var(--text-muted); font-size: 12px; }
     .footnote { margin: 16px 2px; }
+    .ctx-overlay { position: fixed; inset: 0; z-index: 999; }
+    .ctx-menu { position: fixed; z-index: 1000; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); overflow: hidden; min-width: 180px; }
+    .ctx-menu button { display: block; width: 100%; padding: 11px 16px; text-align: right; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+    .ctx-menu button:hover { background: var(--primary-light); color: var(--primary); }
+    .suggestions { position: absolute; top: 100%; right: 0; left: 0; z-index: 100; background: var(--surface); border: 1.5px solid var(--border-focus); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); overflow: hidden; margin-top: 4px; }
+    .suggestion-item { padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: var(--primary-light); }
+    .suggestion-item strong { color: var(--text); }
+    .suggestion-item span { color: var(--text-muted); font-size: 12px; }
+    .return-confirm-row { display: flex; gap: 8px; }
+    .return-barcode-input { flex: 1; height: 42px; padding: 0 12px; border-radius: var(--radius-sm); border: 1.5px solid var(--border); background: var(--surface); font-size: 0.95rem; font-family: monospace; outline: none; direction: ltr; }
+    .return-barcode-input:focus { border-color: var(--primary); }
+    .return-barcode-input.input-error { border-color: var(--danger); }
+    .return-video-wrap { position: relative; margin-top: 10px; border-radius: var(--radius-sm); overflow: hidden; background: #0a0a1a; aspect-ratio: 4/3; }
+    .return-video-wrap video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .return-scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); }
+    .return-scan-frame { width: 180px; height: 100px; border: 2.5px solid white; border-radius: var(--radius-sm); box-shadow: 0 0 0 2000px rgba(0,0,0,0.35); }
+    .btn-scan { height: 42px; padding: 0 12px; font-size: 1.1rem; }
+    .btn-scan.active { background: var(--primary-light); border-color: var(--primary); }
+    .scanned-laptop-badge { margin-top: 8px; padding: 8px 12px; background: var(--success-soft); border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; color: #166534; }
     .overlay { position: fixed; inset: 0; background: #10152c99; display: grid; place-items: center; z-index: 1000; padding: 15px; }
     .dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 18px; width: min(490px, 100%); max-height: 90vh; overflow-y: auto; padding: 26px; box-shadow: var(--shadow-lg); }
     .dialog h2 { font-size: 21px; margin: 0 0 8px; }
@@ -305,7 +398,8 @@ interface BookingResults {
     }
   `],
 })
-export class RoomMapComponent implements OnInit {
+export class RoomMapComponent implements OnInit, OnDestroy {
+  @ViewChild('laptopVideoEl') laptopVideoEl?: ElementRef<HTMLVideoElement>;
   rooms: Room[] = [];
   loading = false;
   error = '';
@@ -335,10 +429,50 @@ export class RoomMapComponent implements OnInit {
   bookingError = '';
   savingBooking = false;
 
-  constructor(private http: HttpClient, private route: ActivatedRoute, public auth: AuthService) {}
+  // Laptop loan from room map
+  laptopRoom: Room | null = null;
+  laptopLoanError = '';
+  laptopLoanSaving = false;
+  laptopLoanSuccess = false;
+  laptopBarcodeInput = '';
+  laptopBarcodeError = false;
+  laptopScanning = false;
+  laptopScannedItem: any = null;
+  private laptopReader = new BrowserMultiFormatReader();
+  laptopStudentQuery = '';
+  laptopStudentSuggestions: any[] = [];
+  laptopSelectedStudent: any = null;
+  laptopTrackName = '';
+  laptopTrackYear = '';
+  laptopLocation = '';
+  contextMenu: { x: number; y: number; room: Room } | null = null;
 
-  get floors(): number[] {
-    return [...new Set(this.rooms.map(room => room.floor))];
+  constructor(private http: HttpClient, private route: ActivatedRoute, public auth: AuthService, private api: ApiService) {}
+
+  readonly sides = [0, 1];
+  floorList: number[] = [];
+  roomsByFloorSide: Map<string, Room[]> = new Map();
+  bookingsByRoom: Map<string, Booking[]> = new Map();
+
+  private buildRoomIndex(): void {
+    this.floorList = [...new Set(this.rooms.map(r => r.floor))];
+    this.roomsByFloorSide.clear();
+    for (const floor of this.floorList) {
+      for (const side of this.sides) {
+        this.roomsByFloorSide.set(`${floor}_${side}`, this.rooms.filter(r =>
+          r.floor === floor && (Number.isFinite(Number(r.number)) ? Number(r.number) % 2 === side : side === 0)
+        ));
+      }
+    }
+  }
+
+  private buildBookingIndex(): void {
+    this.bookingsByRoom.clear();
+    for (const b of this.bookings) {
+      const list = this.bookingsByRoom.get(b.room_number) ?? [];
+      list.push(b);
+      this.bookingsByRoom.set(b.room_number, list);
+    }
   }
 
   ngOnInit(): void {
@@ -366,19 +500,17 @@ export class RoomMapComponent implements OnInit {
     this.loading = true;
     this.error = '';
     this.http.get<Room[]>('/api/schedule/room-map').subscribe({
-      next: rooms => { this.rooms = rooms; this.loading = false; },
+      next: rooms => { this.rooms = rooms; this.loading = false; this.buildRoomIndex(); },
       error: () => { this.loading = false; this.error = 'לא ניתן לטעון את מפת החדרים. נסי לרענן את הדף.'; },
     });
   }
 
   roomsOnFloor(floor: number, side: number): Room[] {
-    return this.rooms.filter(room => room.floor === floor && (
-      Number.isFinite(Number(room.number)) ? Number(room.number) % 2 === side : side === 0
-    ));
+    return this.roomsByFloorSide.get(`${floor}_${side}`) ?? [];
   }
 
   roomBookings(room: Room): Booking[] {
-    return this.bookings.filter(booking => booking.room_number === room.number);
+    return this.bookingsByRoom.get(room.number) ?? [];
   }
 
   search(): void {
@@ -402,6 +534,7 @@ export class RoomMapComponent implements OnInit {
         this.checkedStart = start;
         this.checkedEnd = end;
         this.bookingLoading = false;
+        this.buildBookingIndex();
       },
       error: (error: HttpErrorResponse) => {
         this.bookingLoading = false;
@@ -462,6 +595,124 @@ export class RoomMapComponent implements OnInit {
       next: () => this.search(),
       error: (error: HttpErrorResponse) => { this.error = error.error?.error || 'הסרת השיבוץ נכשלה.'; },
     });
+  }
+
+  onRoomContextMenu(event: MouseEvent, room: Room): void {
+    event.preventDefault();
+    this.contextMenu = { x: event.clientX, y: event.clientY, room };
+  }
+
+  openLaptopLoan(room: Room): void {
+    this.laptopRoom = room;
+    this.laptopLoanError = '';
+    this.laptopLoanSuccess = false;
+    this.laptopLoanSaving = false;
+    this.laptopBarcodeInput = '';
+    this.laptopBarcodeError = false;
+    this.laptopScanning = false;
+    this.laptopScannedItem = null;
+    this.laptopStudentQuery = '';
+    this.laptopStudentSuggestions = [];
+    this.laptopSelectedStudent = null;
+    this.laptopTrackName = '';
+    this.laptopTrackYear = '';
+    this.laptopLocation = room.number + ' — ' + room.name;
+    BrowserMultiFormatReader.releaseAllStreams();
+  }
+
+  onLaptopBarcodeEnter(): void {
+    const barcode = this.laptopBarcodeInput.trim();
+    if (!barcode) return;
+    this.laptopBarcodeError = false;
+    this.laptopScannedItem = null;
+    this.api.getEquipmentByBarcode(barcode).subscribe({
+      next: item => {
+        if (item.category !== 'מחשב נייד') {
+          this.laptopBarcodeError = true; return;
+        }
+        if (item.is_loaned) {
+          this.laptopLoanError = 'המחשב כבר מושאל'; return;
+        }
+        this.laptopScannedItem = item;
+        this.laptopLoanError = '';
+      },
+      error: () => { this.laptopBarcodeError = true; }
+    });
+  }
+
+  toggleLaptopScan(): void {
+    if (this.laptopScanning) {
+      this.laptopScanning = false;
+      BrowserMultiFormatReader.releaseAllStreams();
+    } else {
+      this.laptopScanning = true;
+      setTimeout(() => {
+        if (!this.laptopVideoEl) return;
+        this.laptopReader.decodeFromVideoDevice(undefined, this.laptopVideoEl.nativeElement, result => {
+          if (result) {
+            this.laptopBarcodeInput = result.getText();
+            this.laptopScanning = false;
+            BrowserMultiFormatReader.releaseAllStreams();
+            this.onLaptopBarcodeEnter();
+          }
+        });
+      }, 150);
+    }
+  }
+
+  onLaptopStudentSearch(): void {
+    this.laptopSelectedStudent = null;
+    const q = this.laptopStudentQuery.trim();
+    if (!q) { this.laptopStudentSuggestions = []; return; }
+    this.api.getStudents(q).subscribe(s => this.laptopStudentSuggestions = s.slice(0, 5));
+  }
+
+  selectLaptopStudent(s: any): void {
+    this.laptopSelectedStudent = s;
+    this.laptopStudentQuery = s.id_number;
+    this.laptopStudentSuggestions = [];
+    this.laptopTrackName = s.track || '';
+    this.laptopTrackYear = s.year || '';
+  }
+
+  saveLaptopLoan(): void {
+    if (!this.laptopRoom || !this.laptopScannedItem || this.laptopLoanSaving) return;
+    if (!this.laptopSelectedStudent && !this.laptopStudentQuery.trim()) {
+      this.laptopLoanError = 'נא לבחור תלמידה'; return;
+    }
+    if (!this.laptopTrackName) { this.laptopLoanError = 'נא לבחור מסלול'; return; }
+    if (this.laptopTrackName !== 'אחר' && !this.laptopTrackYear) { this.laptopLoanError = 'נא לבחור שנה'; return; }
+    const loanDate = this.date;
+    const track = this.laptopTrackName !== 'אחר' ? `${this.laptopTrackName} ${this.laptopTrackYear}` : this.laptopTrackName;
+    const borrower = this.laptopSelectedStudent
+      ? { borrower_name: this.laptopSelectedStudent.name, borrower_id_number: this.laptopSelectedStudent.id_number, borrower_phone: this.laptopSelectedStudent.phone || '' }
+      : { borrower_name: this.laptopStudentQuery.trim(), borrower_id_number: null, borrower_phone: '' };
+    this.laptopLoanSaving = true;
+    this.laptopLoanError = '';
+    this.api.createLoan({
+      equipment_id: this.laptopScannedItem.id,
+      ...borrower,
+      loan_date: loanDate,
+      expected_return: loanDate,
+      loan_type: 'loan',
+      payment_status: 'none',
+      track,
+      location: this.laptopLocation,
+    } as any).subscribe({
+      next: () => {
+        this.laptopLoanSaving = false;
+        this.laptopLoanSuccess = true;
+        setTimeout(() => { this.laptopRoom = null; BrowserMultiFormatReader.releaseAllStreams(); }, 1500);
+      },
+      error: (e: HttpErrorResponse) => {
+        this.laptopLoanSaving = false;
+        this.laptopLoanError = e.error?.error || 'שגיאה בשמירה';
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    BrowserMultiFormatReader.releaseAllStreams();
   }
 
   editRoom(room: Room): void {

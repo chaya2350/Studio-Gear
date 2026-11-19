@@ -3695,6 +3695,8 @@ db.exec(`
     specialization TEXT,
     phone TEXT,
     email TEXT,
+    id_number TEXT,
+    teacher_code TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -3703,6 +3705,8 @@ const teacherColumnNames = db.prepare('PRAGMA table_info(teachers)').all().map(c
 if (!teacherColumnNames.includes('specialization')) {
   db.exec('ALTER TABLE teachers ADD COLUMN specialization TEXT');
 }
+if (!teacherColumnNames.includes('id_number')) db.exec('ALTER TABLE teachers ADD COLUMN id_number TEXT');
+if (!teacherColumnNames.includes('teacher_code')) db.exec('ALTER TABLE teachers ADD COLUMN teacher_code TEXT');
 
 // Schedule slots: one row per scheduled class lesson
 // day_of_week: 0=ראשון, 1=שני, 2=שלישי, 3=רביעי, 4=חמישי
@@ -3892,16 +3896,18 @@ app.get('/api/teachers', (req, res) => {
 // ייצוא רשימת מורות לאקסל — חייב להיות לפני /:id
 app.get('/api/teachers/export', (req, res) => {
   const XLSX = require('xlsx');
-  const teachers = db.prepare('SELECT name, subject, phone, email, active FROM teachers ORDER BY name').all();
+  const teachers = db.prepare('SELECT name, id_number, teacher_code, subject, phone, email, active FROM teachers ORDER BY name').all();
   const rows = teachers.map(t => ({
     'שם': t.name,
+    'ת.ז.': t.id_number || '',
+    'קוד מורה': t.teacher_code || '',
     'מקצוע': t.subject || '',
     'טלפון': t.phone || '',
     'אימייל': t.email || '',
     'פעיל': t.active ? 'כן' : 'לא',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 26 }, { wch: 8 }];
+  ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 26 }, { wch: 8 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'מורות');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -3989,8 +3995,10 @@ app.put('/api/teachers/:id', (req, res) => {
   const specialization = String(req.body?.specialization || '').trim() || null;
   const phone = String(req.body?.phone || '').trim() || null;
   const email = String(req.body?.email || '').trim() || null;
-  const result = db.prepare('UPDATE teachers SET name=?, subject=?, specialization=?, phone=?, email=?, active=? WHERE id=?')
-    .run(name, subject, specialization, phone, email, req.body?.active ?? 1, req.params.id);
+  const idNumber = String(req.body?.id_number || '').trim() || null;
+  const teacherCode = String(req.body?.teacher_code || '').trim() || null;
+  const result = db.prepare('UPDATE teachers SET name=?, subject=?, specialization=?, phone=?, email=?, id_number=?, teacher_code=?, active=? WHERE id=?')
+    .run(name, subject, specialization, phone, email, idNumber, teacherCode, req.body?.active ?? 1, req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'מורה לא נמצאה' });
   res.json({ success: true });
 });
@@ -5149,13 +5157,15 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
         const subject = String(getValue(row, ['תפקיד', 'מקצוע', 'subject', 'role', 'תפקיד מורה'])).trim().replace(/\s+/g, ' ') || null;
         const phone = String(getValue(row, ['טלפון', 'phone', 'מספר טלפון'])).trim() || null;
         const email = String(getValue(row, ['מייל', 'email', 'אימייל', 'mail'])).trim() || null;
+        const idNumber = String(getValue(row, ['ת.ז.', 'ת.ז', 'תז', 'תעודת זהות', 'מספר זהות', 'מספר תעודת זהות', 'id number', 'id_number'])).trim() || null;
+        const teacherCode = String(getValue(row, ['קוד מורה', 'קוד של מורה', 'קוד', 'קודים', 'teacher code', 'teacher_code', 'code'])).trim() || null;
 
         const existing = db.prepare('SELECT id FROM teachers WHERE name=?').get(name);
         if (existing) {
-          if (subject || phone || email) update.run(subject, phone, email, name);
+          if (subject || phone || email || idNumber || teacherCode) update.run(subject, phone, email, idNumber, teacherCode, name);
           skipped++;
         } else {
-          insert.run(name, subject, phone, email);
+          insert.run(name, subject, phone, email, idNumber, teacherCode);
           imported++;
         }
       }
@@ -5171,6 +5181,8 @@ app.post('/api/teachers/import', xlsxUpload.single('file'), (req, res) => {
 const teacherCols = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name);
 if (!teacherCols.includes('phone')) db.exec('ALTER TABLE teachers ADD COLUMN phone TEXT');
 if (!teacherCols.includes('email')) db.exec('ALTER TABLE teachers ADD COLUMN email TEXT');
+if (!teacherCols.includes('id_number')) db.exec('ALTER TABLE teachers ADD COLUMN id_number TEXT');
+if (!teacherCols.includes('teacher_code')) db.exec('ALTER TABLE teachers ADD COLUMN teacher_code TEXT');
 
 // ?? Import schedule from Excel ??????????????????????????????????
 // Expected columns: מורה/teacher, שנה/year, מקבילה/parallel, יום/day, שעה_התחלה/start_time, שעה_סיום/end_time, מקצוע/subject
